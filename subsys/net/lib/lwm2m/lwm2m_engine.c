@@ -54,19 +54,6 @@
 
 #define ENGINE_UPDATE_INTERVAL 500
 
-/* LWM2M / CoAP Content-Formats */
-#define LWM2M_FORMAT_PLAIN_TEXT		0
-#define LWM2M_FORMAT_APP_LINK_FORMAT	40
-#define LWM2M_FORMAT_APP_OCTET_STREAM	42
-#define LWM2M_FORMAT_APP_EXI		47
-#define LWM2M_FORMAT_APP_JSON		50
-#define LWM2M_FORMAT_OMA_PLAIN_TEXT	1541
-#define LWM2M_FORMAT_OMA_OLD_TLV	1542
-#define LWM2M_FORMAT_OMA_OLD_JSON	1543
-#define LWM2M_FORMAT_OMA_OLD_OPAQUE	1544
-#define LWM2M_FORMAT_OMA_TLV		11542
-#define LWM2M_FORMAT_OMA_JSON		11543
-
 #define DISCOVER_PREFACE	"</.well-known/core>;ct=40"
 
 #define BUF_ALLOC_TIMEOUT K_SECONDS(1)
@@ -82,6 +69,7 @@ struct observe_node {
 	u32_t min_period_sec;
 	u32_t max_period_sec;
 	u32_t counter;
+	u16_t format;
 	bool used;
 	u8_t  tkl;
 };
@@ -98,6 +86,22 @@ static struct observe_node observe_node_data[CONFIG_LWM2M_ENGINE_MAX_OBSERVER];
 static sys_slist_t engine_obj_list;
 static sys_slist_t engine_obj_inst_list;
 static sys_slist_t engine_observer_list;
+
+#define NUM_BLOCK1_CONTEXT 3
+
+/* TODO: figure out what's correct value */
+#define TIMEOUT_BLOCKWISE_TRANSFER K_SECONDS(30)
+
+#define GET_BLOCK_NUM(v) ((v) >> 4)
+
+struct block_context {
+	struct zoap_block_context ctx;
+	u8_t token[8];
+	u8_t tkl;
+	s64_t timestamp;
+};
+
+static struct block_context block1_contexts[NUM_BLOCK1_CONTEXT];
 
 /* periodic / notify / observe handling stack */
 static K_THREAD_STACK_DEFINE(engine_thread_stack,
@@ -174,7 +178,8 @@ int lwm2m_notify_observer_path(struct lwm2m_obj_path *path)
 static int engine_add_observer(struct net_context *net_ctx,
 			       struct sockaddr *addr,
 			       const u8_t *token, u8_t tkl,
-			       struct lwm2m_obj_path *path)
+			       struct lwm2m_obj_path *path,
+			       u16_t format)
 {
 	struct observe_node *obs;
 	int i;
@@ -226,6 +231,7 @@ static int engine_add_observer(struct net_context *net_ctx,
 	/* TODO: use server object instance or WRITE_ATTR values */
 	observe_node_data[i].min_period_sec = 10;
 	observe_node_data[i].max_period_sec = 60;
+	observe_node_data[i].format = format;
 	observe_node_data[i].counter = 1;
 	sys_slist_append(&engine_observer_list,
 			 &observe_node_data[i].node);
@@ -438,6 +444,7 @@ static void engine_clear_context(struct lwm2m_engine_context *context)
 	}
 
 	context->operation = 0;
+	context->block_offset = 0;
 }
 
 static u16_t atou16(u8_t *buf, u16_t buflen, u16_t *len)
@@ -657,7 +664,7 @@ static u16_t select_writer(struct lwm2m_output_context *out, u16_t accept)
 		SYS_LOG_ERR("Unknown Accept type %u, using LWM2M plain text",
 			    accept);
 		out->writer = &plain_text_writer;
-		accept = LWM2M_FORMAT_OMA_PLAIN_TEXT;
+		accept = LWM2M_FORMAT_PLAIN_TEXT;
 		break;
 
 	}
@@ -669,6 +676,7 @@ static u16_t select_reader(struct lwm2m_input_context *in, u16_t format)
 {
 	switch (format) {
 
+	case LWM2M_FORMAT_PLAIN_TEXT:
 	case LWM2M_FORMAT_OMA_PLAIN_TEXT:
 		in->reader = &plain_text_reader;
 		break;
@@ -682,7 +690,7 @@ static u16_t select_reader(struct lwm2m_input_context *in, u16_t format)
 		SYS_LOG_ERR("Unknown content type %u, using LWM2M plain text",
 			    format);
 		in->reader = &plain_text_reader;
-		format = LWM2M_FORMAT_OMA_PLAIN_TEXT;
+		format = LWM2M_FORMAT_PLAIN_TEXT;
 		break;
 
 	}
@@ -1486,6 +1494,7 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst,
 	void *data_ptr = NULL;
 	size_t data_len = 0;
 	size_t len = 0;
+	int ret = 0;
 
 	if (!obj_inst || !res || !obj_field || !context) {
 		return -EINVAL;
@@ -1499,8 +1508,6 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst,
 	if (res->pre_write_cb) {
 		data_ptr = res->pre_write_cb(obj_inst->obj_inst_id, &data_len);
 	}
-
-	/* TODO: check for block transfer fields here */
 
 	if (data_ptr && data_len > 0) {
 		switch (obj_field->data_type) {
@@ -1589,14 +1596,16 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst,
 	}
 
 	if (res->post_write_cb) {
-		/* ignore return value here */
-		res->post_write_cb(obj_inst->obj_inst_id, data_ptr, len,
-				   false, 0);
+		ret = res->post_write_cb(obj_inst->obj_inst_id, data_ptr, len,
+					 context->block_offset == 0, 0);
+		if (ret >= 0) {
+			ret = 0;
+		}
 	}
 
 	NOTIFY_OBSERVER_PATH(path);
 
-	return 0;
+	return ret;
 }
 
 static int lwm2m_write_attr_handler(struct lwm2m_engine_obj *obj,
@@ -1902,19 +1911,92 @@ static int do_write_op(struct lwm2m_engine_obj *obj,
 	}
 }
 
-static int get_observe_option(const struct zoap_packet *zpkt)
+static int get_option_int(const struct zoap_packet *zpkt, u8_t opt)
 {
 	struct zoap_option option = {};
 	u16_t count = 1;
 	int r;
 
-	r = zoap_find_options(zpkt, ZOAP_OPTION_OBSERVE, &option, count);
+	r = zoap_find_options(zpkt, opt, &option, count);
 	if (r <= 0) {
 		return -ENOENT;
 	}
 
 	return zoap_option_value_to_int(&option);
 }
+
+static int
+init_block_ctx(const u8_t *token, u8_t tkl, struct block_context **ctx)
+{
+	int i;
+	s64_t timestamp;
+
+	*ctx = NULL;
+	timestamp = k_uptime_get();
+	for (i = 0; i < NUM_BLOCK1_CONTEXT; i++) {
+		if (block1_contexts[i].tkl == 0) {
+			*ctx = &block1_contexts[i];
+			break;
+		}
+		if (timestamp-block1_contexts[i].timestamp >
+		    TIMEOUT_BLOCKWISE_TRANSFER) {
+			*ctx = &block1_contexts[i];
+			/* TODO: notify application for block
+			 * transfer timeout
+			 */
+			break;
+		}
+	}
+
+	if (*ctx == NULL) {
+		SYS_LOG_ERR("Cannot find free block context");
+		return -ENOMEM;
+	}
+
+	(*ctx)->tkl = tkl;
+	memcpy((*ctx)->token, token, tkl);
+#if defined(CONFIG_NET_L2_BLUETOOTH)
+	zoap_block_transfer_init(&(*ctx)->ctx, ZOAP_BLOCK_64, 0);
+#else
+	zoap_block_transfer_init(&(*ctx)->ctx, ZOAP_BLOCK_256, 0);
+#endif
+	(*ctx)->timestamp = timestamp;
+
+	return 0;
+}
+
+static int
+get_block_ctx(const u8_t *token, u8_t tkl, struct block_context **ctx)
+{
+	int i;
+
+	*ctx = NULL;
+	for (i = 0; i < NUM_BLOCK1_CONTEXT; i++) {
+		if (block1_contexts[i].tkl == tkl &&
+		    0 == memcmp(token, block1_contexts[i].token, tkl)) {
+			*ctx = &block1_contexts[i];
+			/* refresh timestmap */
+			(*ctx)->timestamp = k_uptime_get();
+			break;
+		}
+	}
+
+	if (*ctx == NULL) {
+		SYS_LOG_ERR("Cannot find block context");
+		return -ENOENT;
+	}
+
+	return 0;
+}
+
+static void free_block_ctx(struct block_context *ctx)
+{
+	if (ctx == NULL) {
+		return;
+	}
+	ctx->tkl = 0;
+}
+
 
 static int handle_request(struct zoap_packet *request,
 			  struct zoap_packet *response,
@@ -1933,6 +2015,7 @@ static int handle_request(struct zoap_packet *request,
 	struct lwm2m_engine_context context;
 	int observe = -1; /* default to -1, 0 = ENABLE, 1 = DISABLE */
 	bool discover = false;
+	struct block_context *ctx = NULL;
 
 	/* setup engine context */
 	memset(&context, 0, sizeof(struct lwm2m_engine_context));
@@ -1971,7 +2054,7 @@ static int handle_request(struct zoap_packet *request,
 		format = zoap_option_value_to_int(&options[0]);
 	} else {
 		SYS_LOG_DBG("No content-format given. Assume text plain.");
-		format = LWM2M_FORMAT_OMA_PLAIN_TEXT;
+		format = LWM2M_FORMAT_PLAIN_TEXT;
 	}
 
 	/* read Accept */
@@ -1979,9 +2062,8 @@ static int handle_request(struct zoap_packet *request,
 	if (r > 0) {
 		accept = zoap_option_value_to_int(&options[0]);
 	} else {
-		SYS_LOG_DBG("No Accept header: use same as content-format(%d)",
-			    format);
-		accept = format;
+		SYS_LOG_DBG("No accept option given. Assume OMA TLV.");
+		accept = LWM2M_FORMAT_OMA_TLV;
 	}
 
 	/* TODO: Handle bootstrap deleted -- re-add when DTLS support ready */
@@ -2009,7 +2091,7 @@ static int handle_request(struct zoap_packet *request,
 			context.operation = LWM2M_OP_READ;
 		}
 		/* check for observe */
-		observe = get_observe_option(in.in_zpkt);
+		observe = get_option_int(in.in_zpkt, ZOAP_OPTION_OBSERVE);
 		zoap_header_set_code(out.out_zpkt, ZOAP_RESPONSE_CODE_CONTENT);
 		break;
 
@@ -2046,7 +2128,19 @@ static int handle_request(struct zoap_packet *request,
 	in.inpos = 0;
 	in.inbuf = zoap_packet_get_payload(in.in_zpkt, &in.insize);
 
-	/* TODO: check for block transfer? */
+	/* Check for block transfer */
+	r = get_option_int(in.in_zpkt, ZOAP_OPTION_BLOCK1);
+	if (r > 0) {
+		if (GET_BLOCK_NUM(r) == 0) {
+			r = init_block_ctx(token, tkl, &ctx);
+		} else {
+			r = get_block_ctx(token, tkl, &ctx);
+		}
+		if (r < 0) {
+			goto cleanup;
+		}
+		context.block_offset = zoap_next_block(in.in_zpkt, &ctx->ctx);
+	}
 
 	switch (context.operation) {
 
@@ -2063,7 +2157,7 @@ static int handle_request(struct zoap_packet *request,
 
 				r = engine_add_observer(
 					net_pkt_context(in.in_zpkt->pkt),
-					from_addr, token, tkl, &path);
+					from_addr, token, tkl, &path, accept);
 				if (r < 0) {
 					SYS_LOG_ERR("add OBSERVE error: %d", r);
 				}
@@ -2116,8 +2210,27 @@ static int handle_request(struct zoap_packet *request,
 		return -EINVAL;
 	}
 
+cleanup:
 	if (r == 0) {
-		/* TODO: Handle blockwise 1 */
+		/* Handle blockwise 1 */
+		if (ctx) {
+			if (context.block_offset > 0) {
+				/* More to come, ack with correspond block # */
+				r = zoap_add_block1_option(
+						out.out_zpkt, &ctx->ctx);
+				if (r) {
+					SYS_LOG_ERR("Fail adding block1: %d",
+						    r);
+				} else {
+					zoap_header_set_code(
+						out.out_zpkt,
+						ZOAP_RESPONSE_CODE_CONTINUE);
+				}
+			} else {
+				/* Free context when finished */
+				free_block_ctx(ctx);
+			}
+		}
 
 		if (out.outlen > 0) {
 			SYS_LOG_DBG("replying with %u bytes", out.outlen);
@@ -2125,7 +2238,9 @@ static int handle_request(struct zoap_packet *request,
 		} else {
 			SYS_LOG_DBG("no data in reply");
 		}
-	} else {
+	}
+
+	if (r != 0) {
 		if (r == -ENOENT) {
 			zoap_header_set_code(out.out_zpkt,
 					     ZOAP_RESPONSE_CODE_NOT_FOUND);
@@ -2140,6 +2255,9 @@ static int handle_request(struct zoap_packet *request,
 					     ZOAP_RESPONSE_CODE_INTERNAL_ERROR);
 			r = 0;
 		}
+
+		/* Free block context when error happened */
+		free_block_ctx(ctx);
 	}
 
 	return r;
@@ -2384,14 +2502,12 @@ static int generate_notify_message(struct observe_node *obs,
 		goto cleanup;
 	}
 
-	/* TODO: save the accept-format from original request */
-
 	/* set the output writer */
-	select_writer(&out, LWM2M_FORMAT_OMA_TLV);
+	select_writer(&out, obs->format);
 
 	/* set response content-format */
 	ret = zoap_add_option_int(out.out_zpkt, ZOAP_OPTION_CONTENT_FORMAT,
-				  LWM2M_FORMAT_OMA_TLV);
+				  obs->format);
 	if (ret > 0) {
 		SYS_LOG_ERR("error setting content-format (err:%d)", ret);
 		goto cleanup;
@@ -2502,6 +2618,9 @@ int lwm2m_engine_start(struct net_context *net_ctx)
 
 static int lwm2m_engine_init(struct device *dev)
 {
+	memset(block1_contexts, 0,
+	       sizeof(struct block_context)*NUM_BLOCK1_CONTEXT);
+
 	/* start thread to handle OBSERVER / NOTIFY events */
 	k_thread_create(&engine_thread_data,
 			&engine_thread_stack[0],
