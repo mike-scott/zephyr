@@ -186,6 +186,14 @@ static int pwm_nrf5_sw_pin_set(struct device *dev, u32_t pwm,
 pin_set_pwm_off:
 	data->map[channel].pulse_cycles = 0;
 
+	/* restart timer if another channel is still active */
+	for (channel = 0; channel < config->map_size; channel++) {
+		if (data->map[channel].pulse_cycles) {
+			timer->TASKS_START = 1;
+			break;
+		}
+	}
+
 	return 0;
 }
 
