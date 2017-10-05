@@ -7,7 +7,6 @@
 #ifndef __LWM2M_H__
 #define __LWM2M_H__
 
-#include <net/net_pkt.h>
 #include <net/net_app.h>
 #include <net/zoap.h>
 
@@ -26,36 +25,6 @@
 
 #define IPSO_OBJECT_TEMP_SENSOR_ID			3303
 #define IPSO_OBJECT_LIGHT_CONTROL_ID			3311
-
-struct lwm2m_ctx;
-struct lwm2m_message;
-
-/* Establish a message timeout callback type */
-typedef void (*lwm2m_message_timeout_cb_t)(struct lwm2m_message *msg);
-
-/**
- * LwM2M message structure
- *
- * @details Structure to track in-flight messages.
- */
-struct lwm2m_message {
-	struct lwm2m_ctx *ctx;
-	struct zoap_packet zpkt;
-
-	/* user setup */
-	const u8_t *token;
-	zoap_reply_t reply_cb;
-	lwm2m_message_timeout_cb_t message_timeout_cb;
-	u16_t mid;
-	u8_t type;
-	u8_t code;
-	u8_t tkl;
-	u8_t send_attempts;
-
-	/* message internals */
-	struct zoap_pending *pending;
-	struct zoap_reply *reply;
-};
 
 /**
  * LwM2M context structure
@@ -83,7 +52,6 @@ struct lwm2m_ctx {
 	/** Private ZoAP and networking structures */
 	struct zoap_pending pendings[CONFIG_LWM2M_ENGINE_MAX_PENDING];
 	struct zoap_reply replies[CONFIG_LWM2M_ENGINE_MAX_REPLIES];
-	struct lwm2m_message messages[CONFIG_LWM2M_ENGINE_MAX_MESSAGES];
 	struct k_delayed_work retransmit_work;
 };
 

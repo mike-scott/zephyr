@@ -178,7 +178,7 @@ int lwm2m_notify_observer_path(struct lwm2m_obj_path *path)
 				     path->res_id);
 }
 
-static int engine_add_observer(struct lwm2m_message *msg,
+static int engine_add_observer(struct net_app_ctx *app_ctx,
 			       const u8_t *token, u8_t tkl,
 			       struct lwm2m_obj_path *path,
 			       u16_t format)
@@ -188,13 +188,8 @@ static int engine_add_observer(struct lwm2m_message *msg,
 	struct sockaddr *addr;
 	int i;
 
-	if (!msg || !msg->ctx) {
-		SYS_LOG_ERR("valid lwm2m message is required");
-		return -EINVAL;
-	}
-
 	/* remote addr */
-	addr = &msg->ctx->net_app_ctx.default_ctx->remote;
+	addr = &app_ctx->default_ctx->remote;
 
 	/* check if object exists */
 	if (!get_engine_obj(path->obj_id)) {
@@ -231,7 +226,7 @@ static int engine_add_observer(struct lwm2m_message *msg,
 
 	/* make sure this observer doesn't exist already */
 	SYS_SLIST_FOR_EACH_CONTAINER(&engine_observer_list, obs, node) {
-		if (obs->ctx == msg->ctx &&
+		if (&obs->ctx->net_app_ctx == app_ctx &&
 		    memcmp(&obs->path, path, sizeof(*path)) == 0) {
 			/* quietly update the token information */
 			memcpy(obs->token, token, tkl);
@@ -260,7 +255,8 @@ static int engine_add_observer(struct lwm2m_message *msg,
 
 	/* copy the values and add it to the list */
 	observe_node_data[i].used = true;
-	observe_node_data[i].ctx = msg->ctx;
+	observe_node_data[i].ctx = CONTAINER_OF(app_ctx,
+						struct lwm2m_ctx, net_app_ctx);
 	memcpy(&observe_node_data[i].path, path, sizeof(*path));
 	memcpy(observe_node_data[i].token, token, tkl);
 	observe_node_data[i].tkl = tkl;
@@ -575,190 +571,100 @@ static void zoap_options_to_path(struct zoap_option *opt, int options_count,
 	}
 }
 
-struct lwm2m_message *find_msg_from_pending(struct zoap_pending *pending,
-					    struct lwm2m_message *messages,
-					    size_t len)
+int lwm2m_init_message(struct net_app_ctx *app_ctx, struct zoap_packet *zpkt,
+		       struct net_pkt **pkt, u8_t type, u8_t code, u16_t mid,
+		       const u8_t *token, u8_t tkl)
 {
-	size_t i;
-
-	if (!pending || !messages) {
-		return NULL;
-	}
-
-	for (i = 0; i < len; i++) {
-		if (messages[i].ctx && messages[i].pending == pending) {
-			return &messages[i];
-		}
-	}
-
-	return NULL;
-}
-
-struct lwm2m_message *lwm2m_get_message(struct lwm2m_ctx *client_ctx)
-{
-	size_t i;
-
-	for (i = 0; i < CONFIG_LWM2M_ENGINE_MAX_MESSAGES; i++) {
-		if (!client_ctx->messages[i].ctx) {
-			client_ctx->messages[i].ctx = client_ctx;
-			return &client_ctx->messages[i];
-		}
-	}
-
-	return NULL;
-}
-
-void lwm2m_release_message(struct lwm2m_message *msg)
-{
-	if (!msg) {
-		return;
-	}
-
-	if (msg->pending) {
-		zoap_pending_clear(msg->pending);
-		msg->pending = NULL;
-	}
-
-	if (msg->reply) {
-		/* make sure we want to clear the reply */
-		zoap_reply_clear(msg->reply);
-		msg->reply = NULL;
-	}
-
-	memset(msg, 0, sizeof(*msg));
-}
-
-int lwm2m_init_message(struct lwm2m_message *msg)
-{
-	struct net_pkt *pkt;
-	struct net_app_ctx *app_ctx;
 	struct net_buf *frag;
 	int r;
 
-	if (!msg || !msg->ctx) {
-		SYS_LOG_ERR("LwM2M message is invalid.");
-		return -EINVAL;
-	}
-
-	app_ctx = &msg->ctx->net_app_ctx;
-	pkt = net_app_get_net_pkt(app_ctx, AF_UNSPEC, BUF_ALLOC_TIMEOUT);
-	if (!pkt) {
+	*pkt = net_app_get_net_pkt(app_ctx, AF_UNSPEC, BUF_ALLOC_TIMEOUT);
+	if (!*pkt) {
 		SYS_LOG_ERR("Unable to get TX packet, not enough memory.");
 		return -ENOMEM;
 	}
 
-	frag = net_app_get_net_buf(app_ctx, pkt,
+	frag = net_app_get_net_buf(app_ctx, *pkt,
 				   BUF_ALLOC_TIMEOUT);
 	if (!frag) {
 		SYS_LOG_ERR("Unable to get DATA buffer, not enough memory.");
-		r = -ENOMEM;
-		goto cleanup;
+		net_pkt_unref(*pkt);
+		*pkt = NULL;
+		return -ENOMEM;
 	}
 
-	r = zoap_packet_init(&msg->zpkt, pkt);
+	r = zoap_packet_init(zpkt, *pkt);
 	if (r < 0) {
 		SYS_LOG_ERR("zoap packet init error (err:%d)", r);
-		goto cleanup;
+		return r;
 	}
 
 	/* FIXME: Could be that zoap_packet_init() sets some defaults */
-	zoap_header_set_version(&msg->zpkt, 1);
-	zoap_header_set_type(&msg->zpkt, msg->type);
-	zoap_header_set_code(&msg->zpkt, msg->code);
+	zoap_header_set_version(zpkt, 1);
+	zoap_header_set_type(zpkt, type);
+	zoap_header_set_code(zpkt, code);
 
-	if (msg->mid > 0) {
-		zoap_header_set_id(&msg->zpkt, msg->mid);
+	if (mid > 0) {
+		zoap_header_set_id(zpkt, mid);
 	} else {
-		zoap_header_set_id(&msg->zpkt, zoap_next_id());
+		zoap_header_set_id(zpkt, zoap_next_id());
 	}
 
 	/* tkl == 0 is for a new TOKEN, tkl == -1 means dont set */
-	if (msg->token && msg->tkl > 0) {
-		zoap_header_set_token(&msg->zpkt, msg->token, msg->tkl);
-	} else if (msg->tkl == 0) {
-		zoap_header_set_token(&msg->zpkt, zoap_next_token(), 8);
-	}
-
-	if (msg->type == ZOAP_TYPE_CON) {
-		msg->pending = zoap_pending_next_unused(
-					msg->ctx->pendings,
-					CONFIG_LWM2M_ENGINE_MAX_PENDING);
-		if (!msg->pending) {
-			SYS_LOG_ERR("Unable to find a free pending to track "
-				    "retransmissions.");
-			r = -ENOMEM;
-			goto cleanup;
-		}
-
-		r = zoap_pending_init(msg->pending, &msg->zpkt,
-				      &app_ctx->default_ctx->remote);
-		if (r < 0) {
-			SYS_LOG_ERR("Unable to initialize a pending "
-				    "retransmission (err:%d).", r);
-			goto cleanup;
-		}
-
-		/* clear out pkt to avoid double unref */
-		pkt = NULL;
-
-		if (msg->reply_cb) {
-			msg->reply = zoap_reply_next_unused(
-					msg->ctx->replies,
-					CONFIG_LWM2M_ENGINE_MAX_REPLIES);
-			if (!msg->reply) {
-				SYS_LOG_ERR("No resources for "
-					    "waiting for replies.");
-				r = -ENOMEM;
-				goto cleanup;
-			}
-
-			zoap_reply_init(msg->reply, &msg->zpkt);
-			msg->reply->reply = msg->reply_cb;
-		}
+	if (token && tkl > 0) {
+		zoap_header_set_token(zpkt, token, tkl);
+	} else if (tkl == 0) {
+		zoap_header_set_token(zpkt, zoap_next_token(), 8);
 	}
 
 	return 0;
+}
 
-cleanup:
-	lwm2m_release_message(msg);
+struct zoap_pending *lwm2m_init_message_pending(struct lwm2m_ctx *client_ctx,
+						struct zoap_packet *zpkt)
+{
+	struct zoap_pending *pending = NULL;
+	int ret;
+
+	pending = zoap_pending_next_unused(client_ctx->pendings,
+					   CONFIG_LWM2M_ENGINE_MAX_PENDING);
+	if (!pending) {
+		SYS_LOG_ERR("Unable to find a free pending to track "
+			    "retransmissions.");
+		return NULL;
+	}
+
+	ret = zoap_pending_init(pending, zpkt,
+				&client_ctx->net_app_ctx.default_ctx->remote);
+	if (ret < 0) {
+		SYS_LOG_ERR("Unable to initialize a pending "
+			    "retransmission (err:%d).", ret);
+		pending->pkt = NULL;
+		return NULL;
+	}
+
+	return pending;
+}
+
+void lwm2m_init_message_cleanup(struct net_pkt *pkt,
+				struct zoap_pending *pending,
+				struct zoap_reply *reply)
+{
+	if (pending) {
+		zoap_pending_clear(pending);
+		/* don't unref attached pkt twice */
+		if (!pending->pkt) {
+			pkt = NULL;
+		}
+	}
+
+	if (reply) {
+		zoap_reply_clear(reply);
+	}
+
 	if (pkt) {
 		net_pkt_unref(pkt);
 	}
-
-	return r;
-}
-
-int lwm2m_send_message(struct lwm2m_message *msg)
-{
-	int ret;
-
-	if (!msg || !msg->ctx) {
-		SYS_LOG_ERR("LwM2M message is invalid.");
-		return -EINVAL;
-	}
-
-	msg->send_attempts++;
-	ret = net_app_send_pkt(&msg->ctx->net_app_ctx, msg->zpkt.pkt,
-			       &msg->ctx->net_app_ctx.default_ctx->remote,
-			       NET_SOCKADDR_MAX_SIZE, K_NO_WAIT, NULL);
-	if (ret) {
-		return ret;
-	}
-
-	if (msg->type == ZOAP_TYPE_CON) {
-		if (msg->send_attempts > 1) {
-			return 0;
-		}
-
-		zoap_pending_cycle(msg->pending);
-		k_delayed_work_submit(&msg->ctx->retransmit_work,
-				      msg->pending->timeout);
-	} else {
-		/* if we're not expecting an ACK, free up the msg data */
-		lwm2m_release_message(msg);
-	}
-
-	return 0;
 }
 
 u16_t lwm2m_get_rd_data(u8_t *client_data, u16_t size)
@@ -2088,8 +1994,9 @@ static int get_observe_option(const struct zoap_packet *zpkt)
 	return zoap_option_value_to_int(&option);
 }
 
-static int handle_request(struct zoap_packet *request,
-			  struct lwm2m_message *msg)
+static int handle_request(struct net_app_ctx *app_ctx,
+			  struct zoap_packet *request,
+			  struct zoap_packet *response)
 {
 	int r;
 	u8_t code;
@@ -2112,9 +2019,9 @@ static int handle_request(struct zoap_packet *request,
 	context.path = &path;
 	engine_clear_context(&context);
 
-	/* set ZoAP request / message */
+	/* set ZoAP request / response */
 	in.in_zpkt = request;
-	out.out_zpkt = &msg->zpkt;
+	out.out_zpkt = response;
 
 	/* set default reader/writer */
 	in.reader = &plain_text_reader;
@@ -2231,7 +2138,8 @@ static int handle_request(struct zoap_packet *request,
 						    r);
 				}
 
-				r = engine_add_observer(msg, token, tkl, &path,
+				r = engine_add_observer(app_ctx,
+							token, tkl, &path,
 							accept);
 				if (r < 0) {
 					SYS_LOG_ERR("add OBSERVE error: %d", r);
@@ -2319,16 +2227,25 @@ static int handle_request(struct zoap_packet *request,
 	return r;
 }
 
+int lwm2m_udp_sendto(struct net_app_ctx *app_ctx, struct net_pkt *pkt)
+{
+	return net_app_send_pkt(app_ctx, pkt, &app_ctx->default_ctx->remote,
+				NET_SOCKADDR_MAX_SIZE, K_NO_WAIT, NULL);
+}
+
 void lwm2m_udp_receive(struct lwm2m_ctx *client_ctx, struct net_pkt *pkt,
 		       bool handle_separate_response,
-		       udp_request_handler_cb_t udp_request_handler)
+		       int (*udp_request_handler)(struct net_app_ctx *app_ctx,
+						  struct zoap_packet *,
+						  struct zoap_packet *))
 {
 	struct net_udp_hdr hdr, *udp_hdr;
 	struct zoap_pending *pending;
 	struct zoap_reply *reply;
 	struct zoap_packet response;
 	struct sockaddr from_addr;
-	struct lwm2m_message *msg = NULL;
+	struct zoap_packet response2;
+	struct net_pkt *pkt2;
 	int header_len, r;
 	const u8_t *token;
 	u8_t tkl;
@@ -2374,18 +2291,8 @@ void lwm2m_udp_receive(struct lwm2m_ctx *client_ctx, struct net_pkt *pkt,
 	token = zoap_header_get_token(&response, &tkl);
 	pending = zoap_pending_received(&response, client_ctx->pendings,
 					CONFIG_LWM2M_ENGINE_MAX_PENDING);
-	/*
-	 * Clear pending pointer because zoap_pending_received() calls
-	 * zoap_pending_clear, and later when we call lwm2m_release_message()
-	 * it will try and call zoap_pending_clear() again if msg->pending
-	 * is != NULL.
-	 */
 	if (pending) {
-		msg = find_msg_from_pending(pending, client_ctx->messages,
-					    CONFIG_LWM2M_ENGINE_MAX_MESSAGES);
-		if (msg) {
-			msg->pending = NULL;
-		}
+		/* TODO: If necessary cancel retransmissions */
 	}
 
 	SYS_LOG_DBG("checking for reply from [%s]",
@@ -2393,7 +2300,47 @@ void lwm2m_udp_receive(struct lwm2m_ctx *client_ctx, struct net_pkt *pkt,
 	reply = zoap_response_received(&response, &from_addr,
 				       client_ctx->replies,
 				       CONFIG_LWM2M_ENGINE_MAX_REPLIES);
-	if (reply) {
+	if (!reply) {
+		/*
+		 * If no normal response handler is found, then this is
+		 * a new request coming from the server.  Let's look
+		 * at registered objects to find a handler.
+		 */
+		if (udp_request_handler &&
+		    zoap_header_get_type(&response) == ZOAP_TYPE_CON) {
+			/* Create a response packet if we reach this point */
+			r = lwm2m_init_message(&client_ctx->net_app_ctx,
+					       &response2, &pkt2,
+					       ZOAP_TYPE_ACK,
+					       zoap_header_get_code(&response),
+					       zoap_header_get_id(&response),
+					       NULL, -1);
+			if (r < 0) {
+				if (pkt2) {
+					net_pkt_unref(pkt2);
+				}
+				goto cleanup;
+			}
+
+			/*
+			 * The "response" here is actually a new request
+			 */
+			r = udp_request_handler(&client_ctx->net_app_ctx,
+						&response, &response2);
+			if (r < 0) {
+				SYS_LOG_ERR("Request handler error: %d", r);
+			} else {
+				r = lwm2m_udp_sendto(&client_ctx->net_app_ctx,
+						     pkt2);
+				if (r < 0) {
+					SYS_LOG_ERR("Err sending response: %d",
+						    r);
+				}
+			}
+		} else {
+			SYS_LOG_ERR("No handler for response");
+		}
+	} else {
 		/*
 		 * Separate response is composed of 2 messages, empty ACK with
 		 * no token and an additional message with a matching token id
@@ -2407,59 +2354,10 @@ void lwm2m_udp_receive(struct lwm2m_ctx *client_ctx, struct net_pkt *pkt,
 		if (handle_separate_response && !tkl &&
 			zoap_header_get_type(&response) == ZOAP_TYPE_ACK) {
 			SYS_LOG_DBG("separated response, not removing reply");
-			goto cleanup;
-		}
-	}
-
-	if (reply || pending) {
-		/* free up msg resources */
-		if (msg) {
-			lwm2m_release_message(msg);
-		}
-
-		SYS_LOG_DBG("reply %p handled and removed", reply);
-		goto cleanup;
-	}
-
-	/*
-	 * If no normal response handler is found, then this is
-	 * a new request coming from the server.  Let's look
-	 * at registered objects to find a handler.
-	 */
-	if (udp_request_handler &&
-	    zoap_header_get_type(&response) == ZOAP_TYPE_CON) {
-		msg = lwm2m_get_message(client_ctx);
-		if (!msg) {
-			SYS_LOG_ERR("Unable to get a lwm2m message!");
-			goto cleanup;
-		}
-
-		/* Create a response message if we reach this point */
-		msg->type = ZOAP_TYPE_ACK;
-		msg->code = zoap_header_get_code(&response);
-		msg->mid = zoap_header_get_id(&response);
-		/* tkl -1 means don't set the token at all */
-		msg->tkl = -1;
-
-		r = lwm2m_init_message(msg);
-		if (r < 0) {
-			goto cleanup;
-		}
-
-		/* process the response to this request */
-		r = udp_request_handler(&response, msg);
-		if (r < 0) {
-			SYS_LOG_ERR("Request handler error: %d", r);
 		} else {
-			r = lwm2m_send_message(msg);
-			if (r < 0) {
-				SYS_LOG_ERR("Err sending response: %d",
-					    r);
-				lwm2m_release_message(msg);
-			}
+			SYS_LOG_DBG("reply %p handled and removed", reply);
+			zoap_reply_clear(reply);
 		}
-	} else {
-		SYS_LOG_ERR("No handler for response");
 	}
 
 cleanup:
@@ -2481,7 +2379,6 @@ static void udp_receive(struct net_app_ctx *app_ctx, struct net_pkt *pkt,
 static void retransmit_request(struct k_work *work)
 {
 	struct lwm2m_ctx *client_ctx;
-	struct lwm2m_message *msg;
 	struct zoap_pending *pending;
 	int r;
 
@@ -2492,27 +2389,15 @@ static void retransmit_request(struct k_work *work)
 		return;
 	}
 
-	msg = find_msg_from_pending(pending, client_ctx->messages,
-				    CONFIG_LWM2M_ENGINE_MAX_MESSAGES);
-	if (!msg) {
-		SYS_LOG_ERR("pending has no valid LwM2M message!");
+	r = lwm2m_udp_sendto(&client_ctx->net_app_ctx,
+			     pending->pkt);
+	if (r < 0) {
 		return;
 	}
 
 	if (!zoap_pending_cycle(pending)) {
-		/* pending request has expired */
-		if (msg->message_timeout_cb) {
-			msg->message_timeout_cb(msg);
-		}
-
-		lwm2m_release_message(msg);
+		zoap_pending_clear(pending);
 		return;
-	}
-
-	r = lwm2m_send_message(msg);
-	if (r < 0) {
-		SYS_LOG_ERR("Error sending lwm2m message: %d", r);
-		/* don't error here, retry until timeout */
 	}
 
 	k_delayed_work_submit(&client_ctx->retransmit_work, pending->timeout);
@@ -2552,7 +2437,10 @@ static int notify_message_reply_cb(const struct zoap_packet *response,
 static int generate_notify_message(struct observe_node *obs,
 				   bool manual_trigger)
 {
-	struct lwm2m_message *msg;
+	struct net_pkt *pkt = NULL;
+	struct zoap_pending *pending = NULL;
+	struct zoap_reply *reply = NULL;
+	struct zoap_packet request;
 	struct lwm2m_engine_obj_inst *obj_inst;
 	struct lwm2m_output_context out;
 	struct lwm2m_engine_context context;
@@ -2572,6 +2460,7 @@ static int generate_notify_message(struct observe_node *obs,
 	memcpy(&path, &obs->path, sizeof(struct lwm2m_obj_path));
 	context.path = &path;
 	context.operation = LWM2M_OP_READ;
+	out.out_zpkt = &request;
 
 	SYS_LOG_DBG("[%s] NOTIFY MSG START: %u/%u/%u(%u) token:'%s' [%s] %lld",
 		    manual_trigger ? "MANUAL" : "AUTO",
@@ -2593,23 +2482,11 @@ static int generate_notify_message(struct observe_node *obs,
 		return -EINVAL;
 	}
 
-	msg = lwm2m_get_message(obs->ctx);
-	if (!msg) {
-		SYS_LOG_ERR("Unable to get a lwm2m message!");
-		return -ENOMEM;
-	}
-
-	out.out_zpkt = &msg->zpkt;
-	msg->type = ZOAP_TYPE_CON;
-	msg->code = ZOAP_RESPONSE_CODE_CONTENT;
-	msg->mid = 0;
-	msg->token = obs->token;
-	msg->tkl = obs->tkl;
-	msg->reply_cb = notify_message_reply_cb;
-
-	ret = lwm2m_init_message(msg);
+	ret = lwm2m_init_message(&obs->ctx->net_app_ctx, out.out_zpkt, &pkt,
+				 ZOAP_TYPE_CON, ZOAP_RESPONSE_CODE_CONTENT,
+				 0, obs->token, obs->tkl);
 	if (ret) {
-		return ret;
+		goto cleanup;
 	}
 
 	/* each notification should increment the obs counter */
@@ -2644,17 +2521,36 @@ static int generate_notify_message(struct observe_node *obs,
 		goto cleanup;
 	}
 
-	ret = lwm2m_send_message(msg);
+	pending = lwm2m_init_message_pending(obs->ctx, out.out_zpkt);
+	if (!pending) {
+		ret = -ENOMEM;
+		goto cleanup;
+	}
+
+	reply = zoap_reply_next_unused(obs->ctx->replies,
+				       CONFIG_LWM2M_ENGINE_MAX_REPLIES);
+	if (!reply) {
+		SYS_LOG_ERR("No resources for waiting for replies.");
+		ret = -ENOMEM;
+		goto cleanup;
+	}
+
+	zoap_reply_init(reply, &request);
+	reply->reply = notify_message_reply_cb;
+
+	ret = lwm2m_udp_sendto(&obs->ctx->net_app_ctx, pkt);
 	if (ret < 0) {
 		SYS_LOG_ERR("Error sending LWM2M packet (err:%d).", ret);
 		goto cleanup;
 	}
-
 	SYS_LOG_DBG("NOTIFY MSG: SENT");
-	return 0;
+
+	zoap_pending_cycle(pending);
+	k_delayed_work_submit(&obs->ctx->retransmit_work, pending->timeout);
+	return ret;
 
 cleanup:
-	lwm2m_release_message(msg);
+	lwm2m_init_message_cleanup(pkt, pending, reply);
 	return ret;
 }
 
