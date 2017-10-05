@@ -177,39 +177,6 @@ static int find_clients_index(const struct sockaddr *addr)
 	return index;
 }
 
-static int find_rd_client_from_msg(struct lwm2m_message *msg,
-				   struct lwm2m_rd_client_info *rd_clients,
-				   size_t len)
-{
-	size_t i;
-
-	if (!msg || !rd_clients) {
-		return -1;
-	}
-
-	for (i = 0; i < len; i++) {
-		if (rd_clients[i].ctx && rd_clients[i].ctx == msg->ctx) {
-			return i;
-		}
-	}
-
-	return -1;
-}
-
-static void sm_handle_timeout_state(struct lwm2m_message *msg,
-				    enum sm_engine_state sm_state)
-{
-	int index;
-
-	index = find_rd_client_from_msg(msg, clients, CLIENT_INSTANCE_COUNT);
-	if (index < 0) {
-		SYS_LOG_ERR("Can't find RD client from msg: %p!", msg);
-		return;
-	}
-
-	set_sm_state(index, sm_state);
-}
-
 /* force re-update with remote peer(s) */
 void engine_trigger_update(void)
 {
@@ -259,14 +226,6 @@ static int do_bootstrap_reply_cb(const struct zoap_packet *response,
 	}
 
 	return 0;
-}
-
-static void do_bootstrap_timeout_cb(struct lwm2m_message *msg)
-{
-	SYS_LOG_WRN("Bootstrap Timeout");
-
-	/* Restart from scratch */
-	sm_handle_timeout_state(msg, ENGINE_INIT);
 }
 
 static int do_registration_reply_cb(const struct zoap_packet *response,
@@ -338,14 +297,6 @@ static int do_registration_reply_cb(const struct zoap_packet *response,
 	return 0;
 }
 
-static void do_registration_timeout_cb(struct lwm2m_message *msg)
-{
-	SYS_LOG_WRN("Registration Timeout");
-
-	/* Restart from scratch */
-	sm_handle_timeout_state(msg, ENGINE_INIT);
-}
-
 static int do_update_reply_cb(const struct zoap_packet *response,
 			      struct zoap_reply *reply,
 			      const struct sockaddr *from)
@@ -382,14 +333,6 @@ static int do_update_reply_cb(const struct zoap_packet *response,
 	return 0;
 }
 
-static void do_update_timeout_cb(struct lwm2m_message *msg)
-{
-	SYS_LOG_WRN("Registration Update Timeout");
-
-	/* Re-do registration */
-	sm_handle_timeout_state(msg, ENGINE_DO_REGISTRATION);
-}
-
 static int do_deregister_reply_cb(const struct zoap_packet *response,
 				  struct zoap_reply *reply,
 				  const struct sockaddr *from)
@@ -421,14 +364,6 @@ static int do_deregister_reply_cb(const struct zoap_packet *response,
 	}
 
 	return 0;
-}
-
-static void do_deregister_timeout_cb(struct lwm2m_message *msg)
-{
-	SYS_LOG_WRN("De-Registration Timeout");
-
-	/* Abort de-registration and start from scratch */
-	sm_handle_timeout_state(msg, ENGINE_INIT);
 }
 
 /* state machine step functions */
@@ -481,7 +416,6 @@ static int sm_do_bootstrap(int index)
 		msg->code = ZOAP_METHOD_POST;
 		msg->mid = 0;
 		msg->reply_cb = do_bootstrap_reply_cb;
-		msg->message_timeout_cb = do_bootstrap_timeout_cb;
 
 		ret = lwm2m_init_message(msg);
 		if (ret) {
@@ -665,8 +599,7 @@ static int sm_do_registration(int index)
 	    !sm_is_registered(index) &&
 	    clients[index].has_registration_info) {
 		ret = sm_send_registration(index, true,
-					   do_registration_reply_cb,
-					   do_registration_timeout_cb);
+					   do_registration_reply_cb, NULL);
 		if (!ret) {
 			set_sm_state(index, ENGINE_REGISTRATION_SENT);
 		} else {
@@ -690,8 +623,7 @@ static int sm_registration_done(int index)
 		forced_update = clients[index].trigger_update;
 		clients[index].trigger_update = 0;
 		ret = sm_send_registration(index, forced_update,
-					   do_update_reply_cb,
-					   do_update_timeout_cb);
+					   do_update_reply_cb, NULL);
 		if (!ret) {
 			set_sm_state(index, ENGINE_UPDATE_SENT);
 		} else {
@@ -719,7 +651,6 @@ static int sm_do_deregister(int index)
 	msg->code = ZOAP_METHOD_DELETE;
 	msg->mid = 0;
 	msg->reply_cb = do_deregister_reply_cb;
-	msg->message_timeout_cb = do_deregister_timeout_cb;
 
 	ret = lwm2m_init_message(msg);
 	if (ret) {
@@ -764,7 +695,7 @@ static void lwm2m_rd_client_service(void)
 				break;
 
 			case ENGINE_BOOTSTRAP_SENT:
-				/* wait for bootstrap to be done or timeout */
+				/* wait for bootstrap to be done */
 				break;
 
 			case ENGINE_BOOTSTRAP_DONE:
@@ -776,7 +707,7 @@ static void lwm2m_rd_client_service(void)
 				break;
 
 			case ENGINE_REGISTRATION_SENT:
-				/* wait registration to be done or timeout */
+				/* wait registration to be done */
 				break;
 
 			case ENGINE_REGISTRATION_DONE:
@@ -784,7 +715,7 @@ static void lwm2m_rd_client_service(void)
 				break;
 
 			case ENGINE_UPDATE_SENT:
-				/* wait update to be done or abort */
+				/* wait update to be done */
 				break;
 
 			case ENGINE_DEREGISTER:
@@ -792,7 +723,6 @@ static void lwm2m_rd_client_service(void)
 				break;
 
 			case ENGINE_DEREGISTER_SENT:
-				/* wait for deregister to be done or reset */
 				break;
 
 			case ENGINE_DEREGISTER_FAILED:
