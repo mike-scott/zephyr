@@ -1,6 +1,6 @@
 VERSION_MAJOR 	   = 1
 VERSION_MINOR 	   = 9
-PATCHLEVEL 	   = 0
+PATCHLEVEL 	   = 99
 VERSION_RESERVED   = 0
 EXTRAVERSION       =
 NAME 		   = Zephyr Kernel
@@ -605,8 +605,8 @@ include/config/auto.conf: ;
 endif # $(dot-config)
 
 # kernel objects are built as a static library
-libs-y := lib/
-core-y := kernel/ drivers/ misc/ boards/ ext/ subsys/ tests/ arch/
+libs-y := lib/ tests/
+core-y := kernel/ drivers/ misc/ boards/ ext/ subsys/ arch/
 
 ARCH = $(subst $(DQUOTE),,$(CONFIG_ARCH))
 export ARCH
@@ -785,8 +785,6 @@ ifdef MAKEFILE_TOOLCHAIN_DO_PASS2
 # We can now determine which multilib libraries to use
 include $(srctree)/scripts/Makefile.toolchain.$(ZEPHYR_GCC_VARIANT)
 endif
-
-QEMU		= $(addsuffix /,$(QEMU_BIN_PATH))$(QEMU_$(ARCH))
 
 # The all: target is the default when no target is given on the
 # command line.
@@ -1019,6 +1017,35 @@ endif
 
 dts: include/generated/generated_dts_board.h
 
+GEN_SYSCALL_HEADER := $(srctree)/scripts/gen_syscall_header.py
+
+include/generated/syscall_macros.h: $(GEN_SYSCALL_HEADER)
+	$(Q)mkdir -p $(dir $@)
+	$(Q)$(GEN_SYSCALL_HEADER) > $@
+
+GEN_SYSCALLS := $(srctree)/scripts/gen_syscalls.py
+
+define filechk_syscall_list.h
+	$(GEN_SYSCALLS) \
+		--include $(ZEPHYR_BASE)/include \
+		--base-output include/generated/syscalls \
+		--syscall-dispatch include/generated/dispatch.c.tmp
+endef
+
+include/generated/syscall_list.h: include/config/auto.conf FORCE
+	$(call filechk,syscall_list.h)
+
+define filechk_syscall_dispatch.c
+	cat include/generated/dispatch.c.tmp
+endef
+
+include/generated/syscall_dispatch.c: include/generated/syscall_list.h FORCE
+	$(call filechk,syscall_dispatch.c)
+
+syscall_generated: include/generated/syscall_macros.h \
+		   include/generated/syscall_dispatch.c \
+		   include/generated/syscall_list.h
+
 define filechk_.config-sanitycheck
 	(cat .config; \
 	 grep -e '^CONFIG' include/generated/generated_dts_board.conf | cat; \
@@ -1087,7 +1114,7 @@ archprepare = $(strip \
 		)
 
 # All the preparing..
-prepare: $(archprepare) dts FORCE
+prepare: $(archprepare) dts syscall_generated FORCE
 	$(Q)$(MAKE) $(build)=.
 
 # Generate some files

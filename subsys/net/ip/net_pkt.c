@@ -1474,8 +1474,14 @@ static inline bool insert_data(struct net_pkt *pkt, struct net_buf *frag,
 	do {
 		u16_t count = min(len, net_buf_tailroom(frag));
 
-		/* Copy insert data */
-		memcpy(frag->data + offset, data, count);
+		if (data) {
+			/* Copy insert data */
+			memcpy(frag->data + offset, data, count);
+		} else {
+			/* If there is no data, just clear the area */
+			memset(frag->data + offset, 0, count);
+		}
+
 		net_buf_add(frag, count);
 
 		len -= count;
@@ -1496,7 +1502,10 @@ static inline bool insert_data(struct net_pkt *pkt, struct net_buf *frag,
 			return true;
 		}
 
-		data += count;
+		if (data) {
+			data += count;
+		}
+
 		offset = 0;
 
 		insert = net_pkt_get_frag(pkt, timeout);
@@ -1652,6 +1661,61 @@ void net_pkt_get_info(struct k_mem_slab **rx,
 	if (tx_data) {
 		*tx_data = &tx_bufs;
 	}
+}
+
+int net_pkt_get_src_addr(struct net_pkt *pkt, struct sockaddr *addr,
+			 socklen_t addrlen)
+{
+	enum net_ip_protocol proto;
+	sa_family_t family;
+
+	if (!addr || !pkt) {
+		return -EINVAL;
+	}
+
+	family = net_pkt_family(pkt);
+
+	if (IS_ENABLED(CONFIG_NET_IPV6) && family == AF_INET6) {
+		struct sockaddr_in6 *addr6 = net_sin6(addr);
+
+		if (addrlen < sizeof(struct sockaddr_in6)) {
+			return -EINVAL;
+		}
+
+		net_ipaddr_copy(&addr6->sin6_addr, &NET_IPV6_HDR(pkt)->src);
+		proto = NET_IPV6_HDR(pkt)->nexthdr;
+
+		if (IS_ENABLED(CONFIG_NET_TCP) && proto == IPPROTO_TCP) {
+			addr6->sin6_port = net_pkt_tcp_data(pkt)->src_port;
+		} else if (IS_ENABLED(CONFIG_NET_UDP) && proto == IPPROTO_UDP) {
+			addr6->sin6_port = net_pkt_udp_data(pkt)->src_port;
+		} else {
+			return -ENOTSUP;
+		}
+
+	} else if (IS_ENABLED(CONFIG_NET_IPV4) && family == AF_INET) {
+		struct sockaddr_in *addr4 = net_sin(addr);
+
+		if (addrlen < sizeof(struct sockaddr_in)) {
+			return -EINVAL;
+		}
+
+		net_ipaddr_copy(&addr4->sin_addr, &NET_IPV4_HDR(pkt)->src);
+		proto = NET_IPV4_HDR(pkt)->proto;
+
+		if (IS_ENABLED(CONFIG_NET_TCP) && proto == IPPROTO_TCP) {
+			addr4->sin_port = net_pkt_tcp_data(pkt)->src_port;
+		} else if (IS_ENABLED(CONFIG_NET_UDP) && proto == IPPROTO_UDP) {
+			addr4->sin_port = net_pkt_udp_data(pkt)->src_port;
+		} else {
+			return -ENOTSUP;
+		}
+
+	} else {
+		return -ENOTSUP;
+	}
+
+	return 0;
 }
 
 #if defined(CONFIG_NET_DEBUG_NET_PKT)

@@ -1673,10 +1673,12 @@ static void vs_read_supported_commands(struct net_buf *buf,
 
 	/* Set Version Information, Supported Commands, Supported Features. */
 	rp->commands[0] |= BIT(0) | BIT(1) | BIT(2);
-#if defined(CONFIG_BT_CTLR_HCI_VS_EXT)
+#if defined(CONFIG_BT_HCI_VS_EXT)
+	/* Write BD_ADDR, Read Build Info */
+	rp->commands[0] |= BIT(5) | BIT(7);
 	/* Read Static Addresses, Read Key Hierarchy Roots */
 	rp->commands[1] |= BIT(0) | BIT(1);
-#endif /* CONFIG_BT_CTLR_HCI_VS_EXT */
+#endif /* CONFIG_BT_HCI_VS_EXT */
 }
 
 static void vs_read_supported_features(struct net_buf *buf,
@@ -1690,7 +1692,41 @@ static void vs_read_supported_features(struct net_buf *buf,
 	memset(&rp->features[0], 0x00, sizeof(rp->features));
 }
 
-#if defined(CONFIG_BT_CTLR_HCI_VS_EXT)
+#if defined(CONFIG_BT_HCI_VS_EXT)
+static void vs_write_bd_addr(struct net_buf *buf, struct net_buf **evt)
+{
+	struct bt_hci_cp_vs_write_bd_addr *cmd = (void *)buf->data;
+	struct bt_hci_evt_cc_status *ccst;
+
+	ll_addr_set(0, &cmd->bdaddr.val[0]);
+
+	ccst = cmd_complete(evt, sizeof(*ccst));
+	ccst->status = 0x00;
+}
+
+static void vs_read_build_info(struct net_buf *buf, struct net_buf **evt)
+{
+	struct bt_hci_rp_vs_read_build_info *rp;
+
+#define BUILD_TIMESTAMP " " __DATE__ " " __TIME__
+
+#define HCI_VS_BUILD_INFO "Zephyr OS v" \
+	KERNEL_VERSION_STRING BUILD_TIMESTAMP CONFIG_BT_CTLR_HCI_VS_BUILD_INFO
+
+	const char build_info[] = HCI_VS_BUILD_INFO;
+
+#define BUILD_INFO_EVT_LEN (sizeof(struct bt_hci_evt_hdr) + \
+			    sizeof(struct bt_hci_evt_cmd_complete) + \
+			    sizeof(struct bt_hci_rp_vs_read_build_info) + \
+			    sizeof(build_info))
+
+	BUILD_ASSERT(CONFIG_BT_RX_BUF_LEN >= BUILD_INFO_EVT_LEN);
+
+	rp = cmd_complete(evt, sizeof(*rp) + sizeof(build_info));
+	rp->status = 0x00;
+	memcpy(rp->info, build_info, sizeof(build_info));
+}
+
 static void vs_read_static_addrs(struct net_buf *buf, struct net_buf **evt)
 {
 	struct bt_hci_rp_vs_read_static_addrs *rp;
@@ -1777,7 +1813,7 @@ static void vs_read_key_hierarchy_roots(struct net_buf *buf,
 #endif /* CONFIG_SOC_FAMILY_NRF5 */
 }
 
-#endif /* CONFIG_BT_CTLR_HCI_VS_EXT */
+#endif /* CONFIG_BT_HCI_VS_EXT */
 
 static int vendor_cmd_handle(u16_t ocf, struct net_buf *cmd,
 			     struct net_buf **evt)
@@ -1795,7 +1831,15 @@ static int vendor_cmd_handle(u16_t ocf, struct net_buf *cmd,
 		vs_read_supported_features(cmd, evt);
 		break;
 
-#if defined(CONFIG_BT_CTLR_HCI_VS_EXT)
+#if defined(CONFIG_BT_HCI_VS_EXT)
+	case BT_OCF(BT_HCI_OP_VS_READ_BUILD_INFO):
+		vs_read_build_info(cmd, evt);
+		break;
+
+	case BT_OCF(BT_HCI_OP_VS_WRITE_BD_ADDR):
+		vs_write_bd_addr(cmd, evt);
+		break;
+
 	case BT_OCF(BT_HCI_OP_VS_READ_STATIC_ADDRS):
 		vs_read_static_addrs(cmd, evt);
 		break;
@@ -1803,7 +1847,7 @@ static int vendor_cmd_handle(u16_t ocf, struct net_buf *cmd,
 	case BT_OCF(BT_HCI_OP_VS_READ_KEY_HIERARCHY_ROOTS):
 		vs_read_key_hierarchy_roots(cmd, evt);
 		break;
-#endif /* CONFIG_BT_CTLR_HCI_VS_EXT */
+#endif /* CONFIG_BT_HCI_VS_EXT */
 
 	default:
 		return -EINVAL;

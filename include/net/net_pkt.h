@@ -95,8 +95,15 @@ struct net_pkt {
 	u8_t family     : 4;	/* IPv4 vs IPv6 */
 	u8_t _unused    : 3;
 
+	union {
+		/* IPv6 hop limit or IPv4 ttl for this network packet.
+		 * The value is shared between IPv6 and IPv4.
+		 */
+		u8_t ipv6_hop_limit;
+		u8_t ipv4_ttl;
+	};
+
 #if defined(CONFIG_NET_IPV6)
-	u8_t ipv6_hop_limit;	/* IPv6 hop limit for this network packet. */
 	u8_t ipv6_ext_len;	/* length of extension headers */
 	u8_t ipv6_ext_opt_len; /* IPv6 ND option length */
 
@@ -246,6 +253,19 @@ static inline void net_pkt_set_forwarding(struct net_pkt *pkt, bool forward)
 static inline bool net_pkt_forwarding(struct net_pkt *pkt)
 {
 	return false;
+}
+#endif
+
+#if defined(CONFIG_NET_IPV4)
+static inline u8_t net_pkt_ipv4_ttl(struct net_pkt *pkt)
+{
+	return pkt->ipv4_ttl;
+}
+
+static inline void net_pkt_set_ipv4_ttl(struct net_pkt *pkt,
+					u8_t ttl)
+{
+	pkt->ipv4_ttl = ttl;
 }
 #endif
 
@@ -1222,6 +1242,8 @@ static inline struct net_buf *net_pkt_write_be32(struct net_pkt *pkt,
  * is based on fragment length (only user written data length, any tailroom
  * in fragments does not come to consideration unlike net_pkt_write()) and
  * calculates from input fragment starting position.
+ * If the data pointer is NULL, insert a sequence of zeros with the given
+ * length.
  *
  * Offset examples can be considered from net_pkt_write() api.
  * If the offset is more than already allocated fragments length then it is an
@@ -1231,7 +1253,7 @@ static inline struct net_buf *net_pkt_write_be32(struct net_pkt *pkt,
  * @param frag   Network buffer fragment.
  * @param offset Offset of fragment where insertion will start.
  * @param len    Length of the data to be inserted.
- * @param data   Data to be inserted
+ * @param data   Data to be inserted, can be NULL.
  * @param timeout Affects the action taken should the net buf pool be empty.
  *        If K_NO_WAIT, then return immediately. If K_FOREVER, then
  *        wait as long as necessary. Otherwise, wait up to the specified
@@ -1358,6 +1380,19 @@ void net_pkt_get_info(struct k_mem_slab **rx,
 		      struct k_mem_slab **tx,
 		      struct net_buf_pool **rx_data,
 		      struct net_buf_pool **tx_data);
+
+/**
+ * @brief Get source socket address.
+ *
+ * @param pkt Nework packet
+ * @param addr Source socket address
+ * @param addrlen The length of source socket address
+ * @return 0 on success, <0 otherwise.
+ */
+
+int net_pkt_get_src_addr(struct net_pkt *pkt,
+			 struct sockaddr *addr,
+			 socklen_t addrlen);
 
 #if defined(CONFIG_NET_DEBUG_NET_PKT)
 /**

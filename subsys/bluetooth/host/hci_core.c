@@ -2535,8 +2535,8 @@ static void hci_cmd_done(u16_t opcode, u8_t status, struct net_buf *buf)
 	BT_DBG("opcode 0x%04x status 0x%02x buf %p", opcode, status, buf);
 
 	if (net_buf_pool_get(buf->pool_id) != &hci_cmd_pool) {
-		BT_WARN("pool id %u pool %p != &hci_cmd_pool %p",
-			buf->pool_id, net_buf_pool_get(buf->pool_id),
+		BT_WARN("opcode 0x%04x pool id %u pool %p != &hci_cmd_pool %p",
+			opcode, buf->pool_id, net_buf_pool_get(buf->pool_id),
 			&hci_cmd_pool);
 		return;
 	}
@@ -3767,11 +3767,7 @@ static const char *ver_str(u8_t ver)
 
 static void show_dev_info(void)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(&bt_dev.id_addr, addr, sizeof(addr));
-
-	BT_INFO("Identity: %s", addr);
+	BT_INFO("Identity: %s", bt_addr_le_str(&bt_dev.id_addr));
 	BT_INFO("HCI: version %s (0x%02x) revision 0x%04x, manufacturer 0x%04x",
 		ver_str(bt_dev.hci_version), bt_dev.hci_version,
 		bt_dev.hci_revision, bt_dev.manufacturer);

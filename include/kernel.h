@@ -28,6 +28,7 @@
 #include <kernel_version.h>
 #include <drivers/rand32.h>
 #include <kernel_arch_thread.h>
+#include <syscall.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -122,8 +123,15 @@ struct k_mem_pool;
 struct k_timer;
 struct k_poll_event;
 struct k_poll_signal;
+struct k_mem_domain;
+struct k_mem_partition;
 
+/* This enumeration needs to be kept in sync with the lists of kernel objects
+ * and subsystems in scripts/gen_kobject_list.py, as well as the otype_to_str()
+ * function in kernel/userspace.c
+ */
 enum k_objects {
+	/* Core kernel objects */
 	K_OBJ_ALERT,
 	K_OBJ_DELAYED_WORK,
 	K_OBJ_MEM_SLAB,
@@ -136,6 +144,29 @@ enum k_objects {
 	K_OBJ_TIMER,
 	K_OBJ_WORK,
 	K_OBJ_WORK_Q,
+
+	/* Driver subsystems */
+	K_OBJ_DRIVER_ADC,
+	K_OBJ_DRIVER_AIO_CMP,
+	K_OBJ_DRIVER_CLOCK_CONTROL,
+	K_OBJ_DRIVER_COUNTER,
+	K_OBJ_DRIVER_CRYPTO,
+	K_OBJ_DRIVER_DMA,
+	K_OBJ_DRIVER_ETH,
+	K_OBJ_DRIVER_FLASH,
+	K_OBJ_DRIVER_GPIO,
+	K_OBJ_DRIVER_I2C,
+	K_OBJ_DRIVER_I2S,
+	K_OBJ_DRIVER_IPM,
+	K_OBJ_DRIVER_PINMUX,
+	K_OBJ_DRIVER_PWM,
+	K_OBJ_DRIVER_RANDOM,
+	K_OBJ_DRIVER_RTC,
+	K_OBJ_DRIVER_SENSOR,
+	K_OBJ_DRIVER_SHARED_IRQ,
+	K_OBJ_DRIVER_SPI,
+	K_OBJ_DRIVER_UART,
+	K_OBJ_DRIVER_WDT,
 
 	K_OBJ_LAST
 };
@@ -184,20 +215,6 @@ int _k_object_validate(void *obj, enum k_objects otype, int init);
  * @param object Address of the kernel object
  */
 void _k_object_init(void *obj);
-
-
-/**
- * grant a thread access to a kernel object
- *
- * The thread will be granted access to the object if the caller is from
- * supervisor mode, or the caller is from user mode AND has permissions
- * on the object already.
- *
- * @param object Address of kernel object
- * @param thread Thread to grant access to the object
- */
-void k_object_grant_access(void *object, struct k_thread *thread);
-
 #else
 static inline int _k_object_validate(void *obj, enum k_objects otype, int init)
 {
@@ -213,12 +230,47 @@ static inline void _k_object_init(void *obj)
 	ARG_UNUSED(obj);
 }
 
-static inline void k_object_grant_access(void *object, struct k_thread *thread)
+static inline void _impl_k_object_access_grant(void *object,
+					       struct k_thread *thread)
 {
 	ARG_UNUSED(object);
 	ARG_UNUSED(thread);
 }
-#endif /* CONFIG_USERSPACE */
+
+static inline void _impl_k_object_access_all_grant(void *object)
+{
+	ARG_UNUSED(object);
+}
+#endif /* !CONFIG_USERSPACE */
+
+/**
+ * grant a thread access to a kernel object
+ *
+ * The thread will be granted access to the object if the caller is from
+ * supervisor mode, or the caller is from user mode AND has permissions
+ * on the object already.
+ *
+ * @param object Address of kernel object
+ * @param thread Thread to grant access to the object
+ */
+__syscall void k_object_access_grant(void *object, struct k_thread *thread);
+
+
+/**
+ * grant all present and future threads access to an object
+ *
+ * If the caller is from supervisor mode, or the caller is from user mode and
+ * have sufficient permissions on the object, then that object will have
+ * permissions granted to it for *all* current and future threads running in
+ * the system, effectively becoming a public kernel object.
+ *
+ * Use of this API should be avoided on systems that are running untrusted code
+ * as it is possible for such code to derive the addresses of kernel objects
+ * and perform unwanted operations on them.
+ *
+ * @param object Address of kernel object
+ */
+__syscall void k_object_access_all_grant(void *object);
 
 /* timeouts */
 
@@ -331,6 +383,16 @@ struct _thread_stack_info {
 typedef struct _thread_stack_info _thread_stack_info_t;
 #endif /* CONFIG_THREAD_STACK_INFO */
 
+#if defined(CONFIG_USERSPACE)
+struct _mem_domain_info {
+	/* memory domain queue node */
+	sys_dnode_t mem_domain_q_node;
+	/* memory domain of the thread */
+	struct k_mem_domain *mem_domain;
+};
+
+#endif /* CONFIG_USERSPACE */
+
 struct k_thread {
 
 	struct _thread_base base;
@@ -367,6 +429,11 @@ struct k_thread {
 	/* Stack Info */
 	struct _thread_stack_info stack_info;
 #endif /* CONFIG_THREAD_STACK_INFO */
+
+#if defined(CONFIG_USERSPACE)
+	/* memory domain info of the thread */
+	struct _mem_domain_info mem_domain_info;
+#endif /* CONFIG_USERSPACE */
 
 	/* arch-specifics: must always be at the end */
 	struct _thread_arch arch;
@@ -510,7 +577,6 @@ extern k_tid_t k_thread_create(struct k_thread *new_thread,
 			       void *p1, void *p2, void *p3,
 			       int prio, u32_t options, s32_t delay);
 
-#ifdef CONFIG_USERSPACE
 /**
  * @brief Drop a thread's privileges permanently to user mode
  *
@@ -522,7 +588,6 @@ extern k_tid_t k_thread_create(struct k_thread *new_thread,
 extern FUNC_NORETURN void k_thread_user_mode_enter(k_thread_entry_t entry,
 						   void *p1, void *p2,
 						   void *p3);
-#endif
 
 /**
  * @brief Put the current thread to sleep.
@@ -2476,8 +2541,8 @@ struct k_sem {
  *
  * @return N/A
  */
-extern void k_sem_init(struct k_sem *sem, unsigned int initial_count,
-			unsigned int limit);
+__syscall void k_sem_init(struct k_sem *sem, unsigned int initial_count,
+			  unsigned int limit);
 
 /**
  * @brief Take a semaphore.
@@ -2500,7 +2565,7 @@ extern void k_sem_init(struct k_sem *sem, unsigned int initial_count,
  * @retval -EBUSY Returned without waiting.
  * @retval -EAGAIN Waiting period timed out.
  */
-extern int k_sem_take(struct k_sem *sem, s32_t timeout);
+__syscall int k_sem_take(struct k_sem *sem, s32_t timeout);
 
 /**
  * @brief Give a semaphore.
@@ -2514,7 +2579,7 @@ extern int k_sem_take(struct k_sem *sem, s32_t timeout);
  *
  * @return N/A
  */
-extern void k_sem_give(struct k_sem *sem);
+__syscall void k_sem_give(struct k_sem *sem);
 
 /**
  * @brief Reset a semaphore's count to zero.
@@ -2525,7 +2590,9 @@ extern void k_sem_give(struct k_sem *sem);
  *
  * @return N/A
  */
-static inline void k_sem_reset(struct k_sem *sem)
+__syscall void k_sem_reset(struct k_sem *sem);
+
+static inline void _impl_k_sem_reset(struct k_sem *sem)
 {
 	sem->count = 0;
 }
@@ -2539,7 +2606,9 @@ static inline void k_sem_reset(struct k_sem *sem)
  *
  * @return Current semaphore count.
  */
-static inline unsigned int k_sem_count_get(struct k_sem *sem)
+__syscall unsigned int k_sem_count_get(struct k_sem *sem);
+
+static inline unsigned int _impl_k_sem_count_get(struct k_sem *sem)
 {
 	return sem->count;
 }
@@ -3893,52 +3962,6 @@ extern void _sys_power_save_idle_exit(s32_t ticks);
 
 #include <arch/cpu.h>
 
-#ifdef CONFIG_USERSPACE
-/* Architecture-specific inline functions that may be indirectly called by
- * application code due to their appearance in macros or other inline functions.
- *
- * Each arch should implement these in <arch/cpu.h>
- */
-
-/* Indicate whether we are currently running in user mode
- *
- * @return nonzero if the CPU is currently running with user permissions
- */
-static inline int _arch_is_user_context(void);
-
-/**
- * Indicate whether the CPU is currently in user mode
- *
- * @return nonzero if the CPU is currently running with user permissions
- */
-static inline int _is_user_context(void)
-{
-	return _arch_is_user_context();
-}
-
-/* Interfaces for invoking system calls */
-static inline u32_t _arch_syscall_invoke6(u32_t arg1, u32_t arg2, u32_t arg3,
-					  u32_t arg4, u32_t arg5, u32_t arg6,
-					  u32_t call_id);
-
-static inline u32_t _arch_syscall_invoke5(u32_t arg1, u32_t arg2, u32_t arg3,
-					  u32_t arg4, u32_t arg5,
-					  u32_t call_id);
-
-static inline u32_t _arch_syscall_invoke4(u32_t arg1, u32_t arg2, u32_t arg3,
-					  u32_t arg4, u32_t call_id);
-
-static inline u32_t _arch_syscall_invoke3(u32_t arg1, u32_t arg2, u32_t arg3,
-					  u32_t call_id);
-
-static inline u32_t _arch_syscall_invoke2(u32_t arg1, u32_t arg2,
-					  u32_t call_id);
-
-static inline u32_t _arch_syscall_invoke1(u32_t arg1, u32_t call_id);
-
-static inline u32_t _arch_syscall_invoke0(u32_t call_id);
-#endif
-
 #ifdef _ARCH_EXCEPT
 /* This archtecture has direct support for triggering a CPU exception */
 #define _k_except_reason(reason)	_ARCH_EXCEPT(reason)
@@ -4106,6 +4129,132 @@ static inline char *K_THREAD_STACK_BUFFER(k_thread_stack_t sym)
 
 #endif /* _ARCH_DECLARE_STACK */
 
+/**
+ * @defgroup mem_domain_apis Memory domain APIs
+ * @ingroup kernel_apis
+ * @{
+ */
+
+/** @def MEM_PARTITION_ENTRY
+ *  @brief Used to declare a memory partition entry
+ */
+#define MEM_PARTITION_ENTRY(_start, _size, _attr) \
+	{\
+		.start = _start, \
+		.size = _size, \
+		.attr = _attr, \
+	}
+
+/** @def K_MEM_PARTITION_DEFINE
+ *  @brief Used to declare a memory partition
+ */
+#ifdef _ARCH_MEM_PARTITION_ALIGN_CHECK
+#define K_MEM_PARTITION_DEFINE(name, start, size, attr) \
+	_ARCH_MEM_PARTITION_ALIGN_CHECK(start, size); \
+	struct k_mem_partition name = \
+		MEM_PARTITION_ENTRY((u32_t)start, size, attr)
+#else
+#define K_MEM_PARTITION_DEFINE(name, start, size, attr) \
+	struct k_mem_partition name = \
+		MEM_PARTITION_ENTRY((u32_t)start, size, attr)
+#endif /* _ARCH_MEM_PARTITION_ALIGN_CHECK */
+
+
+/* memory partition */
+struct k_mem_partition {
+	/* start address of memory partition */
+	u32_t start;
+	/* size of memory partition */
+	u32_t size;
+	/* attribute of memory partition */
+	u32_t attr;
+};
+
+#if defined(CONFIG_USERSPACE)
+/* memory domian */
+struct k_mem_domain {
+	/* number of partitions in the domain */
+	u32_t num_partitions;
+	/* partitions in the domain */
+	struct k_mem_partition partitions[CONFIG_MAX_DOMAIN_PARTITIONS];
+	/* domain q */
+	sys_dlist_t mem_domain_q;
+};
+#endif /* CONFIG_USERSPACE */
+
+/**
+ * @brief Initialize a memory domain.
+ *
+ * Initialize a memory domain with given name and memory partitions.
+ *
+ * @param domain The memory domain to be initialized.
+ * @param num_parts The number of array items of "parts" parameter.
+ * @param parts An array of pointers to the memory partitions. Can be NULL
+ *              if num_parts is zero.
+ */
+
+extern void k_mem_domain_init(struct k_mem_domain *domain, u32_t num_parts,
+			      struct k_mem_partition *parts[]);
+/**
+ * @brief Destroy a memory domain.
+ *
+ * Destroy a memory domain.
+ *
+ * @param domain The memory domain to be destroyed.
+ */
+
+extern void k_mem_domain_destroy(struct k_mem_domain *domain);
+
+/**
+ * @brief Add a memory partition into a memory domain.
+ *
+ * Add a memory partition into a memory domain.
+ *
+ * @param domain The memory domain to be added a memory partition.
+ * @param part The memory partition to be added
+ */
+
+extern void k_mem_domain_add_partition(struct k_mem_domain *domain,
+				      struct k_mem_partition *part);
+
+/**
+ * @brief Remove a memory partition from a memory domain.
+ *
+ * Remove a memory partition from a memory domain.
+ *
+ * @param domain The memory domain to be removed a memory partition.
+ * @param part The memory partition to be removed
+ */
+
+extern void k_mem_domain_remove_partition(struct k_mem_domain *domain,
+					 struct k_mem_partition *part);
+
+/**
+ * @brief Add a thread into a memory domain.
+ *
+ * Add a thread into a memory domain.
+ *
+ * @param domain The memory domain that the thread is going to be added into.
+ * @param thread ID of thread going to be added into the memory domain.
+ */
+
+extern void k_mem_domain_add_thread(struct k_mem_domain *domain,
+				    k_tid_t thread);
+
+/**
+ * @brief Remove a thread from its memory domain.
+ *
+ * Remove a thread from its memory domain.
+ *
+ * @param thread ID of thread going to be removed from its memory domain.
+ */
+
+extern void k_mem_domain_remove_thread(k_tid_t thread);
+
+/**
+ * @} end defgroup mem_domain_apis
+ */
+
 #ifdef __cplusplus
 }
 #endif
@@ -4164,6 +4313,8 @@ inline void *operator new[](size_t size, void *ptr)
 }
 
 #endif /* defined(CONFIG_CPLUSPLUS) && defined(__cplusplus) */
+
+#include <syscalls/kernel.h>
 
 #endif /* !_ASMLANGUAGE */
 

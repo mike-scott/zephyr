@@ -831,8 +831,8 @@ int net_context_bind(struct net_context *context, const struct sockaddr *addr,
 #if defined(CONFIG_NET_IPV4)
 	if (addr->sa_family == AF_INET) {
 		struct sockaddr_in *addr4 = (struct sockaddr_in *)addr;
+		struct net_if *iface = NULL;
 		struct net_if_addr *ifaddr;
-		struct net_if *iface;
 		struct in_addr *ptr;
 		int ret;
 
@@ -840,7 +840,18 @@ int net_context_bind(struct net_context *context, const struct sockaddr *addr,
 			return -EINVAL;
 		}
 
-		if (addr4->sin_addr.s_addr == INADDR_ANY) {
+		if (net_is_ipv4_addr_mcast(&addr4->sin_addr)) {
+			struct net_if_mcast_addr *maddr;
+
+			maddr = net_if_ipv4_maddr_lookup(&addr4->sin_addr,
+							 &iface);
+			if (!maddr) {
+				return -ENOENT;
+			}
+
+			ptr = &maddr->address.in_addr;
+
+		} else if (addr4->sin_addr.s_addr == INADDR_ANY) {
 			iface = net_if_get_default();
 
 			ptr = (struct in_addr *)net_ipv4_unspecified_address();
@@ -2073,6 +2084,16 @@ static int sendto(struct net_pkt *pkt,
 	}
 #endif /* CONFIG_NET_TCP */
 
+#if defined(CONFIG_NET_UDP)
+	/* Bind default address and port only if UDP */
+	if (net_context_get_ip_proto(context) == IPPROTO_UDP) {
+		ret = bind_default(context);
+		if (ret) {
+			return ret;
+		}
+	}
+#endif /* CONFIG_NET_UDP */
+
 	if (!dst_addr) {
 		return -EDESTADDRREQ;
 	}
@@ -2310,6 +2331,11 @@ static int recv_udp(struct net_context *context,
 	if (context->conn_handler) {
 		net_conn_unregister(context->conn_handler);
 		context->conn_handler = NULL;
+	}
+
+	ret = bind_default(context);
+	if (ret) {
+		return ret;
 	}
 
 #if defined(CONFIG_NET_IPV6)

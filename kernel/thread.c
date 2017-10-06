@@ -270,7 +270,7 @@ void _setup_new_thread(struct k_thread *new_thread,
 	_k_object_init(new_thread);
 
 	/* Any given thread has access to itself */
-	k_object_grant_access(new_thread, new_thread);
+	k_object_access_grant(new_thread, new_thread);
 #endif
 }
 
@@ -500,13 +500,15 @@ void _k_thread_group_leave(u32_t groups, struct k_thread *thread)
 	thread_data->init_groups &= groups;
 }
 
-
-#ifdef CONFIG_USERSPACE
 FUNC_NORETURN void k_thread_user_mode_enter(k_thread_entry_t entry,
 					    void *p1, void *p2, void *p3)
 {
 	_current->base.user_options |= K_USER;
 	_thread_essential_clear();
+#ifdef CONFIG_USERSPACE
 	_arch_user_mode_enter(entry, p1, p2, p3);
+#else
+	/* XXX In this case we do not reset the stack */
+	_thread_entry(entry, p1, p2, p3);
+#endif
 }
-#endif /* CONFIG_USERSPACE */
