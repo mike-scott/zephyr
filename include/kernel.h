@@ -131,10 +131,10 @@ struct k_mem_partition;
  * function in kernel/userspace.c
  */
 enum k_objects {
+	K_OBJ_ANY,
+
 	/* Core kernel objects */
 	K_OBJ_ALERT,
-	K_OBJ_DELAYED_WORK,
-	K_OBJ_MEM_SLAB,
 	K_OBJ_MSGQ,
 	K_OBJ_MUTEX,
 	K_OBJ_PIPE,
@@ -142,8 +142,7 @@ enum k_objects {
 	K_OBJ_STACK,
 	K_OBJ_THREAD,
 	K_OBJ_TIMER,
-	K_OBJ_WORK,
-	K_OBJ_WORK_Q,
+	K_OBJ__THREAD_STACK_ELEMENT,
 
 	/* Driver subsystems */
 	K_OBJ_DRIVER_ADC,
@@ -176,34 +175,14 @@ enum k_objects {
  * _k_object_find() */
 struct _k_object {
 	char *name;
-	char perms[CONFIG_MAX_THREAD_BYTES];
-	char type;
-	char flags;
+	u8_t perms[CONFIG_MAX_THREAD_BYTES];
+	u8_t type;
+	u8_t flags;
+	u32_t data;
 } __packed;
 
 #define K_OBJ_FLAG_INITIALIZED	BIT(0)
-/**
- * Ensure a system object is a valid object of the expected type
- *
- * Searches for the object and ensures that it is indeed an object
- * of the expected type, that the caller has the right permissions on it,
- * and that the object has been initialized.
- *
- * This function is intended to be called on the kernel-side system
- * call handlers to validate kernel object pointers passed in from
- * userspace.
- *
- * @param obj Address of the kernel object
- * @param otype Expected type of the kernel object
- * @param init If true, this is for an init function and we will not error
- *	   out if the object is not initialized
- * @return 0 If the object is valid
- *         -EBADF if not a valid object of the specified type
- *         -EPERM If the caller does not have permissions
- *         -EINVAL Object is not initialized
- */
-int _k_object_validate(void *obj, enum k_objects otype, int init);
-
+#define K_OBJ_FLAG_PUBLIC	BIT(1)
 
 /**
  * Lookup a kernel object and init its metadata if it exists
@@ -216,15 +195,6 @@ int _k_object_validate(void *obj, enum k_objects otype, int init);
  */
 void _k_object_init(void *obj);
 #else
-static inline int _k_object_validate(void *obj, enum k_objects otype, int init)
-{
-	ARG_UNUSED(obj);
-	ARG_UNUSED(otype);
-	ARG_UNUSED(init);
-
-	return 0;
-}
-
 static inline void _k_object_init(void *obj)
 {
 	ARG_UNUSED(obj);
@@ -237,7 +207,14 @@ static inline void _impl_k_object_access_grant(void *object,
 	ARG_UNUSED(thread);
 }
 
-static inline void _impl_k_object_access_all_grant(void *object)
+static inline void _impl_k_object_access_revoke(void *object,
+						struct k_thread *thread)
+{
+	ARG_UNUSED(object);
+	ARG_UNUSED(thread);
+}
+
+static inline void k_object_access_all_grant(void *object)
 {
 	ARG_UNUSED(object);
 }
@@ -248,13 +225,24 @@ static inline void _impl_k_object_access_all_grant(void *object)
  *
  * The thread will be granted access to the object if the caller is from
  * supervisor mode, or the caller is from user mode AND has permissions
- * on the object already.
+ * on both the object and the thread whose access is being granted.
  *
  * @param object Address of kernel object
  * @param thread Thread to grant access to the object
  */
 __syscall void k_object_access_grant(void *object, struct k_thread *thread);
 
+/**
+ * grant a thread access to a kernel object
+ *
+ * The thread will lose access to the object if the caller is from
+ * supervisor mode, or the caller is from user mode AND has permissions
+ * on both the object and the thread whose access is being revoked.
+ *
+ * @param object Address of kernel object
+ * @param thread Thread to remove access to the object
+ */
+__syscall void k_object_access_revoke(void *object, struct k_thread *thread);
 
 /**
  * grant all present and future threads access to an object
@@ -268,9 +256,32 @@ __syscall void k_object_access_grant(void *object, struct k_thread *thread);
  * as it is possible for such code to derive the addresses of kernel objects
  * and perform unwanted operations on them.
  *
+ * It is not possible to revoke permissions on public objects; once public,
+ * any thread may use it.
+ *
  * @param object Address of kernel object
  */
-__syscall void k_object_access_all_grant(void *object);
+void k_object_access_all_grant(void *object);
+
+/* Using typedef deliberately here, this is quite intended to be an opaque
+ * type. K_THREAD_STACK_BUFFER() should be used to access the data within.
+ *
+ * The purpose of this data type is to clearly distinguish between the
+ * declared symbol for a stack (of type k_thread_stack_t) and the underlying
+ * buffer which composes the stack data actually used by the underlying
+ * thread; they cannot be used interchangably as some arches precede the
+ * stack buffer region with guard areas that trigger a MPU or MMU fault
+ * if written to.
+ *
+ * APIs that want to work with the buffer inside should continue to use
+ * char *.
+ *
+ * Stacks should always be created with K_THREAD_STACK_DEFINE().
+ */
+struct __packed _k_thread_stack_element {
+	char data;
+};
+typedef struct _k_thread_stack_element k_thread_stack_t;
 
 /* timeouts */
 
@@ -433,6 +444,8 @@ struct k_thread {
 #if defined(CONFIG_USERSPACE)
 	/* memory domain info of the thread */
 	struct _mem_domain_info mem_domain_info;
+	/* Base address of thread stack */
+	k_thread_stack_t *stack_obj;
 #endif /* CONFIG_USERSPACE */
 
 	/* arch-specifics: must always be at the end */
@@ -504,6 +517,12 @@ extern void k_call_stacks_analyze(void);
  */
 #define K_USER (1 << 2)
 
+/* Indicates that the thread being created should inherit all kernel object
+ * permissions from the thread that created it. No effect if CONFIG_USERSPACE
+ * is not enabled.
+ */
+#define K_INHERIT_PERMS (1 << 3)
+
 #ifdef CONFIG_X86
 /* x86 Bitmask definitions for threads user options */
 
@@ -516,28 +535,6 @@ extern void k_call_stacks_analyze(void);
 /* end - thread options */
 
 #if !defined(_ASMLANGUAGE)
-
-/* Using typedef deliberately here, this is quite intended to be an opaque
- * type. K_THREAD_STACK_BUFFER() should be used to access the data within.
- *
- * The purpose of this data type is to clearly distinguish between the
- * declared symbol for a stack (of type k_thread_stack_t) and the underlying
- * buffer which composes the stack data actually used by the underlying
- * thread; they cannot be used interchangably as some arches precede the
- * stack buffer region with guard areas that trigger a MPU or MMU fault
- * if written to.
- *
- * APIs that want to work with the buffer inside should continue to use
- * char *.
- *
- * Stacks should always be created with K_THREAD_STACK_DEFINE().
- */
-struct __packed _k_thread_stack_element {
-	char data;
-};
-typedef struct _k_thread_stack_element *k_thread_stack_t;
-
-
 /**
  * @brief Create a thread.
  *
@@ -570,12 +567,12 @@ typedef struct _k_thread_stack_element *k_thread_stack_t;
  *
  * @return ID of new thread.
  */
-extern k_tid_t k_thread_create(struct k_thread *new_thread,
-			       k_thread_stack_t stack,
-			       size_t stack_size,
-			       k_thread_entry_t entry,
-			       void *p1, void *p2, void *p3,
-			       int prio, u32_t options, s32_t delay);
+__syscall k_tid_t k_thread_create(struct k_thread *new_thread,
+				  k_thread_stack_t *stack,
+				  size_t stack_size,
+				  k_thread_entry_t entry,
+				  void *p1, void *p2, void *p3,
+				  int prio, u32_t options, s32_t delay);
 
 /**
  * @brief Drop a thread's privileges permanently to user mode
@@ -599,7 +596,7 @@ extern FUNC_NORETURN void k_thread_user_mode_enter(k_thread_entry_t entry,
  *
  * @return N/A
  */
-extern void k_sleep(s32_t duration);
+__syscall void k_sleep(s32_t duration);
 
 /**
  * @brief Cause the current thread to busy wait.
@@ -620,7 +617,7 @@ extern void k_busy_wait(u32_t usec_to_wait);
  *
  * @return N/A
  */
-extern void k_yield(void);
+__syscall void k_yield(void);
 
 /**
  * @brief Wake up a sleeping thread.
@@ -633,14 +630,14 @@ extern void k_yield(void);
  *
  * @return N/A
  */
-extern void k_wakeup(k_tid_t thread);
+__syscall void k_wakeup(k_tid_t thread);
 
 /**
  * @brief Get thread ID of the current thread.
  *
  * @return ID of current thread.
  */
-extern k_tid_t k_current_get(void);
+__syscall k_tid_t k_current_get(void);
 
 /**
  * @brief Cancel thread performing a delayed start.
@@ -653,7 +650,7 @@ extern k_tid_t k_current_get(void);
  * @retval 0 Thread spawning canceled.
  * @retval -EINVAL Thread has already started executing.
  */
-extern int k_thread_cancel(k_tid_t thread);
+__syscall int k_thread_cancel(k_tid_t thread);
 
 /**
  * @brief Abort a thread.
@@ -669,7 +666,7 @@ extern int k_thread_cancel(k_tid_t thread);
  *
  * @return N/A
  */
-extern void k_thread_abort(k_tid_t thread);
+__syscall void k_thread_abort(k_tid_t thread);
 
 
 /**
@@ -681,7 +678,7 @@ extern void k_thread_abort(k_tid_t thread);
  *
  * @param thread thread to start
  */
-extern void k_thread_start(k_tid_t thread);
+__syscall void k_thread_start(k_tid_t thread);
 
 /**
  * @cond INTERNAL_HIDDEN
@@ -695,7 +692,7 @@ extern void k_thread_start(k_tid_t thread);
 
 struct _static_thread_data {
 	struct k_thread *init_thread;
-	k_thread_stack_t init_stack;
+	k_thread_stack_t *init_stack;
 	unsigned int init_stack_size;
 	k_thread_entry_t init_entry;
 	void *init_p1;
@@ -779,7 +776,7 @@ struct _static_thread_data {
  *
  * @return Priority of @a thread.
  */
-extern int  k_thread_priority_get(k_tid_t thread);
+__syscall int k_thread_priority_get(k_tid_t thread);
 
 /**
  * @brief Set a thread's priority.
@@ -808,7 +805,7 @@ extern int  k_thread_priority_get(k_tid_t thread);
  *
  * @return N/A
  */
-extern void k_thread_priority_set(k_tid_t thread, int prio);
+__syscall void k_thread_priority_set(k_tid_t thread, int prio);
 
 /**
  * @brief Suspend a thread.
@@ -824,7 +821,7 @@ extern void k_thread_priority_set(k_tid_t thread, int prio);
  *
  * @return N/A
  */
-extern void k_thread_suspend(k_tid_t thread);
+__syscall void k_thread_suspend(k_tid_t thread);
 
 /**
  * @brief Resume a suspended thread.
@@ -838,7 +835,7 @@ extern void k_thread_suspend(k_tid_t thread);
  *
  * @return N/A
  */
-extern void k_thread_resume(k_tid_t thread);
+__syscall void k_thread_resume(k_tid_t thread);
 
 /**
  * @brief Set time-slicing period and scope.
@@ -908,7 +905,7 @@ extern int k_is_in_isr(void);
  * @return 0 if invoked by an ISR or by a cooperative thread.
  * @return Non-zero if invoked by a preemptible thread.
  */
-extern int k_is_preempt_thread(void);
+__syscall int k_is_preempt_thread(void);
 
 /**
  * @} end addtogroup isr_apis
@@ -963,7 +960,7 @@ extern void k_sched_unlock(void);
  *
  * @return N/A
  */
-extern void k_thread_custom_data_set(void *value);
+__syscall void k_thread_custom_data_set(void *value);
 
 /**
  * @brief Get current thread's custom data.
@@ -972,7 +969,7 @@ extern void k_thread_custom_data_set(void *value);
  *
  * @return Current custom data value.
  */
-extern void *k_thread_custom_data_get(void);
+__syscall void *k_thread_custom_data_get(void);
 
 /**
  * @} end addtogroup thread_apis
@@ -1243,8 +1240,8 @@ extern void k_timer_init(struct k_timer *timer,
  *
  * @return N/A
  */
-extern void k_timer_start(struct k_timer *timer,
-			  s32_t duration, s32_t period);
+__syscall void k_timer_start(struct k_timer *timer,
+			     s32_t duration, s32_t period);
 
 /**
  * @brief Stop a timer.
@@ -1262,7 +1259,7 @@ extern void k_timer_start(struct k_timer *timer,
  *
  * @return N/A
  */
-extern void k_timer_stop(struct k_timer *timer);
+__syscall void k_timer_stop(struct k_timer *timer);
 
 /**
  * @brief Read timer status.
@@ -1276,7 +1273,7 @@ extern void k_timer_stop(struct k_timer *timer);
  *
  * @return Timer status.
  */
-extern u32_t k_timer_status_get(struct k_timer *timer);
+__syscall u32_t k_timer_status_get(struct k_timer *timer);
 
 /**
  * @brief Synchronize thread to timer expiration.
@@ -1295,7 +1292,7 @@ extern u32_t k_timer_status_get(struct k_timer *timer);
  *
  * @return Timer status.
  */
-extern u32_t k_timer_status_sync(struct k_timer *timer);
+__syscall u32_t k_timer_status_sync(struct k_timer *timer);
 
 /**
  * @brief Get time remaining before a timer next expires.
@@ -1307,7 +1304,9 @@ extern u32_t k_timer_status_sync(struct k_timer *timer);
  *
  * @return Remaining time (in milliseconds).
  */
-static inline s32_t k_timer_remaining_get(struct k_timer *timer)
+__syscall s32_t k_timer_remaining_get(struct k_timer *timer);
+
+static inline s32_t _impl_k_timer_remaining_get(struct k_timer *timer)
 {
 	return _timeout_remaining_get(&timer->timeout);
 }
@@ -1326,8 +1325,10 @@ static inline s32_t k_timer_remaining_get(struct k_timer *timer)
  *
  * @return N/A
  */
-static inline void k_timer_user_data_set(struct k_timer *timer,
-					 void *user_data)
+__syscall void k_timer_user_data_set(struct k_timer *timer, void *user_data);
+
+static inline void _impl_k_timer_user_data_set(struct k_timer *timer,
+					       void *user_data)
 {
 	timer->user_data = user_data;
 }
@@ -1339,7 +1340,9 @@ static inline void k_timer_user_data_set(struct k_timer *timer,
  *
  * @return The user data.
  */
-static inline void *k_timer_user_data_get(struct k_timer *timer)
+__syscall void *k_timer_user_data_get(struct k_timer *timer);
+
+static inline void *_impl_k_timer_user_data_get(struct k_timer *timer)
 {
 	return timer->user_data;
 }
@@ -1361,7 +1364,7 @@ static inline void *k_timer_user_data_get(struct k_timer *timer)
  *
  * @return Current uptime.
  */
-extern s64_t k_uptime_get(void);
+__syscall s64_t k_uptime_get(void);
 
 #ifdef CONFIG_TICKLESS_KERNEL
 /**
@@ -1414,7 +1417,7 @@ static inline void k_disable_sys_clock_always_on(void)
  *
  * @return Current uptime.
  */
-extern u32_t k_uptime_get_32(void);
+__syscall u32_t k_uptime_get_32(void);
 
 /**
  * @brief Get elapsed time.
@@ -2026,8 +2029,8 @@ struct k_stack {
  *
  * @return N/A
  */
-extern void k_stack_init(struct k_stack *stack,
-			 u32_t *buffer, int num_entries);
+__syscall void k_stack_init(struct k_stack *stack,
+			    u32_t *buffer, unsigned int num_entries);
 
 /**
  * @brief Push an element onto a stack.
@@ -2041,7 +2044,7 @@ extern void k_stack_init(struct k_stack *stack,
  *
  * @return N/A
  */
-extern void k_stack_push(struct k_stack *stack, u32_t data);
+__syscall void k_stack_push(struct k_stack *stack, u32_t data);
 
 /**
  * @brief Pop an element from a stack.
@@ -2060,7 +2063,7 @@ extern void k_stack_push(struct k_stack *stack, u32_t data);
  * @retval -EBUSY Returned without waiting.
  * @retval -EAGAIN Waiting period timed out.
  */
-extern int k_stack_pop(struct k_stack *stack, u32_t *data, s32_t timeout);
+__syscall int k_stack_pop(struct k_stack *stack, u32_t *data, s32_t timeout);
 
 /**
  * @brief Statically define and initialize a stack
@@ -2241,7 +2244,7 @@ static inline int k_work_pending(struct k_work *work)
  * @return N/A
  */
 extern void k_work_q_start(struct k_work_q *work_q,
-			   k_thread_stack_t stack,
+			   k_thread_stack_t *stack,
 			   size_t stack_size, int prio);
 
 /**
@@ -2454,7 +2457,7 @@ struct k_mutex {
  *
  * @return N/A
  */
-extern void k_mutex_init(struct k_mutex *mutex);
+__syscall void k_mutex_init(struct k_mutex *mutex);
 
 /**
  * @brief Lock a mutex.
@@ -2474,7 +2477,7 @@ extern void k_mutex_init(struct k_mutex *mutex);
  * @retval -EBUSY Returned without waiting.
  * @retval -EAGAIN Waiting period timed out.
  */
-extern int k_mutex_lock(struct k_mutex *mutex, s32_t timeout);
+__syscall int k_mutex_lock(struct k_mutex *mutex, s32_t timeout);
 
 /**
  * @brief Unlock a mutex.
@@ -2490,7 +2493,7 @@ extern int k_mutex_lock(struct k_mutex *mutex, s32_t timeout);
  *
  * @return N/A
  */
-extern void k_mutex_unlock(struct k_mutex *mutex);
+__syscall void k_mutex_unlock(struct k_mutex *mutex);
 
 /**
  * @} end defgroup mutex_apis
@@ -2747,7 +2750,7 @@ extern void k_alert_init(struct k_alert *alert, k_alert_handler_t handler,
  * @retval -EBUSY Returned without waiting.
  * @retval -EAGAIN Waiting period timed out.
  */
-extern int k_alert_recv(struct k_alert *alert, s32_t timeout);
+__syscall int k_alert_recv(struct k_alert *alert, s32_t timeout);
 
 /**
  * @brief Signal an alert.
@@ -2763,7 +2766,7 @@ extern int k_alert_recv(struct k_alert *alert, s32_t timeout);
  *
  * @return N/A
  */
-extern void k_alert_send(struct k_alert *alert);
+__syscall void k_alert_send(struct k_alert *alert);
 
 /**
  * @} end addtogroup alert_apis
@@ -2856,8 +2859,8 @@ struct k_msgq {
  *
  * @return N/A
  */
-extern void k_msgq_init(struct k_msgq *q, char *buffer,
-			size_t msg_size, u32_t max_msgs);
+__syscall void k_msgq_init(struct k_msgq *q, char *buffer,
+			   size_t msg_size, u32_t max_msgs);
 
 /**
  * @brief Send a message to a message queue.
@@ -2875,7 +2878,7 @@ extern void k_msgq_init(struct k_msgq *q, char *buffer,
  * @retval -ENOMSG Returned without waiting or queue purged.
  * @retval -EAGAIN Waiting period timed out.
  */
-extern int k_msgq_put(struct k_msgq *q, void *data, s32_t timeout);
+__syscall int k_msgq_put(struct k_msgq *q, void *data, s32_t timeout);
 
 /**
  * @brief Receive a message from a message queue.
@@ -2894,7 +2897,7 @@ extern int k_msgq_put(struct k_msgq *q, void *data, s32_t timeout);
  * @retval -ENOMSG Returned without waiting.
  * @retval -EAGAIN Waiting period timed out.
  */
-extern int k_msgq_get(struct k_msgq *q, void *data, s32_t timeout);
+__syscall int k_msgq_get(struct k_msgq *q, void *data, s32_t timeout);
 
 /**
  * @brief Purge a message queue.
@@ -2907,7 +2910,7 @@ extern int k_msgq_get(struct k_msgq *q, void *data, s32_t timeout);
  *
  * @return N/A
  */
-extern void k_msgq_purge(struct k_msgq *q);
+__syscall void k_msgq_purge(struct k_msgq *q);
 
 /**
  * @brief Get the amount of free space in a message queue.
@@ -2919,7 +2922,9 @@ extern void k_msgq_purge(struct k_msgq *q);
  *
  * @return Number of unused ring buffer entries.
  */
-static inline u32_t k_msgq_num_free_get(struct k_msgq *q)
+__syscall u32_t k_msgq_num_free_get(struct k_msgq *q);
+
+static inline u32_t _impl_k_msgq_num_free_get(struct k_msgq *q)
 {
 	return q->max_msgs - q->used_msgs;
 }
@@ -2933,7 +2938,9 @@ static inline u32_t k_msgq_num_free_get(struct k_msgq *q)
  *
  * @return Number of messages.
  */
-static inline u32_t k_msgq_num_used_get(struct k_msgq *q)
+__syscall u32_t k_msgq_num_used_get(struct k_msgq *q);
+
+static inline u32_t _impl_k_msgq_num_used_get(struct k_msgq *q)
 {
 	return q->used_msgs;
 }
@@ -3239,8 +3246,8 @@ struct k_pipe {
  *
  * @return N/A
  */
-extern void k_pipe_init(struct k_pipe *pipe, unsigned char *buffer,
-			size_t size);
+__syscall void k_pipe_init(struct k_pipe *pipe, unsigned char *buffer,
+			   size_t size);
 
 /**
  * @brief Write data to a pipe.
@@ -3261,9 +3268,9 @@ extern void k_pipe_init(struct k_pipe *pipe, unsigned char *buffer,
  * @retval -EAGAIN Waiting period timed out; between zero and @a min_xfer
  *                 minus one data bytes were written.
  */
-extern int k_pipe_put(struct k_pipe *pipe, void *data,
-		      size_t bytes_to_write, size_t *bytes_written,
-		      size_t min_xfer, s32_t timeout);
+__syscall int k_pipe_put(struct k_pipe *pipe, void *data,
+			 size_t bytes_to_write, size_t *bytes_written,
+			 size_t min_xfer, s32_t timeout);
 
 /**
  * @brief Read data from a pipe.
@@ -3284,9 +3291,9 @@ extern int k_pipe_put(struct k_pipe *pipe, void *data,
  * @retval -EAGAIN Waiting period timed out; between zero and @a min_xfer
  *                 minus one data bytes were read.
  */
-extern int k_pipe_get(struct k_pipe *pipe, void *data,
-		      size_t bytes_to_read, size_t *bytes_read,
-		      size_t min_xfer, s32_t timeout);
+__syscall int k_pipe_get(struct k_pipe *pipe, void *data,
+			 size_t bytes_to_read, size_t *bytes_read,
+			 size_t min_xfer, s32_t timeout);
 
 /**
  * @brief Write memory block to a pipe.
@@ -4024,13 +4031,24 @@ extern void _timer_expiration_handler(struct _timeout *t);
  * for properly declaring stacks, compatible with MMU/MPU constraints if
  * enabled
  */
+
+/**
+ * @brief Obtain an extern reference to a stack
+ *
+ * This macro properly brings the symbol of a thread stack declared
+ * elsewhere into scope.
+ *
+ * @param sym Thread stack symbol name
+ */
+#define K_THREAD_STACK_EXTERN(sym) extern k_thread_stack_t sym[]
+
 #ifdef _ARCH_THREAD_STACK_DEFINE
 #define K_THREAD_STACK_DEFINE(sym, size) _ARCH_THREAD_STACK_DEFINE(sym, size)
 #define K_THREAD_STACK_ARRAY_DEFINE(sym, nmemb, size) \
 		_ARCH_THREAD_STACK_ARRAY_DEFINE(sym, nmemb, size)
 #define K_THREAD_STACK_MEMBER(sym, size) _ARCH_THREAD_STACK_MEMBER(sym, size)
 #define K_THREAD_STACK_SIZEOF(sym) _ARCH_THREAD_STACK_SIZEOF(sym)
-static inline char *K_THREAD_STACK_BUFFER(k_thread_stack_t sym)
+static inline char *K_THREAD_STACK_BUFFER(k_thread_stack_t *sym)
 {
 	return _ARCH_THREAD_STACK_BUFFER(sym);
 }
@@ -4122,7 +4140,7 @@ static inline char *K_THREAD_STACK_BUFFER(k_thread_stack_t sym)
  * @param sym Declared stack symbol name
  * @return The buffer itself, a char *
  */
-static inline char *K_THREAD_STACK_BUFFER(k_thread_stack_t sym)
+static inline char *K_THREAD_STACK_BUFFER(k_thread_stack_t *sym)
 {
 	return (char *)sym;
 }
@@ -4254,6 +4272,14 @@ extern void k_mem_domain_remove_thread(k_tid_t thread);
 /**
  * @} end defgroup mem_domain_apis
  */
+
+/**
+ * @brief Emit a character buffer to the console device
+ *
+ * @param c String of characters to print
+ * @param n The length of the string
+ */
+__syscall void k_str_out(char *c, size_t n);
 
 #ifdef __cplusplus
 }

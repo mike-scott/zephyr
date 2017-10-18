@@ -50,18 +50,22 @@ static inline int _is_idle_thread_ptr(k_tid_t thread)
 }
 
 #ifdef CONFIG_MULTITHREADING
-#define _ASSERT_VALID_PRIO(prio, entry_point) do { \
-	__ASSERT(((prio) == K_IDLE_PRIO && _is_idle_thread(entry_point)) || \
+#define _VALID_PRIO(prio, entry_point) \
+	(((prio) == K_IDLE_PRIO && _is_idle_thread(entry_point)) || \
 		 (_is_prio_higher_or_equal((prio), \
 			K_LOWEST_APPLICATION_THREAD_PRIO) && \
 		  _is_prio_lower_or_equal((prio), \
-			K_HIGHEST_APPLICATION_THREAD_PRIO)), \
+			K_HIGHEST_APPLICATION_THREAD_PRIO)))
+
+#define _ASSERT_VALID_PRIO(prio, entry_point) do { \
+	__ASSERT(_VALID_PRIO((prio), (entry_point)), \
 		 "invalid priority (%d); allowed range: %d to %d", \
 		 (prio), \
 		 K_LOWEST_APPLICATION_THREAD_PRIO, \
 		 K_HIGHEST_APPLICATION_THREAD_PRIO); \
 	} while ((0))
 #else
+#define _VALID_PRIO(prio, entry_point) ((prio) == -1)
 #define _ASSERT_VALID_PRIO(prio, entry_point) __ASSERT((prio) == -1, "")
 #endif
 
@@ -424,20 +428,6 @@ static inline void _ready_thread(struct k_thread *thread)
 
 #ifdef CONFIG_KERNEL_EVENT_LOGGER_THREAD
 	_sys_k_event_logger_thread_ready(thread);
-#endif
-}
-
-/**
- * @brief Mark thread as dead
- *
- * This routine must be called with interrupts locked.
- */
-static inline void _mark_thread_as_dead(struct k_thread *thread)
-{
-	thread->base.thread_state |= _THREAD_DEAD;
-
-#ifdef CONFIG_KERNEL_EVENT_LOGGER_THREAD
-	_sys_k_event_logger_thread_exit(thread);
 #endif
 }
 

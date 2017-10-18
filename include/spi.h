@@ -128,7 +128,8 @@ extern "C" {
  * This can be used to control a CS line via a GPIO line, instead of
  * using the controller inner CS logic.
  *
- * @param gpio_dev is a valid pointer to an actual GPIO device
+ * @param gpio_dev is a valid pointer to an actual GPIO device. A NULL pointer
+ *        can be provided to full inhibit CS control if necessary.
  * @param gpio_pin is a number representing the gpio PIN that will be used
  *    to act as a CS line
  * @param delay is a delay in microseconds to wait before starting the
@@ -155,7 +156,6 @@ struct spi_cs_control {
  *     cs_hold             [ 13 ]      - Hold on the CS line if possible.
  *     lock_on             [ 14 ]      - Keep resource locked for the caller.
  *     eeprom              [ 15 ]      - EEPROM mode.
- * @param vendor is a vendor specific bitfield
  * @param slave is the slave number from 0 to host controller slave limit.
  * @param cs is a valid pointer on a struct spi_cs_control is CS line is
  *    emulated through a gpio line, or NULL otherwise.
@@ -168,7 +168,6 @@ struct spi_config {
 
 	u32_t		frequency;
 	u16_t		operation;
-	u16_t		vendor;
 	u16_t		slave;
 
 	struct spi_cs_control *cs;

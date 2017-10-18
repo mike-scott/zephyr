@@ -68,6 +68,7 @@ static u16_t msg_cache_next;
 
 /* Singleton network context (the implementation only supports one) */
 struct bt_mesh_net bt_mesh = {
+	.local_queue = _K_FIFO_INITIALIZER(bt_mesh.local_queue),
 	.sub = {
 		[0 ... (CONFIG_BT_MESH_SUBNET_COUNT - 1)] = {
 			.net_idx = BT_MESH_KEY_UNUSED,
@@ -470,6 +471,26 @@ int bt_mesh_net_create(u16_t idx, u8_t flags, const u8_t key[16],
 	return 0;
 }
 
+void bt_mesh_net_revoke_keys(struct bt_mesh_subnet *sub)
+{
+	int i;
+
+	BT_DBG("idx 0x%04x", sub->net_idx);
+
+	memcpy(&sub->keys[0], &sub->keys[1], sizeof(sub->keys[0]));
+
+	for (i = 0; i < ARRAY_SIZE(bt_mesh.app_keys); i++) {
+		struct bt_mesh_app_key *key = &bt_mesh.app_keys[i];
+
+		if (key->net_idx != sub->net_idx || !key->updated) {
+			continue;
+		}
+
+		memcpy(&key->keys[0], &key->keys[1], sizeof(key->keys[0]));
+		key->updated = false;
+	}
+}
+
 bool bt_mesh_kr_update(struct bt_mesh_subnet *sub, u8_t new_kr, bool new_key)
 {
 	if (new_kr != sub->kr_flag && sub->kr_phase == BT_MESH_KR_NORMAL) {
@@ -501,8 +522,7 @@ bool bt_mesh_kr_update(struct bt_mesh_subnet *sub, u8_t new_kr, bool new_key)
 		 */
 		case BT_MESH_KR_PHASE_2:
 			BT_DBG("KR Phase 0x%02x -> Normal", sub->kr_phase);
-			memcpy(&sub->keys[0], &sub->keys[1],
-			       sizeof(sub->keys[0]));
+			bt_mesh_net_revoke_keys(sub);
 			if (IS_ENABLED(CONFIG_BT_MESH_LOW_POWER) ||
 			    IS_ENABLED(CONFIG_BT_MESH_FRIEND)) {
 				bt_mesh_friend_cred_refresh(sub->net_idx);
