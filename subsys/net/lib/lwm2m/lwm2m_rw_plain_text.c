@@ -187,16 +187,16 @@ static size_t put_float64fix(struct lwm2m_output_context *out,
 
 static size_t put_string(struct lwm2m_output_context *out,
 			 struct lwm2m_obj_path *path,
-			 const char *value, size_t strlen)
+			 char *buf, size_t buflen)
 {
-	if (strlen >= (out->outsize - out->outlen)) {
+	if (buflen >= (out->outsize - out->outlen)) {
 		return 0;
 	}
 
-	memmove(&out->outbuf[out->outlen], value, strlen);
-	out->outbuf[strlen] = '\0';
-	out->outlen += strlen;
-	return strlen;
+	memmove(&out->outbuf[out->outlen], buf, buflen);
+	out->outbuf[buflen] = '\0';
+	out->outlen += buflen;
+	return buflen;
 }
 
 static size_t put_bool(struct lwm2m_output_context *out,
@@ -237,7 +237,6 @@ static size_t get_s32(struct lwm2m_input_context *in, s32_t *value)
 		*value = -*value;
 	}
 
-	in->last_value_len = i;
 	return i;
 }
 
@@ -261,21 +260,19 @@ static size_t get_s64(struct lwm2m_input_context *in, s64_t *value)
 		*value = -*value;
 	}
 
-	in->last_value_len = i;
 	return i;
 }
 
 static size_t get_string(struct lwm2m_input_context *in,
-			 u8_t *value, size_t strlen)
+			 u8_t *value, size_t buflen)
 {
 	/* The outbuffer can't contain the full string including ending zero */
-	if (strlen <= in->insize) {
+	if (buflen <= in->insize) {
 		return 0;
 	}
 
 	memcpy(value, in->inbuf, in->insize);
 	value[in->insize] = '\0';
-	in->last_value_len = in->insize;
 	return in->insize;
 }
 
@@ -314,7 +311,6 @@ static size_t get_float32fix(struct lwm2m_input_context *in,
 		value->val1 = -value->val1;
 	}
 
-	in->last_value_len = i;
 	return i;
 }
 
@@ -353,7 +349,6 @@ static size_t get_float64fix(struct lwm2m_input_context *in,
 		value->val1 = -value->val1;
 	}
 
-	in->last_value_len = i;
 	return i;
 }
 
@@ -363,7 +358,6 @@ static size_t get_bool(struct lwm2m_input_context *in,
 	if (in->insize > 0) {
 		if (*in->inbuf == '1' || *in->inbuf == '0') {
 			*value = (*in->inbuf == '1') ? true : false;
-			in->last_value_len = 1;
 			return 1;
 		}
 	}

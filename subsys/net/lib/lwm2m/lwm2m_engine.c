@@ -687,37 +687,39 @@ static u16_t atou16(u8_t *buf, u16_t buflen, u16_t *len)
 	return val;
 }
 
-static void zoap_options_to_path(struct zoap_option *opt, int options_count,
+static int zoap_options_to_path(struct zoap_option *opt, int options_count,
 				 struct lwm2m_obj_path *path)
 {
 	u16_t len;
 
 	path->level = options_count;
 	path->obj_id = atou16(opt[0].value, opt[0].len, &len);
-	if (len == 0) {
+	if (len == 0 || opt[0].len != len) {
 		path->level = 0;
 	}
 
 	if (path->level > 1) {
 		path->obj_inst_id = atou16(opt[1].value, opt[1].len, &len);
-		if (len == 0) {
+		if (len == 0 || opt[1].len != len) {
 			path->level = 1;
 		}
 	}
 
 	if (path->level > 2) {
 		path->res_id = atou16(opt[2].value, opt[2].len, &len);
-		if (len == 0) {
+		if (len == 0 || opt[2].len != len) {
 			path->level = 2;
 		}
 	}
 
 	if (path->level > 3) {
 		path->res_inst_id = atou16(opt[3].value, opt[3].len, &len);
-		if (len == 0) {
+		if (len == 0 || opt[3].len != len) {
 			path->level = 3;
 		}
 	}
+
+	return options_count == path->level ? 0 : -EINVAL;
 }
 
 static struct lwm2m_message *find_msg(struct zoap_pending *pending,
@@ -1486,9 +1488,9 @@ static int lwm2m_engine_get(char *pathstr, void *buf, u16_t buflen)
 	return 0;
 }
 
-int lwm2m_engine_get_string(char *pathstr, void *str, u16_t strlen)
+int lwm2m_engine_get_string(char *pathstr, void *buf, u16_t buflen)
 {
-	return lwm2m_engine_get(pathstr, str, strlen);
+	return lwm2m_engine_get(pathstr, buf, buflen);
 }
 
 u8_t lwm2m_engine_get_u8(char *pathstr)
@@ -2288,18 +2290,38 @@ static int handle_request(struct zoap_packet *request,
 	in.reader = &plain_text_reader;
 	out.writer = &plain_text_writer;
 
+	code = zoap_header_get_code(in.in_zpkt);
+
 	/* parse the URL path into components */
 	r = zoap_find_options(in.in_zpkt, ZOAP_OPTION_URI_PATH, options, 4);
-	if (r > 0) {
-		/* check for .well-known/core URI query (DISCOVER) */
-		if (r == 2 &&
-		    (options[0].len == 11 &&
-		     strncmp(options[0].value, ".well-known", 11) == 0) &&
-		    (options[1].len == 4 &&
-		     strncmp(options[1].value, "core", 4) == 0)) {
-			discover = true;
-		} else {
-			zoap_options_to_path(options, r, &path);
+	if (r <= 0) {
+		/* '/' is used by bootstrap-delete only */
+
+		/*
+		 * TODO: Handle bootstrap deleted --
+		 * re-add when DTLS support ready
+		 */
+		r = -EPERM;
+		goto error;
+	}
+
+	/* check for .well-known/core URI query (DISCOVER) */
+	if (r == 2 &&
+	    (options[0].len == 11 &&
+	     strncmp(options[0].value, ".well-known", 11) == 0) &&
+	    (options[1].len == 4 &&
+	     strncmp(options[1].value, "core", 4) == 0)) {
+		if ((code & ZOAP_REQUEST_MASK) != ZOAP_METHOD_GET) {
+			r = -EPERM;
+			goto error;
+		}
+
+		discover = true;
+	} else {
+		r = zoap_options_to_path(options, r, &path);
+		if (r < 0) {
+			r = -ENOENT;
+			goto error;
 		}
 	}
 
@@ -2322,15 +2344,12 @@ static int handle_request(struct zoap_packet *request,
 		accept = LWM2M_FORMAT_OMA_TLV;
 	}
 
-	/* TODO: Handle bootstrap deleted -- re-add when DTLS support ready */
-
-	code = zoap_header_get_code(in.in_zpkt);
-
 	/* find registered obj */
 	obj = get_engine_obj(path.obj_id);
 	if (!obj) {
 		/* No matching object found - ignore request */
-		return -ENOENT;
+		r = -ENOENT;
+		goto error;
 	}
 
 	format = select_reader(&in, format);
@@ -2475,7 +2494,7 @@ static int handle_request(struct zoap_packet *request,
 
 	default:
 		SYS_LOG_ERR("Unknown operation: %u", context.operation);
-		return -EINVAL;
+		r = -EINVAL;
 	}
 
 	if (r) {

@@ -1009,15 +1009,27 @@ static void net_app_cb(struct net_app_ctx *ctx, void *user_data)
 
 #if defined(CONFIG_NET_APP_SERVER)
 #if defined(CONFIG_NET_TCP)
-	if (ctx->server.net_ctx) {
-		get_addresses(ctx->server.net_ctx,
-			      addr_local, sizeof(addr_local),
-			      addr_remote, sizeof(addr_remote));
+	{
+		int i, found = 0;
 
-		printk("     Active: %16s <- %16s\n",
-		       addr_local, addr_remote);
-	} else {
-		printk("     No active connections to this server.\n");
+		for (i = 0; i < CONFIG_NET_APP_SERVER_NUM_CONN; i++) {
+			if (!ctx->server.net_ctxs[i] ||
+			    !net_context_is_used(ctx->server.net_ctxs[i])) {
+				continue;
+			}
+
+			get_addresses(ctx->server.net_ctxs[i],
+				      addr_local, sizeof(addr_local),
+				      addr_remote, sizeof(addr_remote));
+
+			printk("     Active: %16s <- %16s\n",
+			       addr_local, addr_remote);
+			found++;
+		}
+
+		if (!found) {
+			printk("     No active connections to this server.\n");
+		}
 	}
 #else
 	printk("     TCP not enabled for this server.\n");
@@ -2097,6 +2109,8 @@ int net_shell_cmd_rpl(int argc, char *argv[])
 #if defined(CONFIG_INIT_STACKS)
 extern K_THREAD_STACK_DEFINE(_main_stack, CONFIG_MAIN_STACK_SIZE);
 extern K_THREAD_STACK_DEFINE(_interrupt_stack, CONFIG_ISR_STACK_SIZE);
+extern K_THREAD_STACK_DEFINE(sys_work_q_stack,
+			     CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE);
 #endif
 
 int net_shell_cmd_stacks(int argc, char *argv[])
@@ -2143,6 +2157,19 @@ int net_shell_cmd_stacks(int argc, char *argv[])
 	       "ISR", "_interrupt_stack", CONFIG_ISR_STACK_SIZE,
 	       CONFIG_ISR_STACK_SIZE, unused,
 	       CONFIG_ISR_STACK_SIZE - unused, CONFIG_ISR_STACK_SIZE, pcnt);
+
+	net_analyze_stack_get_values(K_THREAD_STACK_BUFFER(sys_work_q_stack),
+				     K_THREAD_STACK_SIZEOF(sys_work_q_stack),
+				     &pcnt, &unused);
+	printk("%s [%s] stack size %d/%d bytes unused %u usage"
+	       " %d/%d (%u %%)\n",
+	       "WORKQ", "system workqueue",
+	       CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE,
+	       CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE, unused,
+	       CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE - unused,
+	       CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE, pcnt);
+#else
+	printk("Enable CONFIG_INIT_STACKS to see usage information.\n");
 #endif
 
 	return 0;

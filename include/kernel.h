@@ -181,6 +181,32 @@ struct _k_object {
 	u32_t data;
 } __packed;
 
+struct _k_object_assignment {
+	struct k_thread *thread;
+	void * const *objects;
+};
+
+/**
+ * @brief Grant a static thread access to a list of kernel objects
+ *
+ * For threads declared with K_THREAD_DEFINE(), grant the thread access to
+ * a set of kernel objects. These objects do not need to be in an initialized
+ * state. The permissions will be granted when the threads are initialized
+ * in the early boot sequence.
+ *
+ * All arguments beyond the first must be pointers to kernel objects.
+ *
+ * @param name_ Name of the thread, as passed to K_THREAD_DEFINE()
+ */
+#define K_THREAD_ACCESS_GRANT(name_, ...) \
+	static void * const _CONCAT(_object_list_, name_)[] = \
+		{ __VA_ARGS__, NULL }; \
+	static __used __in_section_unique(object_access) \
+		const struct _k_object_assignment \
+		_CONCAT(_object_access_, name_) = \
+			{ (&_k_thread_obj_ ## name_), \
+			  (_CONCAT(_object_list_, name_)) }
+
 #define K_OBJ_FLAG_INITIALIZED	BIT(0)
 #define K_OBJ_FLAG_PUBLIC	BIT(1)
 
@@ -195,6 +221,9 @@ struct _k_object {
  */
 void _k_object_init(void *obj);
 #else
+
+#define K_THREAD_ACCESS_GRANT(thread, ...)
+
 static inline void _k_object_init(void *obj)
 {
 	ARG_UNUSED(obj);
@@ -585,6 +614,22 @@ __syscall k_tid_t k_thread_create(struct k_thread *new_thread,
 extern FUNC_NORETURN void k_thread_user_mode_enter(k_thread_entry_t entry,
 						   void *p1, void *p2,
 						   void *p3);
+
+/**
+ * @brief Grant a thread access to a NULL-terminated  set of kernel objects
+ *
+ * This is a convenience function. For the provided thread, grant access to
+ * the remaining arguments, which must be pointers to kernel objects.
+ * The final argument must be a NULL.
+ *
+ * The thread object must be initialized (i.e. running). The objects don't
+ * need to be.
+ *
+ * @param thread Thread to grant access to objects
+ * @param ... NULL-terminated list of kernel object pointers
+ */
+extern void __attribute__((sentinel))
+	k_thread_access_grant(struct k_thread *thread, ...);
 
 /**
  * @brief Put the current thread to sleep.
