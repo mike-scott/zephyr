@@ -17,9 +17,9 @@
 
 #include <kernel_structs.h>
 #if defined(__GNUC__)
-#include <test_asm_inline_gcc.h>
+#include "test_asm_inline_gcc.h"
 #else
-#include <test_asm_inline_other.h>
+#include "test_asm_inline_other.h"
 #endif
 
 /* These vectors are somewhat arbitrary. We try and use unused vectors */
@@ -212,7 +212,7 @@ void main(void)
 			MY_PRIORITY, 0, K_NO_WAIT);
 
 	/*
-	 * The fiber/task should not run past where the spurious interrupt is
+	 * The thread should not run past where the spurious interrupt is
 	 * generated. Therefore spur_handler_aborted_thread should remain at 1.
 	 */
 	if (spur_handler_aborted_thread == 0) {

@@ -45,8 +45,6 @@
 #define NET_MAX_TCP_CONTEXT CONFIG_NET_MAX_CONTEXTS
 static struct net_tcp tcp_context[NET_MAX_TCP_CONTEXT];
 
-#define INIT_RETRY_MS 200
-
 /* 2MSL timeout, where "MSL" is arbitrarily 2 minutes in the RFC */
 #if defined(CONFIG_NET_TCP_2MSL_TIME)
 #define TIME_WAIT_MS K_SECONDS(CONFIG_NET_TCP_2MSL_TIME)
@@ -121,7 +119,8 @@ static void net_tcp_trace(struct net_pkt *pkt, struct net_tcp *tcp)
 
 static inline u32_t retry_timeout(const struct net_tcp *tcp)
 {
-	return ((u32_t)1 << tcp->retry_timeout_shift) * INIT_RETRY_MS;
+	return ((u32_t)1 << tcp->retry_timeout_shift) *
+				CONFIG_NET_TCP_INIT_RETRANSMISSION_TIMEOUT;
 }
 
 #define is_6lo_technology(pkt)						    \
@@ -485,22 +484,12 @@ int net_tcp_prepare_segment(struct net_tcp *tcp, u8_t flags,
 		 * have ACK set.
 		 */
 		flags |= NET_TCP_ACK;
-		/* FIXME: We apparently miss increment in another
-		 * transition of the state machine, so have to
-		 * adjust seq no by 2 here. This is required for
-		 * Linux to detect active close on server side, and
-		 * to make Wireshark happy about sequence numbers.
-		 */
-		seq += 2;
+		seq++;
 
 		if (net_tcp_get_state(tcp) == NET_TCP_ESTABLISHED ||
 		    net_tcp_get_state(tcp) == NET_TCP_SYN_RCVD) {
 			net_tcp_change_state(tcp, NET_TCP_FIN_WAIT_1);
 		}
-	}
-
-	if (flags & NET_TCP_SYN) {
-		seq++;
 	}
 
 	wnd = net_tcp_get_recv_wnd(tcp);
@@ -631,8 +620,6 @@ int net_tcp_prepare_ack(struct net_tcp *tcp, const struct sockaddr *remote,
 		/* In the SYN_RCVD state acknowledgment must be with the
 		 * SYN flag.
 		 */
-		tcp->send_seq--;
-
 		net_tcp_set_syn_opt(tcp, options, &optionlen);
 
 		return net_tcp_prepare_segment(tcp, NET_TCP_SYN | NET_TCP_ACK,
@@ -643,8 +630,6 @@ int net_tcp_prepare_ack(struct net_tcp *tcp, const struct sockaddr *remote,
 		/* In the FIN_WAIT_1 and LAST_ACK states acknowledgment must
 		 * be with the FIN flag.
 		 */
-		tcp->send_seq--;
-
 		return net_tcp_prepare_segment(tcp, NET_TCP_FIN | NET_TCP_ACK,
 					       0, 0, NULL, remote, pkt);
 	default:

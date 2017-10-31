@@ -63,6 +63,11 @@ static void net_app_foreach(net_app_ctx_cb_t cb, enum net_app_type type,
 
 	SYS_SLIST_FOR_EACH_CONTAINER(&_net_app_instances, ctx, node) {
 		if (ctx->is_init && ctx->app_type == type) {
+			if (ctx->app_type == NET_APP_CLIENT &&
+			    !ctx->is_enabled) {
+				continue;
+			}
+
 			cb(ctx, user_data);
 		}
 	}
@@ -379,6 +384,11 @@ int _net_app_config_local_ctx(struct net_app_ctx *ctx,
 			ret = -EPFNOSUPPORT;
 			goto fail;
 		}
+
+		if (!ret) {
+			select_default_ctx(ctx);
+			return 0;
+		}
 #endif
 
 #if defined(CONFIG_NET_IPV4)
@@ -389,9 +399,12 @@ int _net_app_config_local_ctx(struct net_app_ctx *ctx,
 			ret = -EPFNOSUPPORT;
 			goto fail;
 		}
-#endif
 
-		select_default_ctx(ctx);
+		if (!ret) {
+			select_default_ctx(ctx);
+			return 0;
+		}
+#endif
 	} else {
 		if (addr->sa_family == AF_INET6) {
 #if defined(CONFIG_NET_IPV6)
@@ -496,11 +509,21 @@ struct net_context *select_client_ctx(struct net_app_ctx *ctx,
 		}
 	} else {
 		if (!dst) {
+			if (ctx->default_ctx->ctx &&
+			    atomic_get(&ctx->default_ctx->ctx->refcount) <= 0) {
+				ctx->default_ctx->ctx = NULL;
+			}
+
 			return ctx->default_ctx->ctx;
 		} else {
 		common_checks:
 			if (dst->sa_family == AF_INET) {
 #if defined(CONFIG_NET_IPV4)
+				if (ctx->ipv4.ctx &&
+				    atomic_get(&ctx->ipv4.ctx->refcount) <= 0) {
+					ctx->ipv4.ctx = NULL;
+				}
+
 				return ctx->ipv4.ctx;
 #else
 				return NULL;
@@ -509,6 +532,11 @@ struct net_context *select_client_ctx(struct net_app_ctx *ctx,
 
 			if (dst->sa_family == AF_INET6) {
 #if defined(CONFIG_NET_IPV6)
+				if (ctx->ipv6.ctx &&
+				    atomic_get(&ctx->ipv6.ctx->refcount) <= 0) {
+					ctx->ipv6.ctx = NULL;
+				}
+
 				return ctx->ipv6.ctx;
 #else
 				return NULL;
@@ -516,6 +544,12 @@ struct net_context *select_client_ctx(struct net_app_ctx *ctx,
 			}
 
 			if (dst->sa_family == AF_UNSPEC) {
+				if (ctx->default_ctx->ctx &&
+				    atomic_get(&ctx->default_ctx->ctx->refcount)
+								       <= 0) {
+					ctx->default_ctx->ctx = NULL;
+				}
+
 				return ctx->default_ctx->ctx;
 			}
 		}
@@ -680,9 +714,6 @@ struct net_context *select_server_ctx(struct net_app_ctx *ctx,
 #endif /* CONFIG_NET_APP_SERVER */
 
 #if NET_LOG_ENABLED > 0
-#define _net_app_select_net_ctx(ctx, dst)				\
-	_net_app_select_net_ctx_debug(ctx, dst, __func__, __LINE__)
-
 struct net_context *_net_app_select_net_ctx_debug(struct net_app_ctx *ctx,
 						  const struct sockaddr *dst,
 						  const char *caller,
@@ -1002,7 +1033,33 @@ int net_app_close(struct net_app_ctx *ctx)
 	if (net_ctx) {
 		net_ctx->net_app = NULL;
 		net_context_put(net_ctx);
+
+		NET_DBG("Closing net_ctx %p", net_ctx);
 	}
+
+#if defined(CONFIG_NET_APP_CLIENT)
+	if (ctx->app_type == NET_APP_CLIENT) {
+		ctx->is_enabled = false;
+
+		/* Make sure we do not re-use the same port if we
+		 * re-connect after close.
+		 */
+#if defined(CONFIG_NET_IPV4)
+		net_sin(&ctx->ipv4.local)->sin_port = 0;
+
+		if (ctx->ipv4.ctx) {
+			net_sin_ptr(&ctx->ipv4.ctx->local)->sin_port = 0;
+		}
+#endif
+#if defined(CONFIG_NET_IPV6)
+		net_sin6(&ctx->ipv6.local)->sin6_port = 0;
+
+		if (ctx->ipv6.ctx) {
+			net_sin6_ptr(&ctx->ipv6.ctx->local)->sin6_port = 0;
+		}
+#endif
+	}
+#endif
 
 	return 0;
 }
@@ -1046,6 +1103,26 @@ int net_app_close2(struct net_app_ctx *ctx, struct net_context *net_ctx)
 		if (net_ctx != _net_app_select_net_ctx(ctx, NULL)) {
 			return -ENOENT;
 		}
+
+		ctx->is_enabled = false;
+
+		/* Make sure we do not re-use the same port if we
+		 * re-connect after close.
+		 */
+#if defined(CONFIG_NET_IPV4)
+		net_sin(&ctx->ipv4.local)->sin_port = 0;
+
+		if (net_ctx == ctx->ipv4.ctx) {
+			net_sin_ptr(&ctx->ipv4.ctx->local)->sin_port = 0;
+		}
+#endif
+#if defined(CONFIG_NET_IPV6)
+		net_sin6(&ctx->ipv6.local)->sin6_port = 0;
+
+		if (net_ctx == ctx->ipv6.ctx) {
+			net_sin6_ptr(&ctx->ipv6.ctx->local)->sin6_port = 0;
+		}
+#endif
 	}
 #endif
 
@@ -1190,6 +1267,21 @@ int _net_app_tls_sendto(struct net_pkt *pkt,
 	struct net_app_fifo_block *tx_data;
 	struct k_mem_block block;
 	int ret;
+
+	if (!ctx->tls.handshake_done) {
+		/* This means that the initial TLS handshake is not yet
+		 * finished so our packet cannot be sent yet. Try sleeping
+		 * a bit and hope things are ok after that. If not, then
+		 * return error.
+		 */
+		k_sleep(MSEC(50));
+
+		if (!ctx->tls.handshake_done) {
+			NET_DBG("TLS handshake not yet done, pkt %p not sent",
+				pkt);
+			return -EBUSY;
+		}
+	}
 
 	ARG_UNUSED(dst_addr);
 	ARG_UNUSED(addrlen);
@@ -1549,6 +1641,11 @@ void _net_app_tls_received(struct net_context *context,
 	NET_DBG("Encrypted data received in pkt %p", pkt);
 
 	k_fifo_put(&ctx->tls.mbedtls.ssl_ctx.tx_rx_fifo, (void *)rx_data);
+
+	/* Make sure that the tls handler thread runs now, even if we receive
+	 * new packets.
+	 */
+	k_yield();
 }
 
 static int tls_sendto(struct net_app_ctx *ctx,
@@ -1663,13 +1760,14 @@ int _net_app_ssl_mux(void *context, unsigned char *buf, size_t size)
 				     K_FOREVER);
 		if (!rx_data->pkt) {
 			k_mem_pool_free(&rx_data->block);
+			ctx->tls.connection_closing = true;
 			return -EIO;
 		}
 
-		NET_DBG("%s encrypted data in pkt %p",
-			rx_data->dir == NET_APP_PKT_TX ? "Sending" :
-							"Receiving",
-			rx_data->pkt);
+		NET_DBG("%s data in pkt %p (len %zd)",
+			rx_data->dir == NET_APP_PKT_TX ? "Sending plain" :
+							"Receiving encrypted",
+			rx_data->pkt, net_pkt_get_len(rx_data->pkt));
 
 		/* If the fifo contains something we need to send, then try
 		 * to send it here and then go back waiting more data.
@@ -1823,6 +1921,8 @@ int _net_app_ssl_mainloop(struct net_app_ctx *ctx)
 	size_t len;
 	int ret;
 
+	ctx->tls.connect_cb_called = false;
+
 reset:
 	mbedtls_ssl_session_reset(&ctx->tls.mbedtls.ssl);
 
@@ -1861,6 +1961,10 @@ reset:
 	 * connection establishment.
 	 */
 	/* Waiting SSL handshake */
+	ctx->tls.handshake_done = false;
+
+	NET_DBG("Starting TLS handshake");
+
 	do {
 		ret = mbedtls_ssl_handshake(&ctx->tls.mbedtls.ssl);
 		if (ret != MBEDTLS_ERR_SSL_WANT_READ &&
@@ -1880,6 +1984,10 @@ reset:
 			}
 		}
 	} while (ret != 0);
+
+	ctx->tls.handshake_done = true;
+
+	NET_DBG("TLS handshake done");
 
 	/* We call the connect cb only once for each connection. The TLS
 	 * might require new handshakes etc, but application does not need
@@ -1914,6 +2022,7 @@ reset:
 				break;
 
 			case -EIO:
+				ctx->tls.connection_closing = true;
 				break;
 
 			default:
@@ -1928,13 +2037,24 @@ reset:
 
 		if (ctx->cb.recv) {
 			struct sockaddr dst = { 0 };
+			struct net_context *net_ctx;
 			struct net_pkt *pkt;
 			int len = ret;
+			int hdr_len = 0;
 
 			dst.sa_family = AF_UNSPEC;
 
-			pkt = net_pkt_get_rx(_net_app_select_net_ctx(ctx, &dst),
-					     BUF_ALLOC_TIMEOUT);
+			/* If we cannot select any net_ctx, then the connection
+			 * is closed already.
+			 */
+			net_ctx = _net_app_select_net_ctx(ctx, &dst);
+			if (!net_ctx) {
+				ctx->tls.connection_closing = true;
+				ret = -EIO;
+				goto close;
+			}
+
+			pkt = net_pkt_get_rx(net_ctx, BUF_ALLOC_TIMEOUT);
 			if (!pkt) {
 				ret = -ENOMEM;
 				goto close;
@@ -1945,6 +2065,9 @@ reset:
 			 * from the IP header.
 			 */
 			if (ctx->tls.mbedtls.ssl_ctx.hdr) {
+				/* Needed to skip the protocol header */
+				hdr_len = ctx->tls.mbedtls.ssl_ctx.hdr->len;
+
 				net_pkt_frag_add(pkt,
 						 ctx->tls.mbedtls.ssl_ctx.hdr);
 #if defined(CONFIG_NET_IPV6)
@@ -1973,7 +2096,18 @@ reset:
 			}
 
 			net_pkt_set_appdatalen(pkt, len);
-			net_pkt_set_appdata(pkt, pkt->frags->data);
+
+			if (hdr_len) {
+				struct net_buf *frag;
+				u16_t pos;
+
+				frag = net_frag_get_pos(pkt, hdr_len, &pos);
+				NET_ASSERT(frag);
+
+				net_pkt_set_appdata(pkt, frag->data + pos);
+			} else {
+				net_pkt_set_appdata(pkt, pkt->frags->data);
+			}
 
 			ctx->cb.recv(ctx, pkt, 0, ctx->user_data);
 

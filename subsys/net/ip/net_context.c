@@ -368,23 +368,19 @@ static int check_used_port(enum net_ip_protocol ip_proto,
 static u16_t find_available_port(struct net_context *context,
 				    const struct sockaddr *addr)
 {
-	if (!net_sin(addr)->sin_port) {
-		u16_t local_port;
+	u16_t local_port;
 
-		do {
-			local_port = sys_rand32_get() | 0x8000;
-			if (local_port <= 1023) {
-				/* 0 - 1023 ports are reserved */
-				continue;
-			}
-		} while (check_used_port(
-				 net_context_get_ip_proto(context),
-				 htons(local_port), addr) == -EEXIST);
+	do {
+		local_port = sys_rand32_get() | 0x8000;
+		if (local_port <= 1023) {
+			/* 0 - 1023 ports are reserved */
+			continue;
+		}
+	} while (check_used_port(
+				net_context_get_ip_proto(context),
+				htons(local_port), addr) == -EEXIST);
 
-		return htons(local_port);
-	}
-
-	return net_sin(addr)->sin_port;
+	return htons(local_port);
 }
 
 int net_context_get(sa_family_t family,
@@ -1008,7 +1004,8 @@ static void print_send_info(struct net_pkt *pkt, const char *msg)
 	}
 }
 
-static inline int send_control_segment(struct net_context *context,
+/* Send SYN or SYN/ACK. */
+static inline int send_syn_segment(struct net_context *context,
 				       const struct sockaddr_ptr *local,
 				       const struct sockaddr *remote,
 				       int flags, const char *msg)
@@ -1025,7 +1022,10 @@ static inline int send_control_segment(struct net_context *context,
 	ret = net_send_data(pkt);
 	if (ret < 0) {
 		net_pkt_unref(pkt);
+		return ret;
 	}
+
+	context->tcp->send_seq++;
 
 	print_send_info(pkt, msg);
 
@@ -1037,14 +1037,14 @@ static inline int send_syn(struct net_context *context,
 {
 	net_tcp_change_state(context->tcp, NET_TCP_SYN_SENT);
 
-	return send_control_segment(context, NULL, remote, NET_TCP_SYN, "SYN");
+	return send_syn_segment(context, NULL, remote, NET_TCP_SYN, "SYN");
 }
 
 static inline int send_syn_ack(struct net_context *context,
 			       struct sockaddr_ptr *local,
 			       struct sockaddr *remote)
 {
-	return send_control_segment(context, local, remote,
+	return send_syn_segment(context, local, remote,
 				    NET_TCP_SYN | NET_TCP_ACK,
 				    "SYN_ACK");
 }
@@ -2431,16 +2431,16 @@ int net_context_recv(struct net_context *context,
 
 #if defined(CONFIG_NET_CONTEXT_SYNC_RECV)
 	if (timeout) {
+		int ret;
+
 		/* Make sure we have the lock, then the packet_received()
 		 * callback will release the semaphore when data has been
 		 * received.
 		 */
-		while (k_sem_take(&context->recv_data_wait, K_NO_WAIT)) {
-			;
-		}
+		k_sem_reset(&context->recv_data_wait);
 
-		if (!k_sem_take(&context->recv_data_wait, timeout)) {
-			/* timeout */
+		ret = k_sem_take(&context->recv_data_wait, timeout);
+		if (ret == -EAGAIN) {
 			return -ETIMEDOUT;
 		}
 	}

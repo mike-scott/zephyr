@@ -8,7 +8,7 @@
 #define __LWM2M_H__
 
 #include <net/net_app.h>
-#include <net/zoap.h>
+#include <net/coap.h>
 
 /* LWM2M Objects defined by OMA */
 
@@ -52,15 +52,15 @@ struct lwm2m_ctx {
 	net_pkt_get_pool_func_t data_pool;
 #endif /* CONFIG_NET_CONTEXT_NET_PKT_POOL */
 
-	/** Private ZoAP and networking structures */
-	struct zoap_pending pendings[CONFIG_LWM2M_ENGINE_MAX_PENDING];
-	struct zoap_reply replies[CONFIG_LWM2M_ENGINE_MAX_REPLIES];
+	/** Private CoAP and networking structures */
+	struct coap_pending pendings[CONFIG_LWM2M_ENGINE_MAX_PENDING];
+	struct coap_reply replies[CONFIG_LWM2M_ENGINE_MAX_REPLIES];
 	struct k_delayed_work retransmit_work;
 };
 
-/* callback can return 1 if handled (don't update value) */
 typedef void *(*lwm2m_engine_get_data_cb_t)(u16_t obj_inst_id,
 				       size_t *data_len);
+/* callbacks return 0 on success and error code otherwise */
 typedef int (*lwm2m_engine_set_data_cb_t)(u16_t obj_inst_id,
 				       u8_t *data, u16_t data_len,
 				       bool last_block, size_t total_size);
@@ -153,6 +153,7 @@ typedef struct float64_value {
 
 int lwm2m_engine_create_obj_inst(char *pathstr);
 
+int lwm2m_engine_set_opaque(char *pathstr, char *data_ptr, u16_t data_len);
 int lwm2m_engine_set_string(char *path, char *data_ptr);
 int lwm2m_engine_set_u8(char *path, u8_t value);
 int lwm2m_engine_set_u16(char *path, u16_t value);
@@ -166,6 +167,7 @@ int lwm2m_engine_set_bool(char *path, bool value);
 int lwm2m_engine_set_float32(char *pathstr, float32_value_t *value);
 int lwm2m_engine_set_float64(char *pathstr, float64_value_t *value);
 
+int lwm2m_engine_get_opaque(char *pathstr, void *buf, u16_t buflen);
 int lwm2m_engine_get_string(char *path, void *str, u16_t strlen);
 u8_t  lwm2m_engine_get_u8(char *path);
 u16_t lwm2m_engine_get_u16(char *path);

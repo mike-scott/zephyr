@@ -329,7 +329,7 @@ CROHandlingDone:
 
 	movl    %eax, _kernel_offset_to_current(%edi)
 
-	/* recover task/fiber stack pointer from k_thread */
+	/* recover thread stack pointer from k_thread */
 
 	movl	_thread_offset_to_esp(%eax), %esp
 
@@ -404,7 +404,7 @@ time_read_not_needed:
  * jumps to _thread_entry().
  *
  * GDB normally stops unwinding a stack when it detects that it has
- * reached a function called main().  Kernel tasks, however, do not have
+ * reached a function called main().  Kernel threads, however, do not have
  * a main() function, and there does not appear to be a simple way of stopping
  * the unwinding of the stack.
  *
@@ -464,7 +464,7 @@ SECTION_FUNC(TEXT, _x86_thread_entry_wrapper)
 	pop	%ecx
 	push	$0	 /* Null return address */
 #elif defined(CONFIG_GDB_INFO) || defined(CONFIG_DEBUG_INFO)
-	mov	$0, (%esp) /* zero initialEFLAGS location */
+	movl	$0, (%esp) /* zero initialEFLAGS location */
 #endif
 	jmp	*%edi
 #endif
