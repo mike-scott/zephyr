@@ -32,7 +32,7 @@ this, check out articles such as `Why choose Apache 2.0 licensing`_ and
 `Top 10 Apache License Questions Answered`_).
 
 .. _Why choose Apache 2.0 licensing:
-   https://www.zephyrproject.org/about/faq/what-rationale-choosing-apache-20-license
+   https://www.zephyrproject.org/about/#faq
 
 .. _Top 10 Apache License Questions Answered:
    https://www.whitesourcesoftware.com/whitesource-blog/top-10-apache-license-questions-answered/
@@ -56,8 +56,8 @@ Importing code into the Zephyr OS from other projects that use a license
 other than the Apache 2.0 license needs to be fully understood in
 context and approved by the Zephyr governing board.
 
-By carefully reviewing potential contributions and also enforcing
-`developer attestations <DCO>`_ for contributed code, we can ensure that
+By carefully reviewing potential contributions and also enforcing a
+:ref:`DCO` for contributed code, we can ensure that
 the Zephyr community can develop products with the Zephyr Project
 without concerns over patent or copyright issues.
 

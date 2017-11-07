@@ -894,6 +894,7 @@ static void relay_set(struct bt_mesh_model *model,
 	if (!cfg) {
 		BT_WARN("No Configuration Server context available");
 	} else if (buf->data[0] == 0x00 || buf->data[0] == 0x01) {
+		bool change = (cfg->relay != buf->data[0]);
 		struct bt_mesh_subnet *sub;
 
 		cfg->relay = buf->data[0];
@@ -905,7 +906,7 @@ static void relay_set(struct bt_mesh_model *model,
 		       TRANSMIT_INT(cfg->relay_retransmit))
 
 		sub = bt_mesh_subnet_get(cfg->hb_pub.net_idx);
-		if ((cfg->hb_pub.feat & BT_MESH_FEAT_RELAY) && sub) {
+		if ((cfg->hb_pub.feat & BT_MESH_FEAT_RELAY) && sub && change) {
 			hb_send(model);
 		}
 	} else {
@@ -2473,7 +2474,9 @@ static void friend_set(struct bt_mesh_model *model,
 		goto send_status;
 	}
 
-	cfg->frnd = buf->data[0];
+	if (IS_ENABLED(CONFIG_BT_MESH_FRIEND)) {
+		cfg->frnd = buf->data[0];
+	}
 
 	sub = bt_mesh_subnet_get(cfg->hb_pub.net_idx);
 	if ((cfg->hb_pub.feat & BT_MESH_FEAT_FRIEND) && sub) {
@@ -2614,6 +2617,19 @@ static u8_t hb_log(u16_t val)
 	}
 }
 
+static u8_t hb_pub_count_log(u16_t val)
+{
+	if (!val) {
+		return 0x00;
+	} else if (val == 0x01) {
+		return 0x01;
+	} else if (val == 0xffff) {
+		return 0xff;
+	} else {
+		return 32 - __builtin_clz(val - 1) + 1;
+	}
+}
+
 static u16_t hb_pwr2(u8_t val, u8_t sub)
 {
 	if (!val) {
@@ -2655,7 +2671,7 @@ static void hb_pub_send_status(struct bt_mesh_model *model,
 	}
 
 	net_buf_simple_add_le16(msg, cfg->hb_pub.dst);
-	net_buf_simple_add_u8(msg, hb_log(cfg->hb_pub.count));
+	net_buf_simple_add_u8(msg, hb_pub_count_log(cfg->hb_pub.count));
 	net_buf_simple_add_u8(msg, cfg->hb_pub.period);
 	net_buf_simple_add_u8(msg, cfg->hb_pub.ttl);
 	net_buf_simple_add_le16(msg, cfg->hb_pub.feat);
@@ -2777,10 +2793,16 @@ static void hb_sub_send_status(struct bt_mesh_model *model,
 
 	net_buf_simple_add_le16(msg, cfg->hb_sub.src);
 	net_buf_simple_add_le16(msg, cfg->hb_sub.dst);
-	net_buf_simple_add_u8(msg, hb_log(period));
-	net_buf_simple_add_u8(msg, hb_log(cfg->hb_sub.count));
-	net_buf_simple_add_u8(msg, cfg->hb_sub.min_hops);
-	net_buf_simple_add_u8(msg, cfg->hb_sub.max_hops);
+
+	if (cfg->hb_sub.src == BT_MESH_ADDR_UNASSIGNED ||
+	    cfg->hb_sub.dst == BT_MESH_ADDR_UNASSIGNED) {
+		memset(net_buf_simple_add(msg, 4), 0, 4);
+	} else {
+		net_buf_simple_add_u8(msg, hb_log(period));
+		net_buf_simple_add_u8(msg, hb_log(cfg->hb_sub.count));
+		net_buf_simple_add_u8(msg, cfg->hb_sub.min_hops);
+		net_buf_simple_add_u8(msg, cfg->hb_sub.max_hops);
+	}
 
 	bt_mesh_model_send(model, ctx, msg, NULL, NULL);
 }
@@ -2818,7 +2840,9 @@ static void heartbeat_sub_set(struct bt_mesh_model *model,
 		return;
 	}
 
-	if (BT_MESH_ADDR_IS_VIRTUAL(sub_dst)) {
+	if (BT_MESH_ADDR_IS_VIRTUAL(sub_dst) || BT_MESH_ADDR_IS_RFU(sub_dst) ||
+	    (BT_MESH_ADDR_IS_UNICAST(sub_dst) &&
+	     sub_dst != bt_mesh_primary_addr())) {
 		BT_WARN("Prohibited destination address");
 		return;
 	}
@@ -2831,22 +2855,25 @@ static void heartbeat_sub_set(struct bt_mesh_model *model,
 	if (sub_src == BT_MESH_ADDR_UNASSIGNED ||
 	    sub_dst == BT_MESH_ADDR_UNASSIGNED ||
 	    sub_period == 0x00) {
-		cfg->hb_sub.src = BT_MESH_ADDR_UNASSIGNED;
-		cfg->hb_sub.dst = BT_MESH_ADDR_UNASSIGNED;
-		cfg->hb_sub.min_hops = 0;
-		cfg->hb_sub.max_hops = 0;
+		/* Setting the same addresses with zero period should retain
+		 * the addresses according to MESH/NODE/CFG/HBS/BV-02-C.
+		 */
+		if (cfg->hb_sub.src != sub_src || cfg->hb_sub.dst != sub_dst) {
+			cfg->hb_sub.src = BT_MESH_ADDR_UNASSIGNED;
+			cfg->hb_sub.dst = BT_MESH_ADDR_UNASSIGNED;
+		}
+
 		period_ms = 0;
 	} else {
 		cfg->hb_sub.src = sub_src;
 		cfg->hb_sub.dst = sub_dst;
 		cfg->hb_sub.min_hops = 0x7f;
 		cfg->hb_sub.max_hops = 0;
+		cfg->hb_sub.count = 0;
 		period_ms = hb_pwr2(sub_period, 1) * 1000;
 	}
 
 	BT_DBG("period_ms %u", period_ms);
-
-	cfg->hb_sub.count = 0;
 
 	if (period_ms) {
 		cfg->hb_sub.expiry = k_uptime_get() + period_ms;

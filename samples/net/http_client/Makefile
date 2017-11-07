@@ -14,3 +14,6 @@ ifeq ($(CONFIG_NET_L2_BT),y)
 else
 	include $(ZEPHYR_BASE)/samples/net/common/Makefile.ipstack
 endif
+
+SRC = $(ZEPHYR_BASE)/samples/net/http_client/src
+include $(ZEPHYR_BASE)/scripts/Makefile.gen
