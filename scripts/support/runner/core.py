@@ -117,12 +117,12 @@ class NetworkPortHelper:
         return self._parser_windows(cmd)
 
     def _used_now_linux(self):
-        cmd = ['netstat', '-a', '-n', '-t']
-        return self._parser_linux_darwin(cmd)
+        cmd = ['ss', '-a', '-n', '-t']
+        return self._parser_linux(cmd)
 
     def _used_now_darwin(self):
         cmd = ['netstat', '-a', '-n', '-p', 'tcp']
-        return self._parser_linux_darwin(cmd)
+        return self._parser_darwin(cmd)
 
     def _parser_windows(self, cmd):
         out = subprocess.check_output(cmd).split(b'\r\n')
@@ -130,7 +130,12 @@ class NetworkPortHelper:
                       if x.startswith(b'  TCP')]
         return {int(b) for b in used_bytes}
 
-    def _parser_linux_darwin(self, cmd):
+    def _parser_linux(self, cmd):
+        out = subprocess.check_output(cmd).splitlines()[1:]
+        used_bytes = [s.split()[3].rsplit(b':', 1)[1] for s in out]
+        return {int(b) for b in used_bytes}
+
+    def _parser_darwin(self, cmd):
         out = subprocess.check_output(cmd).split(b'\n')
         used_bytes = [x.split()[3].rsplit(b':', 1)[1] for x in out
                       if x.startswith(b'tcp')]
@@ -166,16 +171,16 @@ class ZephyrBinaryRunner(abc.ABC):
     constructor.  The actual command execution is handled in the run()
     method.
 
-    This functionality is also replacing the legacy Zephyr runners,
-    which are shell scripts.
+    This functionality has replaced the legacy Zephyr runners,
+    which were shell scripts.
 
     At present, the Zephyr build system uses a variety of
     tool-specific environment variables to control runner behavior.
     To support a transition to ZephyrBinaryRunner and subclasses, this
     class provides a create_for_shell_script() static factory method.
-    This method iterates over ZephyrBinaryRUnner subclasses,
+    This method iterates over ZephyrBinaryRunner subclasses,
     determines which (if any) can provide equivalent functionality to
-    the shell-based runner, and returns a subclass instance with its
+    the old shell-based runner, and returns a subclass instance with its
     configuration determined from the environment.
 
     To support this, subclasess currently must provide a pair of

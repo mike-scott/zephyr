@@ -22,24 +22,19 @@
 
 #include <net/net_pkt.h>
 
-#include "eth_emu.h"
 #include "netusb.h"
 
 #define USB_CDC_ECM_REQ_TYPE		0x21
 #define USB_CDC_SET_ETH_PKT_FILTER	0x43
 
-struct ecm {
-	struct net_if *iface;
-	u8_t ep_in;
-
-	/* In a case of low memory skip data to the end of the packet */
-	bool skip;
-} ecm;
-
 /* Pointer to pkt assembling at the moment */
-struct net_pkt *in_pkt;
+static struct net_pkt *in_pkt;
 
-int ecm_class_handler(struct usb_setup_packet *setup, s32_t *len, u8_t **data)
+/* In a case of low memory skip data to the end of the packet */
+static bool skip;
+
+static int ecm_class_handler(struct usb_setup_packet *setup, s32_t *len,
+			     u8_t **data)
 {
 	SYS_LOG_DBG("");
 
@@ -60,13 +55,13 @@ int ecm_class_handler(struct usb_setup_packet *setup, s32_t *len, u8_t **data)
 	return 0;
 }
 
-void ecm_int_in(u8_t ep, enum usb_dc_ep_cb_status_code ep_status)
+static void ecm_int_in(u8_t ep, enum usb_dc_ep_cb_status_code ep_status)
 {
 	SYS_LOG_DBG("EP 0x%x status %d", ep, ep_status);
 }
 
 /* Host to device data out */
-void ecm_bulk_out(u8_t ep, enum usb_dc_ep_cb_status_code ep_status)
+static void ecm_bulk_out(u8_t ep, enum usb_dc_ep_cb_status_code ep_status)
 {
 	struct net_pkt *pkt;
 	struct net_buf *buf;
@@ -97,30 +92,27 @@ void ecm_bulk_out(u8_t ep, enum usb_dc_ep_cb_status_code ep_status)
 		SYS_LOG_DBG("Got frame delimeter, ECM pkt received, len %u",
 			    net_pkt_get_len(in_pkt));
 
-		if (ecm.skip) {
+		if (skip) {
 			SYS_LOG_WRN("End skipping fragments");
-			ecm.skip = false;
+			skip = false;
 
 			return;
 		}
 
 		net_hexdump_frags(">", in_pkt);
 
-		if (net_recv_data(ecm.iface, in_pkt) < 0) {
-			SYS_LOG_ERR("Queueing packet %p failed", in_pkt);
-			net_pkt_unref(in_pkt);
-		}
-
+		netusb_recv(in_pkt);
 		in_pkt = NULL;
+
 		return;
 	}
 
-	if (ecm.skip) {
+	if (skip) {
 		SYS_LOG_WRN("Skipping %u bytes", len);
 
 		if (len < sizeof(buffer)) {
 			SYS_LOG_WRN("End skipping fragments");
-			ecm.skip = false;
+			skip = false;
 
 			return;
 		}
@@ -133,7 +125,7 @@ void ecm_bulk_out(u8_t ep, enum usb_dc_ep_cb_status_code ep_status)
 		pkt = net_pkt_get_reserve_rx(0, K_NO_WAIT);
 		if (!pkt) {
 			SYS_LOG_ERR("Not enough memory for pkt buffer");
-			ecm.skip = true;
+			skip = true;
 			return;
 		}
 
@@ -163,16 +155,12 @@ void ecm_bulk_out(u8_t ep, enum usb_dc_ep_cb_status_code ep_status)
 
 		net_hexdump_frags(">", in_pkt);
 
-		if (net_recv_data(ecm.iface, in_pkt) < 0) {
-			SYS_LOG_ERR("Queueing packet %p failed", in_pkt);
-			net_pkt_unref(in_pkt);
-		}
-
+		netusb_recv(in_pkt);
 		in_pkt = NULL;
 	}
 }
 
-void ecm_bulk_in(u8_t ep, enum usb_dc_ep_cb_status_code ep_status)
+static void ecm_bulk_in(u8_t ep, enum usb_dc_ep_cb_status_code ep_status)
 {
 #if VERBOSE_DEBUG
 	SYS_LOG_DBG("EP 0x%x status %d", ep, ep_status);
@@ -209,7 +197,8 @@ static int append_bytes(u8_t *out_buf, u16_t buf_len, u8_t *data,
 			net_hexdump("fragment", out_buf, buf_len);
 #endif
 
-			ret = try_write(ecm.ep_in, out_buf, buf_len);
+			ret = try_write(CONFIG_CDC_ECM_IN_EP_ADDR, out_buf,
+					buf_len);
 			if (ret) {
 				SYS_LOG_ERR("Error sending data");
 				return ret;
@@ -229,7 +218,7 @@ static int append_bytes(u8_t *out_buf, u16_t buf_len, u8_t *data,
 	return remaining;
 }
 
-int ecm_send(struct net_pkt *pkt)
+static int ecm_send(struct net_pkt *pkt)
 {
 	u8_t send_buf[CONFIG_CDC_ECM_BULK_EP_MPS];
 	int remaining = sizeof(send_buf);
@@ -264,27 +253,39 @@ int ecm_send(struct net_pkt *pkt)
 	}
 
 	if (remaining > 0 && remaining < sizeof(send_buf)) {
-		return try_write(ecm.ep_in, send_buf,
+		return try_write(CONFIG_CDC_ECM_IN_EP_ADDR, send_buf,
 				 sizeof(send_buf) - remaining);
 	} else {
 		u8_t zero[] = { 0x00 };
 
 		SYS_LOG_DBG("Send Zero packet to mark frame end");
 
-		return try_write(ecm.ep_in, zero, sizeof(zero));
+		return try_write(CONFIG_CDC_ECM_IN_EP_ADDR, zero, sizeof(zero));
 	}
 
 	return 0;
 }
 
-static struct netusb_function ecm_function = {
-	.connect_media = NULL,
+static struct usb_ep_cfg_data ecm_ep_data[] = {
+	/* Configuration ECM */
+	{
+		.ep_cb = ecm_int_in,
+		.ep_addr = CONFIG_CDC_ECM_INT_EP_ADDR
+	},
+	{
+		.ep_cb = ecm_bulk_out,
+		.ep_addr = CONFIG_CDC_ECM_OUT_EP_ADDR
+	},
+	{
+		.ep_cb = ecm_bulk_in,
+		.ep_addr = CONFIG_CDC_ECM_IN_EP_ADDR
+	},
 };
 
-struct netusb_function *ecm_register_function(struct net_if *iface, u8_t in)
-{
-	ecm.iface = iface;
-	ecm.ep_in = in;
-
-	return &ecm_function;
-}
+struct netusb_function ecm_function = {
+	.connect_media = NULL,
+	.class_handler = ecm_class_handler,
+	.send_pkt = ecm_send,
+	.num_ep = ARRAY_SIZE(ecm_ep_data),
+	.ep = ecm_ep_data,
+};

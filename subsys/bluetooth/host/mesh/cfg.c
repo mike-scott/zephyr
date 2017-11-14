@@ -31,6 +31,7 @@
 #include "beacon.h"
 #include "proxy.h"
 #include "foundation.h"
+#include "friend.h"
 
 #define DEFAULT_TTL 7
 
@@ -101,7 +102,8 @@ static void hb_send(struct bt_mesh_model *model)
 
 	BT_DBG("InitTTL %u feat 0x%04x", cfg->hb_pub.ttl, feat);
 
-	bt_mesh_ctl_send(&tx, TRANS_CTL_OP_HEARTBEAT, &hb, sizeof(hb), NULL);
+	bt_mesh_ctl_send(&tx, TRANS_CTL_OP_HEARTBEAT, &hb, sizeof(hb),
+			 NULL, NULL);
 }
 
 static int comp_add_elem(struct net_buf_simple *buf, struct bt_mesh_elem *elem,
@@ -2069,6 +2071,10 @@ static void net_key_del(struct bt_mesh_model *model,
 		}
 	}
 
+	if (IS_ENABLED(CONFIG_BT_MESH_FRIEND)) {
+		bt_mesh_friend_clear_net_idx(del_idx);
+	}
+
 	memset(sub, 0, sizeof(*sub));
 	sub->net_idx = BT_MESH_KEY_UNUSED;
 
@@ -2476,6 +2482,10 @@ static void friend_set(struct bt_mesh_model *model,
 
 	if (IS_ENABLED(CONFIG_BT_MESH_FRIEND)) {
 		cfg->frnd = buf->data[0];
+
+		if (cfg->frnd == BT_MESH_FRIEND_DISABLED) {
+			bt_mesh_friend_clear_net_idx(BT_MESH_KEY_ANY);
+		}
 	}
 
 	sub = bt_mesh_subnet_get(cfg->hb_pub.net_idx);
@@ -2493,7 +2503,9 @@ static void lpn_timeout_get(struct bt_mesh_model *model,
 {
 	/* Needed size: opcode (2 bytes) + msg + MIC */
 	struct net_buf_simple *msg = NET_BUF_SIMPLE(2 + 5 + 4);
+	struct bt_mesh_friend *frnd;
 	u16_t lpn_addr;
+	s32_t timeout;
 
 	lpn_addr = net_buf_simple_pull_le16(buf);
 
@@ -2507,7 +2519,24 @@ static void lpn_timeout_get(struct bt_mesh_model *model,
 
 	bt_mesh_model_msg_init(msg, OP_LPN_TIMEOUT_STATUS);
 	net_buf_simple_add_le16(msg, lpn_addr);
-	memset(net_buf_simple_add(msg, 3), 0, 3);
+
+	if (!IS_ENABLED(CONFIG_BLUETOOTH_MESH_FRIEND)) {
+		timeout = 0;
+		goto send_rsp;
+	}
+
+	frnd = bt_mesh_friend_find(BT_MESH_KEY_ANY, lpn_addr, true);
+	if (!frnd) {
+		timeout = 0;
+		goto send_rsp;
+	}
+
+	timeout = k_delayed_work_remaining_get(&frnd->timer) / 100;
+
+send_rsp:
+	net_buf_simple_add_u8(msg, timeout);
+	net_buf_simple_add_u8(msg, timeout >> 8);
+	net_buf_simple_add_u8(msg, timeout >> 16);
 
 	if (bt_mesh_model_send(model, ctx, msg, NULL, NULL)) {
 		BT_ERR("Unable to send LPN PollTimeout Status");
@@ -2872,6 +2901,9 @@ static void heartbeat_sub_set(struct bt_mesh_model *model,
 		cfg->hb_sub.count = 0;
 		period_ms = hb_pwr2(sub_period, 1) * 1000;
 	}
+
+	/* Let the transport layer know it needs to handle this address */
+	bt_mesh_set_hb_sub_dst(cfg->hb_sub.dst);
 
 	BT_DBG("period_ms %u", period_ms);
 
