@@ -16,6 +16,12 @@ if(DEFINED PYOCD_FLASHTOOL)
   set_property(GLOBAL APPEND PROPERTY BOARD_RUNNER_ARGS_pyocd "--flashtool=${PYOCD_FLASHTOOL}")
 endif()
 
+if(PYOCD_FLASHTOOL_OPTS)
+  foreach(option IN LISTS PYOCD_FLASHTOOL_OPTS)
+    set_property(GLOBAL APPEND PROPERTY BOARD_RUNNER_ARGS_pyocd "--flashtool-opt=${option}")
+  endforeach()
+endif()
+
 if(DEFINED PYOCD_GDBSERVER)
   set_property(GLOBAL APPEND PROPERTY BOARD_RUNNER_ARGS_pyocd "--gdbserver=${PYOCD_GDBSERVER}")
 endif()
