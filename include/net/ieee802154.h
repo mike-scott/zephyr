@@ -22,6 +22,7 @@ extern "C" {
 /**
  * @brief IEEE 802.15.4 library
  * @defgroup ieee802154 IEEE 802.15.4 Library
+ * @ingroup networking
  * @{
  */
 
@@ -62,6 +63,7 @@ struct ieee802154_context {
 #endif
 	s16_t tx_power;
 	u8_t sequence;
+	u8_t ack_seq;
 	u8_t ack_received	: 1;
 	u8_t ack_requested	: 1;
 	u8_t associated		: 1;

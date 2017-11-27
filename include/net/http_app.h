@@ -39,6 +39,7 @@ extern "C" {
 /**
  * @brief HTTP client and server library
  * @defgroup http HTTP Library
+ * @ingroup networking
  * @{
  */
 
@@ -767,7 +768,7 @@ static inline int http_client_send_get_req(struct http_ctx *http_ctx,
 		.method = HTTP_GET,
 		.url = url,
 		.host = host,
-		.protocol = " " HTTP_PROTOCOL HTTP_CRLF,
+		.protocol = " " HTTP_PROTOCOL,
 		.header_fields = extra_header_fields,
 	};
 
@@ -944,13 +945,14 @@ int http_send_flush(struct http_ctx *ctx, void *user_send_data);
  *
  * @param ctx Http context.
  * @param code HTTP error code
+ * @param description HTTP error description
  * @param html_payload Extra payload, can be null
  * @param html_len Payload length
  *
  * @return 0 if ok, <0 if error.
  */
-int http_send_error(struct http_ctx *ctx, int code, u8_t *html_payload,
-		    size_t html_len);
+int http_send_error(struct http_ctx *ctx, int code, const char *description,
+		    u8_t *html_payload, size_t html_len);
 
 /**
  * @brief Add HTTP header field to the message.

@@ -38,6 +38,7 @@
 
 #include "net_private.h"
 #include "tcp.h"
+#include "rpl.h"
 
 #if defined(CONFIG_NET_TCP)
 #define APP_PROTO_LEN NET_TCPH_LEN
@@ -49,7 +50,7 @@
 #endif /* UDP */
 #endif /* TCP */
 
-#if defined(CONFIG_NET_IPV6) || defined(CONFIG_NET_L2_RAW_CHANNEL)
+#if defined(CONFIG_NET_IPV6) || defined(CONFIG_NET_RAW_MODE)
 #define IP_PROTO_LEN NET_IPV6H_LEN
 #else
 #if defined(CONFIG_NET_IPV4)
@@ -519,14 +520,48 @@ static struct net_pkt *net_pkt_get(struct k_mem_slab *slab,
 	pkt = net_pkt_get_reserve(slab, net_if_get_ll_reserve(iface, addr6),
 				  timeout);
 #endif
-	if (pkt) {
+	if (pkt && slab != &rx_pkts) {
+		sa_family_t family;
+		uint16_t iface_len, data_len = 0;
+		enum net_ip_protocol proto;
+
 		net_pkt_set_context(pkt, context);
 		net_pkt_set_iface(pkt, iface);
 
-		if (context) {
-			net_pkt_set_family(pkt,
-					   net_context_get_family(context));
+		iface_len = net_if_get_mtu(iface);
+
+		family = net_context_get_family(context);
+		net_pkt_set_family(pkt, family);
+
+		if (IS_ENABLED(CONFIG_NET_IPV6) && family == AF_INET6) {
+			data_len = max(iface_len, NET_IPV6_MTU);
 		}
+
+		if (IS_ENABLED(CONFIG_NET_IPV4) && family == AF_INET) {
+			data_len = max(iface_len, NET_IPV4_MTU);
+		}
+
+		proto = net_context_get_ip_proto(context);
+
+		if (IS_ENABLED(CONFIG_NET_TCP) && proto == IPPROTO_TCP) {
+			data_len -= NET_TCPH_LEN;
+			data_len -= NET_TCP_MAX_OPT_SIZE;
+		}
+
+		if (IS_ENABLED(CONFIG_NET_UDP) && proto == IPPROTO_UDP) {
+			data_len -= NET_UDPH_LEN;
+
+#if defined(CONFIG_NET_RPL_INSERT_HBH_OPTION)
+			data_len -= NET_RPL_HOP_BY_HOP_LEN;
+#endif
+
+		}
+
+		if (proto == IPPROTO_ICMP || proto == IPPROTO_ICMPV6) {
+			data_len -= NET_ICMPH_LEN;
+		}
+
+		pkt->data_len = data_len;
 	}
 
 	return pkt;
@@ -1163,6 +1198,8 @@ u16_t net_pkt_append(struct net_pkt *pkt, u16_t len, const u8_t *data,
 		    s32_t timeout)
 {
 	struct net_buf *frag;
+	struct net_context *ctx;
+	u16_t max_len, appended;
 
 	if (!pkt || !data) {
 		return 0;
@@ -1177,7 +1214,32 @@ u16_t net_pkt_append(struct net_pkt *pkt, u16_t len, const u8_t *data,
 		net_pkt_frag_add(pkt, frag);
 	}
 
-	return net_pkt_append_bytes(pkt, data, len, timeout);
+	ctx = net_pkt_context(pkt);
+	if (ctx) {
+		/* Make sure we don't send more data in one packet than
+		 * protocol or MTU allows when there is a context for the
+		 * packet.
+		 */
+		max_len = pkt->data_len;
+
+#if defined(CONFIG_NET_TCP)
+		if (ctx->tcp) {
+			max_len = ctx->tcp->send_mss;
+		}
+#endif
+
+		if (len > max_len) {
+			len = max_len;
+		}
+	}
+
+	appended = net_pkt_append_bytes(pkt, data, len, timeout);
+
+	if (ctx) {
+		pkt->data_len -= appended;
+	}
+
+	return appended;
 }
 
 /* Helper routine to retrieve single byte from fragment and move

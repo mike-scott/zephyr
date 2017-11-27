@@ -391,6 +391,8 @@ static struct net_pkt *prepare_segment(struct net_tcp *tcp,
 
 		if (pkt_allocated) {
 			net_pkt_unref(pkt);
+		} else {
+			pkt->frags = tail;
 		}
 
 		return NULL;
@@ -400,6 +402,8 @@ static struct net_pkt *prepare_segment(struct net_tcp *tcp,
 	if (!header) {
 		if (pkt_allocated) {
 			net_pkt_unref(pkt);
+		} else {
+			pkt->frags = tail;
 		}
 
 		return NULL;
@@ -1293,8 +1297,8 @@ int net_tcp_parse_opts(struct net_pkt *pkt, int opt_totlen,
 			if (optlen != 2) {
 				goto error;
 			}
-			frag = net_frag_read(frag, pos, &pos,
-					     optlen, (u8_t *)&opts->mss);
+			frag = net_frag_read_be16(frag, pos, &pos,
+						  &opts->mss);
 			break;
 		default:
 			frag = net_frag_skip(frag, pos, &pos, optlen);

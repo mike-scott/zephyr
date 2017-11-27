@@ -14,8 +14,8 @@ enum bt_mesh_friend_pdu_type {
 
 bool bt_mesh_friend_match(u16_t net_idx, u16_t addr);
 
-struct bt_mesh_friend *bt_mesh_friend_find(u16_t net_idx, u16_t addr,
-					   bool established);
+struct bt_mesh_friend *bt_mesh_friend_find(u16_t net_idx, u16_t lpn_addr,
+					   bool valid, bool established);
 
 void bt_mesh_friend_enqueue_rx(struct bt_mesh_net_rx *rx,
 			       enum bt_mesh_friend_pdu_type type,
@@ -34,6 +34,8 @@ void bt_mesh_friend_clear_net_idx(u16_t net_idx);
 int bt_mesh_friend_poll(struct bt_mesh_net_rx *rx, struct net_buf_simple *buf);
 int bt_mesh_friend_req(struct bt_mesh_net_rx *rx, struct net_buf_simple *buf);
 int bt_mesh_friend_clear(struct bt_mesh_net_rx *rx, struct net_buf_simple *buf);
+int bt_mesh_friend_clear_cfm(struct bt_mesh_net_rx *rx,
+			     struct net_buf_simple *buf);
 int bt_mesh_friend_sub_add(struct bt_mesh_net_rx *rx,
 			   struct net_buf_simple *buf);
 int bt_mesh_friend_sub_rem(struct bt_mesh_net_rx *rx,

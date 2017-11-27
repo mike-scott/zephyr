@@ -235,7 +235,6 @@ ssize_t zsock_sendto(int sock, const void *buf, size_t len, int flags,
 	struct net_pkt *send_pkt;
 	s32_t timeout = K_FOREVER;
 	struct net_context *ctx = INT_TO_POINTER(sock);
-	size_t max_len = net_if_get_mtu(net_context_get_iface(ctx));
 
 	ARG_UNUSED(flags);
 
@@ -249,18 +248,6 @@ ssize_t zsock_sendto(int sock, const void *buf, size_t len, int flags,
 		return -1;
 	}
 
-	/* Make sure we don't send more data in one packet than
-	 * MTU allows. Optimize for number of branches in the code.
-	 */
-	max_len -= NET_IPV4TCPH_LEN;
-	if (net_context_get_family(ctx) != AF_INET) {
-		max_len -= NET_IPV6TCPH_LEN - NET_IPV4TCPH_LEN;
-	}
-
-	if (len > max_len) {
-		len = max_len;
-	}
-
 	len = net_pkt_append(send_pkt, len, buf, timeout);
 	if (!len) {
 		net_pkt_unref(send_pkt);
@@ -271,7 +258,12 @@ ssize_t zsock_sendto(int sock, const void *buf, size_t len, int flags,
 	/* Register the callback before sending in order to receive the response
 	 * from the peer.
 	 */
-	SET_ERRNO(net_context_recv(ctx, zsock_received_cb, K_NO_WAIT, NULL));
+	err = net_context_recv(ctx, zsock_received_cb, K_NO_WAIT, NULL);
+	if (err < 0) {
+		net_pkt_unref(send_pkt);
+		errno = -err;
+		return -1;
+	}
 
 	if (dest_addr) {
 		err = net_context_sendto(send_pkt, dest_addr, addrlen, NULL,
@@ -311,7 +303,8 @@ static inline ssize_t zsock_recv_stream(struct net_context *ctx,
 		}
 
 		res = _k_fifo_wait_non_empty(&ctx->recv_q, timeout);
-		if (res && res != -EAGAIN) {
+		/* EAGAIN when timeout expired, EINTR when cancelled */
+		if (res && res != -EAGAIN && res != -EINTR) {
 			errno = -res;
 			return -1;
 		}

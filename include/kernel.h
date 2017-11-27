@@ -3532,23 +3532,28 @@ struct k_mem_pool {
 
 #define _MPOOL_HAVE_LVL(max, min, l) (((max) >> (2*(l))) >= (min) ? 1 : 0)
 
-#define _MPOOL_LVLS(maxsz, minsz)		\
-	(_MPOOL_HAVE_LVL(maxsz, minsz, 0) +	\
-	_MPOOL_HAVE_LVL(maxsz, minsz, 1) +	\
-	_MPOOL_HAVE_LVL(maxsz, minsz, 2) +	\
-	_MPOOL_HAVE_LVL(maxsz, minsz, 3) +	\
-	_MPOOL_HAVE_LVL(maxsz, minsz, 4) +	\
-	_MPOOL_HAVE_LVL(maxsz, minsz, 5) +	\
-	_MPOOL_HAVE_LVL(maxsz, minsz, 6) +	\
-	_MPOOL_HAVE_LVL(maxsz, minsz, 7) +	\
-	_MPOOL_HAVE_LVL(maxsz, minsz, 8) +	\
-	_MPOOL_HAVE_LVL(maxsz, minsz, 9) +	\
-	_MPOOL_HAVE_LVL(maxsz, minsz, 10) +	\
-	_MPOOL_HAVE_LVL(maxsz, minsz, 11) +	\
-	_MPOOL_HAVE_LVL(maxsz, minsz, 12) +	\
-	_MPOOL_HAVE_LVL(maxsz, minsz, 13) +	\
-	_MPOOL_HAVE_LVL(maxsz, minsz, 14) +	\
-	_MPOOL_HAVE_LVL(maxsz, minsz, 15))
+#define __MPOOL_LVLS(maxsz, minsz)		\
+	(_MPOOL_HAVE_LVL((maxsz), (minsz), 0) +	\
+	_MPOOL_HAVE_LVL((maxsz), (minsz), 1) +	\
+	_MPOOL_HAVE_LVL((maxsz), (minsz), 2) +	\
+	_MPOOL_HAVE_LVL((maxsz), (minsz), 3) +	\
+	_MPOOL_HAVE_LVL((maxsz), (minsz), 4) +	\
+	_MPOOL_HAVE_LVL((maxsz), (minsz), 5) +	\
+	_MPOOL_HAVE_LVL((maxsz), (minsz), 6) +	\
+	_MPOOL_HAVE_LVL((maxsz), (minsz), 7) +	\
+	_MPOOL_HAVE_LVL((maxsz), (minsz), 8) +	\
+	_MPOOL_HAVE_LVL((maxsz), (minsz), 9) +	\
+	_MPOOL_HAVE_LVL((maxsz), (minsz), 10) +	\
+	_MPOOL_HAVE_LVL((maxsz), (minsz), 11) +	\
+	_MPOOL_HAVE_LVL((maxsz), (minsz), 12) +	\
+	_MPOOL_HAVE_LVL((maxsz), (minsz), 13) +	\
+	_MPOOL_HAVE_LVL((maxsz), (minsz), 14) +	\
+	_MPOOL_HAVE_LVL((maxsz), (minsz), 15))
+
+#define _MPOOL_MINBLK sizeof(sys_dnode_t)
+
+#define _MPOOL_LVLS(max, min)		\
+	__MPOOL_LVLS((max), (min) >= _MPOOL_MINBLK ? (min) : _MPOOL_MINBLK)
 
 /* Rounds the needed bits up to integer multiples of u32_t */
 #define _MPOOL_LBIT_WORDS_UNCLAMPED(n_max, l) \
@@ -3703,6 +3708,19 @@ extern void *k_malloc(size_t size);
  * @return N/A
  */
 extern void k_free(void *ptr);
+
+/**
+ * @brief Allocate memory from heap, array style
+ *
+ * This routine provides traditional calloc() semantics. Memory is
+ * allocated from the heap memory pool and zeroed.
+ *
+ * @param nmemb Number of elements in the requested array
+ * @param size Size of each array element (in bytes).
+ *
+ * @return Address of the allocated memory if successful; otherwise NULL.
+ */
+extern void *k_calloc(size_t nmemb, size_t size);
 
 /**
  * @} end defgroup heap_apis
@@ -3926,6 +3944,7 @@ extern void k_poll_event_init(struct k_poll_event *event, u32_t type,
  *
  * @retval 0 One or more events are ready.
  * @retval -EAGAIN Waiting period timed out.
+ * @retval -EINTR Poller thread has been interrupted.
  */
 
 extern int k_poll(struct k_poll_event *events, int num_events,
