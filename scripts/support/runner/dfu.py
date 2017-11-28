@@ -90,7 +90,13 @@ class DfuUtilBinaryRunner(ZephyrBinaryRunner):
                                options=args.dfuse_option)
         else:
             dcfg = None
-        return DfuUtilBinaryRunner(args.pid, args.alt, args.img,
+
+        if args.hack_override_bin is None:
+            img = args.img
+        else:
+            img = args.hack_override_bin
+
+        return DfuUtilBinaryRunner(args.pid, args.alt, img,
                                    exe=args.dfu_util, dfuse_config=dcfg,
                                    debug=args.verbose)
 
