@@ -91,6 +91,9 @@ class PyOcdBinaryRunner(ZephyrBinaryRunner):
         build_conf = BuildConfiguration(os.getcwd())
         flash_addr = cls.get_flash_address(args, build_conf)
 
+        if args.hack_override_bin is not None:
+            args.kernel_bin = args.hack_override_bin
+
         return PyOcdBinaryRunner(
             args.target, flashtool=args.flashtool,
             flashtool_opts=args.flashtool_opt,
