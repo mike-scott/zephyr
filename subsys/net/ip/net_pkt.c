@@ -254,7 +254,7 @@ void net_pkt_print_frags(struct net_pkt *pkt)
 {
 	struct net_buf *frag;
 	size_t total = 0;
-	int count = -1, frag_size = 0, ll_overhead = 0;
+	int count = 0, frag_size = 0, ll_overhead = 0;
 
 	if (!pkt) {
 		NET_INFO("pkt %p", pkt);
@@ -287,7 +287,7 @@ void net_pkt_print_frags(struct net_pkt *pkt)
 	NET_INFO("Total data size %zu, occupied %d bytes, ll overhead %d, "
 		 "utilization %zu%%",
 		 total, count * frag_size - count * ll_overhead,
-		 count * ll_overhead, (total * 100) / (count * frag_size));
+		 count * ll_overhead, count ? (total * 100) / (count * frag_size) : 0);
 }
 
 struct net_pkt *net_pkt_get_reserve_debug(struct k_mem_slab *slab,
@@ -535,10 +535,12 @@ static struct net_pkt *net_pkt_get(struct k_mem_slab *slab,
 
 		if (IS_ENABLED(CONFIG_NET_IPV6) && family == AF_INET6) {
 			data_len = max(iface_len, NET_IPV6_MTU);
+			data_len -= NET_IPV6H_LEN;
 		}
 
 		if (IS_ENABLED(CONFIG_NET_IPV4) && family == AF_INET) {
 			data_len = max(iface_len, NET_IPV4_MTU);
+			data_len -= NET_IPV4H_LEN;
 		}
 
 		proto = net_context_get_ip_proto(context);
@@ -1223,7 +1225,7 @@ u16_t net_pkt_append(struct net_pkt *pkt, u16_t len, const u8_t *data,
 		max_len = pkt->data_len;
 
 #if defined(CONFIG_NET_TCP)
-		if (ctx->tcp) {
+		if (ctx->tcp && (ctx->tcp->send_mss < max_len)) {
 			max_len = ctx->tcp->send_mss;
 		}
 #endif

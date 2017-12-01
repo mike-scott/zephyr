@@ -10,6 +10,7 @@
  */
 
 #include <stdlib.h>
+#include <ctype.h>
 #include <zephyr.h>
 #include <shell/shell.h>
 #include <misc/printk.h>
@@ -183,7 +184,7 @@ static struct bt_mesh_health_cli health_cli = {
 	.current_status = health_current_status,
 };
 
-static const u8_t dev_uuid[16] = { 0xdd, 0xdd };
+static u8_t dev_uuid[16] = { 0xdd, 0xdd };
 
 static struct bt_mesh_model root_models[] = {
 	BT_MESH_MODEL_CFG_SRV(&cfg_srv),
@@ -201,6 +202,37 @@ static const struct bt_mesh_comp comp = {
 	.elem = elements,
 	.elem_count = ARRAY_SIZE(elements),
 };
+
+static u8_t hex2val(char c)
+{
+	if (c >= '0' && c <= '9') {
+		return c - '0';
+	} else if (c >= 'a' && c <= 'f') {
+		return c - 'a' + 10;
+	} else if (c >= 'A' && c <= 'F') {
+		return c - 'A' + 10;
+	} else {
+		return 0;
+	}
+}
+
+static size_t hex2bin(const char *hex, u8_t *bin, size_t bin_len)
+{
+	size_t len = 0;
+
+	while (*hex && len < bin_len) {
+		bin[len] = hex2val(*hex++) << 4;
+
+		if (!*hex) {
+			len++;
+			break;
+		}
+
+		bin[len++] |= hex2val(*hex++);
+	}
+
+	return len;
+}
 
 static void prov_complete(u16_t net_idx, u16_t addr)
 {
@@ -333,18 +365,16 @@ static void link_close(bt_mesh_prov_bearer_t bearer)
 	printk("Provisioning link closed on %s\n", bearer2str(bearer));
 }
 
-static const u8_t static_val[] = {
-	0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef
-};
+static u8_t static_val[16];
 
-static const struct bt_mesh_prov prov = {
+static struct bt_mesh_prov prov = {
 	.uuid = dev_uuid,
 	.link_open = link_open,
 	.link_close = link_close,
 	.complete = prov_complete,
 	.reset = prov_reset,
-	.static_val = static_val,
-	.static_val_len = sizeof(static_val),
+	.static_val = NULL,
+	.static_val_len = 0,
 	.output_size = 6,
 	.output_actions = (BT_MESH_DISPLAY_NUMBER | BT_MESH_DISPLAY_STRING),
 	.output_number = output_number,
@@ -354,6 +384,52 @@ static const struct bt_mesh_prov prov = {
 	.input = input,
 };
 
+static int cmd_static_oob(int argc, char *argv[])
+{
+	if (argc < 2) {
+		prov.static_val = NULL;
+		prov.static_val_len = 0;
+	} else {
+		prov.static_val_len = hex2bin(argv[1], static_val, 16);
+		if (prov.static_val_len) {
+			prov.static_val = static_val;
+		} else {
+			prov.static_val = NULL;
+		}
+	}
+
+	if (prov.static_val) {
+		printk("Static OOB value set (length %u)\n",
+		       prov.static_val_len);
+	} else {
+		printk("Static OOB value cleared\n");
+	}
+
+	return 0;
+}
+
+static int cmd_uuid(int argc, char *argv[])
+{
+	u8_t uuid[16];
+	size_t len;
+
+	if (argc < 2) {
+		return -EINVAL;
+	}
+
+	len = hex2bin(argv[1], uuid, sizeof(uuid));
+	if (len < 1) {
+		return -EINVAL;
+	}
+
+	memcpy(dev_uuid, uuid, len);
+	memset(dev_uuid + len, 0, sizeof(dev_uuid) - len);
+
+	printk("Device UUID set\n");
+
+	return 0;
+}
+
 static int cmd_reset(int argc, char *argv[])
 {
 	bt_mesh_reset();
@@ -361,40 +437,18 @@ static int cmd_reset(int argc, char *argv[])
 	return 0;
 }
 
-static bool str2bool(const char *str)
+static u8_t str2u8(const char *str)
 {
+	if (isdigit(str[0])) {
+		return strtoul(str, NULL, 0);
+	}
+
 	return (!strcmp(str, "on") || !strcmp(str, "enable"));
 }
 
-static u8_t hex2val(char c)
+static bool str2bool(const char *str)
 {
-	if (c >= '0' && c <= '9') {
-		return c - '0';
-	} else if (c >= 'a' && c <= 'f') {
-		return c - 'a' + 10;
-	} else if (c >= 'A' && c <= 'F') {
-		return c - 'A' + 10;
-	} else {
-		return 0;
-	}
-}
-
-static size_t hex2bin(const char *hex, u8_t *bin, size_t bin_len)
-{
-	size_t len = 0;
-
-	while (*hex && len < bin_len) {
-		bin[len] = hex2val(*hex++) << 4;
-
-		if (!*hex) {
-			len++;
-			break;
-		}
-
-		bin[len++] |= hex2val(*hex++);
-	}
-
-	return len;
+	return str2u8(str);
 }
 
 #if defined(CONFIG_BT_MESH_LOW_POWER)
@@ -695,6 +749,12 @@ static int cmd_iv_update_test(int argc, char *argv[])
 	return 0;
 }
 
+static int cmd_rpl_clear(int argc, char *argv[])
+{
+	bt_mesh_rpl_clear();
+	return 0;
+}
+
 static int cmd_beacon(int argc, char *argv[])
 {
 	u8_t status;
@@ -703,7 +763,7 @@ static int cmd_beacon(int argc, char *argv[])
 	if (argc < 2) {
 		err = bt_mesh_cfg_beacon_get(net.net_idx, net.dst, &status);
 	} else {
-		u8_t val = str2bool(argv[1]);
+		u8_t val = str2u8(argv[1]);
 
 		err = bt_mesh_cfg_beacon_set(net.net_idx, net.dst, val,
 					     &status);
@@ -750,7 +810,7 @@ static int cmd_friend(int argc, char *argv[])
 	if (argc < 2) {
 		err = bt_mesh_cfg_friend_get(net.net_idx, net.dst, &frnd);
 	} else {
-		u8_t val = strtoul(argv[1], NULL, 0);
+		u8_t val = str2u8(argv[1]);
 
 		err = bt_mesh_cfg_friend_set(net.net_idx, net.dst, val, &frnd);
 	}
@@ -773,7 +833,7 @@ static int cmd_gatt_proxy(int argc, char *argv[])
 	if (argc < 2) {
 		err = bt_mesh_cfg_gatt_proxy_get(net.net_idx, net.dst, &proxy);
 	} else {
-		u8_t val = strtoul(argv[1], NULL, 0);
+		u8_t val = str2u8(argv[1]);
 
 		err = bt_mesh_cfg_gatt_proxy_set(net.net_idx, net.dst, val,
 						 &proxy);
@@ -798,7 +858,7 @@ static int cmd_relay(int argc, char *argv[])
 		err = bt_mesh_cfg_relay_get(net.net_idx, net.dst, &relay,
 					    &transmit);
 	} else {
-		u8_t val = strtoul(argv[1], NULL, 0);
+		u8_t val = str2u8(argv[1]);
 		u8_t count, interval, new_transmit;
 
 		if (val) {
@@ -1782,8 +1842,11 @@ static const struct shell_cmd mesh_commands[] = {
 	{ "pb-gatt", cmd_pb_gatt, "<val: off, on>" },
 #endif
 	{ "reset", cmd_reset, NULL },
+	{ "uuid", cmd_uuid, "<UUID: 1-16 hex values>" },
 	{ "input-num", cmd_input_num, "<number>" },
 	{ "input-str", cmd_input_str, "<string>" },
+	{ "static-oob", cmd_static_oob, "[val: 1-16 hex values]" },
+
 	{ "provision", cmd_provision, "<NetKeyIndex> <addr> [IVIndex]" },
 #if defined(CONFIG_BT_MESH_LOW_POWER)
 	{ "lpn", cmd_lpn, "<value: off, on>" },
@@ -1800,6 +1863,7 @@ static const struct shell_cmd mesh_commands[] = {
 	{ "net-send", cmd_net_send, "<hex string>" },
 	{ "iv-update", cmd_iv_update, NULL },
 	{ "iv-update-test", cmd_iv_update_test, "<value: off, on>" },
+	{ "rpl-clear", cmd_rpl_clear, NULL },
 
 	/* Configuration Client Model operations */
 	{ "get-comp", cmd_get_comp, "[page]" },
