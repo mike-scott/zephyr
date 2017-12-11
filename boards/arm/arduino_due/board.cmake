@@ -1,1 +1,1 @@
-include($ENV{ZEPHYR_BASE}/boards/common/bossac.board.cmake)
+set(BOARD_FLASH_RUNNER bossac)

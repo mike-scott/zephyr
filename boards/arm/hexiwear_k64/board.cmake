@@ -10,5 +10,7 @@ endif()
 set(JLINK_DEVICE MK64FN1M0xxx12)
 set(PYOCD_TARGET k64f)
 
-include($ENV{ZEPHYR_BASE}/boards/common/pyocd.board.cmake)
-include($ENV{ZEPHYR_BASE}/boards/common/jlink.board.cmake)
+set_property(GLOBAL APPEND PROPERTY FLASH_SCRIPT_ENV_VARS
+  JLINK_DEVICE
+  PYOCD_TARGET
+  )
