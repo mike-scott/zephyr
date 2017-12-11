@@ -801,8 +801,7 @@ static void gatt_proxy_set(struct bt_mesh_model *model,
 			struct bt_mesh_subnet *sub = &bt_mesh.sub[i];
 
 			if (sub->net_idx != BT_MESH_KEY_UNUSED) {
-				sub->node_id = BT_MESH_NODE_IDENTITY_STOPPED;
-				sub->node_id_start = 0;
+				bt_mesh_proxy_identity_stop(sub);
 			}
 		}
 
@@ -908,14 +907,20 @@ static void relay_set(struct bt_mesh_model *model,
 	if (!cfg) {
 		BT_WARN("No Configuration Server context available");
 	} else if (buf->data[0] == 0x00 || buf->data[0] == 0x01) {
-		bool change = (cfg->relay != buf->data[0]);
 		struct bt_mesh_subnet *sub;
+		bool change;
 
-		cfg->relay = buf->data[0];
-		cfg->relay_retransmit = buf->data[1];
+		if (cfg->relay == BT_MESH_RELAY_NOT_SUPPORTED) {
+			change = false;
+		} else {
+			change = (cfg->relay != buf->data[0]);
+			cfg->relay = buf->data[0];
+			cfg->relay_retransmit = buf->data[1];
+		}
 
-		BT_DBG("Relay 0x%02x Retransmit 0x%02x (count %u interval %u)",
-		       cfg->relay, cfg->relay_retransmit,
+		BT_DBG("Relay 0x%02x (%s) xmit 0x%02x (count %u interval %u)",
+		       cfg->relay, change ? "changed" : "not changed",
+		       cfg->relay_retransmit,
 		       BT_MESH_TRANSMIT_COUNT(cfg->relay_retransmit),
 		       BT_MESH_TRANSMIT_INT(cfg->relay_retransmit))
 
@@ -2228,8 +2233,11 @@ static void node_identity_set(struct bt_mesh_model *model,
 		 */
 		if (IS_ENABLED(CONFIG_BT_MESH_GATT_PROXY) &&
 		    bt_mesh_gatt_proxy_get() == BT_MESH_GATT_PROXY_ENABLED) {
-			sub->node_id = node_id;
-			sub->node_id_start = node_id ? k_uptime_get_32() : 0;
+			if (node_id) {
+				bt_mesh_proxy_identity_start(sub);
+			} else {
+				bt_mesh_proxy_identity_stop(sub);
+			}
 			bt_mesh_adv_update();
 		}
 

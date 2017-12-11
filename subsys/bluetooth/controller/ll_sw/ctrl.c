@@ -5155,6 +5155,9 @@ static void mayfly_sched_win_offset_select(void *params)
 		/* procedure request acked */
 		conn->llcp_ack = conn->llcp_req;
 
+		/* CPR request acked */
+		conn->llcp_conn_param.ack = conn->llcp_conn_param.req;
+
 		/* reset mutex */
 		_radio.conn_upd = NULL;
 
@@ -8909,6 +8912,12 @@ static u32_t conn_update_req(struct connection *conn)
 		return 1;
 	}
 
+#if defined(CONFIG_BT_CTLR_CONN_PARAM_REQ)
+	if (conn->llcp_conn_param.req != conn->llcp_conn_param.ack) {
+		return 1;
+	}
+#endif /* CONFIG_BT_CTLR_CONN_PARAM_REQ */
+
 	if (!conn->role) {
 		conn->llcp.conn_upd.win_size = 1;
 		conn->llcp.conn_upd.win_offset_us = 0;
@@ -8942,7 +8951,7 @@ static u32_t conn_update_req(struct connection *conn)
 		conn->llcp_conn_param.ack--;
 
 		return 0;
-#endif /* !CONFIG_BT_CTLR_CONN_PARAM_REQ */
+#endif /* CONFIG_BT_CTLR_CONN_PARAM_REQ */
 
 	}
 

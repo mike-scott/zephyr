@@ -1104,6 +1104,25 @@ static bool net_find_and_decrypt(const u8_t *data, size_t data_len,
 	return false;
 }
 
+/* Relaying from advertising to the advertising bearer should only happen
+ * if the Relay state is set to enabled. Locally originated packets always
+ * get sent to the advertising bearer. If the packet came in through GATT,
+ * then we should only relay it if the GATT Proxy state is enabled.
+ */
+static bool relay_to_adv(enum bt_mesh_net_if net_if)
+{
+	switch (net_if) {
+	case BT_MESH_NET_IF_LOCAL:
+		return true;
+	case BT_MESH_NET_IF_ADV:
+		return (bt_mesh_relay_get() == BT_MESH_RELAY_ENABLED);
+	case BT_MESH_NET_IF_PROXY:
+		return (bt_mesh_gatt_proxy_get() == BT_MESH_GATT_PROXY_ENABLED);
+	default:
+		return false;
+	}
+}
+
 static void bt_mesh_net_relay(struct net_buf_simple *sbuf,
 			      struct bt_mesh_net_rx *rx)
 {
@@ -1135,7 +1154,16 @@ static void bt_mesh_net_relay(struct net_buf_simple *sbuf,
 
 	BT_DBG("TTL %u CTL %u dst 0x%04x", rx->ctx.recv_ttl, rx->ctl, rx->dst);
 
-	transmit = bt_mesh_relay_retransmit_get();
+	/* The Relay Retransmit state is only applied to adv-adv relaying.
+	 * Anything else (like GATT to adv, or locally originated packets)
+	 * use the Network Transmit state.
+	 */
+	if (rx->net_if == BT_MESH_NET_IF_ADV) {
+		transmit = bt_mesh_relay_retransmit_get();
+	} else {
+		transmit = bt_mesh_net_transmit_get();
+	}
+
 	buf = bt_mesh_adv_create(BT_MESH_ADV_DATA,
 				 BT_MESH_TRANSMIT_COUNT(transmit),
 				 BT_MESH_TRANSMIT_INT(transmit), K_NO_WAIT);
@@ -1179,14 +1207,21 @@ static void bt_mesh_net_relay(struct net_buf_simple *sbuf,
 		goto done;
 	}
 
-	if (IS_ENABLED(CONFIG_BT_MESH_GATT_PROXY)) {
+	/* Sending to the GATT bearer should only happen if GATT Proxy
+	 * is enabled or the message originates from the local node.
+	 */
+	if (IS_ENABLED(CONFIG_BT_MESH_GATT_PROXY) &&
+	    (bt_mesh_gatt_proxy_get() == BT_MESH_GATT_PROXY_ENABLED ||
+	     rx->net_if == BT_MESH_NET_IF_LOCAL)) {
 		if (bt_mesh_proxy_relay(&buf->b, rx->dst) &&
-			    BT_MESH_ADDR_IS_UNICAST(rx->dst)) {
+		    BT_MESH_ADDR_IS_UNICAST(rx->dst)) {
 			goto done;
 		}
 	}
 
-	bt_mesh_adv_send(buf, NULL, NULL);
+	if (relay_to_adv(rx->net_if)) {
+		bt_mesh_adv_send(buf, NULL, NULL);
+	}
 
 done:
 	net_buf_unref(buf);
