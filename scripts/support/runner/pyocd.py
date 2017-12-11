@@ -41,9 +41,9 @@ class PyOcdBinaryRunner(ZephyrBinaryRunner):
             daparg_args = ['-da', daparg]
         self.daparg_args = daparg_args
 
-    @classmethod
-    def name(cls):
-        return 'pyocd'
+    def replaces_shell_script(shell_script, command):
+        return (command in {'flash', 'debug', 'debugserver'} and
+                shell_script == 'pyocd.sh')
 
     def port_args(self):
         return ['-p', str(self.gdb_port)]
@@ -108,6 +108,9 @@ class PyOcdBinaryRunner(ZephyrBinaryRunner):
                                  board_id=board_id, daparg=daparg, debug=debug)
 
     def do_run(self, command, **kwargs):
+        if command not in {'flash', 'debug', 'debugserver'}:
+            raise ValueError('{} is not supported'.format(command))
+
         if command == 'flash':
             self.flash(**kwargs)
         else:

@@ -13,9 +13,8 @@ class QemuBinaryRunner(ZephyrBinaryRunner):
     def __init__(self, debug=False):
         super(QemuBinaryRunner, self).__init__(debug=debug)
 
-    @classmethod
-    def name(cls):
-        return 'qemu'
+    def replaces_shell_script(shell_script, command):
+        return shell_script == 'qemu.sh'
 
     def create_from_env(command, debug):
         '''Create runner. No environment dependencies.'''

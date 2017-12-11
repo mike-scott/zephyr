@@ -7,4 +7,4 @@ set(QEMU_FLAGS_${ARCH}
   -nographic
   )
 
-set(BOARD_DEBUG_RUNNER qemu)
+set(DEBUG_SCRIPT qemu.sh)

@@ -25,13 +25,8 @@ class Esp32BinaryRunner(ZephyrBinaryRunner):
         self.flash_mode = flash_mode
         self.espidf = espidf
 
-    @classmethod
-    def name(cls):
-        return 'esp32'
-
-    @classmethod
-    def handles_command(cls, command):
-        return command == 'flash'
+    def replaces_shell_script(shell_script, command):
+        return command == 'flash' and shell_script == 'esp32.sh'
 
     def create_from_env(command, debug):
         '''Create flasher from environment.
@@ -73,6 +68,9 @@ class Esp32BinaryRunner(ZephyrBinaryRunner):
                                  debug=debug)
 
     def do_run(self, command, **kwargs):
+        if command != 'flash':
+            raise ValueError('only flash is supported')
+
         bin_name = path.splitext(self.elf)[0] + path.extsep + 'bin'
         cmd_convert = [self.espidf, '--chip', 'esp32', 'elf2image', self.elf]
         cmd_flash = [self.espidf, '--chip', 'esp32', '--port', self.device,

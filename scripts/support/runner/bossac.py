@@ -23,13 +23,8 @@ class BossacBinaryRunner(ZephyrBinaryRunner):
         self.bossac = bossac
         self.port = port
 
-    @classmethod
-    def name(cls):
-        return 'bossac'
-
-    @classmethod
-    def handles_command(cls, command):
-        return command == 'flash'
+    def replaces_shell_script(shell_script, command):
+        return command == 'flash' and shell_script == 'bossa-flash.sh'
 
     def create_from_env(command, debug):
         '''Create flasher from environment.
@@ -52,6 +47,9 @@ class BossacBinaryRunner(ZephyrBinaryRunner):
                                   debug=debug)
 
     def do_run(self, command, **kwargs):
+        if command != 'flash':
+            raise ValueError('only flash is supported')
+
         if platform.system() != 'Linux':
             msg = 'CAUTION: No flash tool for your host system found!'
             raise NotImplementedError(msg)

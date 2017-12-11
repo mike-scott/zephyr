@@ -18,13 +18,8 @@ class NrfJprogBinaryRunner(ZephyrBinaryRunner):
         self.hex_ = hex_
         self.family = family
 
-    @classmethod
-    def name(cls):
-        return 'nrfjprog'
-
-    @classmethod
-    def handles_command(cls, command):
-        return command == 'flash'
+    def replaces_shell_script(shell_script, command):
+        return command == 'flash' and shell_script == 'nrf_flash.sh'
 
     def create_from_env(command, debug):
         '''Create flasher from environment.
@@ -66,6 +61,9 @@ class NrfJprogBinaryRunner(ZephyrBinaryRunner):
         return snrs[value - 1]
 
     def do_run(self, command, **kwargs):
+        if command != 'flash':
+            raise ValueError('only flash is supported')
+
         board_snr = self.get_board_snr_from_user()
 
         print('Flashing file: {}'.format(self.hex_))

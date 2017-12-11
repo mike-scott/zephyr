@@ -1,4 +1,4 @@
-set(BOARD_FLASH_RUNNER dfu-util)
+set(FLASH_SCRIPT dfuutil.sh)
 
 set(DFUUTIL_PID 0483:df11)
 set(DFUUTIL_ALT 0)
