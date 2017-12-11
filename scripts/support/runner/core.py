@@ -408,11 +408,7 @@ class ZephyrBinaryRunner(abc.ABC):
         '''
         if self.debug:
             print(quote_sh_list(cmd))
-        try:
-            subprocess.check_call(cmd)
-        except subprocess.CalledProcessError:
-            print('Error running {}'.format(quote_sh_list(cmd)))
-            raise
+        subprocess.check_call(cmd)
 
     def check_output(self, cmd):
         '''Subclass subprocess.check_output() wrapper.
@@ -423,11 +419,7 @@ class ZephyrBinaryRunner(abc.ABC):
         '''
         if self.debug:
             print(quote_sh_list(cmd))
-        try:
-            return subprocess.check_output(cmd)
-        except subprocess.CalledProcessError:
-            print('Error running {}'.format(quote_sh_list(cmd)))
-            raise
+        return subprocess.check_output(cmd)
 
     def popen_ignore_int(self, cmd):
         '''Spawn a child command, ensuring it ignores SIGINT.
