@@ -14,7 +14,7 @@ description: >
 properties:
     compatible:
       type: string
-      category: required
+      category: optional
       description: compatible strings
       constraint: "arc,dccm"
 
