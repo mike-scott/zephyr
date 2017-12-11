@@ -1,4 +1,5 @@
-set(OPENOCD_PRE_CMD        targets 1)
-set(OPENOCD_USE_LOAD_IMAGE y)
+set(OPENOCD_PRE_CMD  targets 1)
+set(OPENOCD_LOAD_CMD load_image ${PROJECT_BINARY_DIR}/${KERNEL_BIN_NAME} ${CONFIG_FLASH_BASE_ADDRESS})
+set(OPENOCD_VERIFY_CMD verify_image ${PROJECT_BINARY_DIR}/${KERNEL_BIN_NAME} ${CONFIG_FLASH_BASE_ADDRESS})
 
 include($ENV{ZEPHYR_BASE}/boards/common/openocd.board.cmake)
