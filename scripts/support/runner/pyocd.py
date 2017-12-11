@@ -78,10 +78,7 @@ class PyOcdBinaryRunner(ZephyrBinaryRunner):
 
     @classmethod
     def create_from_args(cls, args):
-        if args.hack_override_bin is None:
-            bin_name = path.join(os.getcwd(), 'zephyr', args.kernel_bin)
-        else:
-            bin_name = args.hack_override_bin
+        bin_name = path.join(os.getcwd(), 'zephyr', args.kernel_bin)
         elf_name = path.join(os.getcwd(), 'zephyr', args.kernel_elf)
         build_conf = BuildConfiguration(os.getcwd())
         flash_addr = cls.get_flash_address(args, build_conf)
