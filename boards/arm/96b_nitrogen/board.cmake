@@ -1,3 +1,8 @@
+set(BOARD_FLASH_RUNNER pyocd)
+set(BOARD_DEBUG_RUNNER pyocd)
+
 set(PYOCD_TARGET nrf52)
 
-include($ENV{ZEPHYR_BASE}/boards/common/pyocd.board.cmake)
+set_property(GLOBAL APPEND PROPERTY FLASH_SCRIPT_ENV_VARS
+  PYOCD_TARGET
+  )

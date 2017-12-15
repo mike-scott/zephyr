@@ -17,13 +17,9 @@ class QemuBinaryRunner(ZephyrBinaryRunner):
     def name(cls):
         return 'qemu'
 
-    @classmethod
-    def do_add_parser(cls, parser):
-        pass                    # Nothing to do.
-
-    @classmethod
-    def create_from_args(command, args):
-        return QemuBinaryRunner(debug=args.verbose)
+    def create_from_env(command, debug):
+        '''Create runner. No environment dependencies.'''
+        return QemuBinaryRunner()
 
     def do_run(self, command, **kwargs):
         if command == 'debugserver':

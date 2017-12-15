@@ -1,1 +1,2 @@
-include($ENV{ZEPHYR_BASE}/boards/common/nios2.board.cmake)
+set(BOARD_FLASH_RUNNER nios2)
+set(BOARD_DEBUG_RUNNER nios2)

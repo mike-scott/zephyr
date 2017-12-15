@@ -4,5 +4,14 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+set_ifndef(OPENSDA_FW jlink)
+
+if(OPENSDA_FW STREQUAL jlink)
+  set_ifndef(BOARD_DEBUG_RUNNER jlink)
+endif()
+
 set(JLINK_DEVICE Cortex-M7)
-include($ENV{ZEPHYR_BASE}/boards/common/jlink.board.cmake)
+
+set_property(GLOBAL APPEND PROPERTY FLASH_SCRIPT_ENV_VARS
+  JLINK_DEVICE
+  )

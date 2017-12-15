@@ -1,3 +1,6 @@
+set(BOARD_FLASH_RUNNER nrfjprog)
 set(NRF_FAMILY NRF52)
 
-include($ENV{ZEPHYR_BASE}/boards/common/nrfjprog.board.cmake)
+set_property(GLOBAL APPEND PROPERTY FLASH_SCRIPT_ENV_VARS
+  NRF_FAMILY
+  )
