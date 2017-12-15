@@ -27,11 +27,6 @@ def print_runners_handler(args):
 
 
 def runner_handler(cls, args):
-    # OSF TEMPHACK: temporary hack for dynamically passing information
-    # about the signed mcuboot blob.
-    import os
-    args.hack_override_bin = os.environ.get('ZEPHYR_HACK_OVERRIDE_BIN')
-
     runner = cls.create_from_args(args)
     # This relies on ZephyrBinaryRunner.add_parser() having command as
     # its single positional argument; see its docstring for details.
