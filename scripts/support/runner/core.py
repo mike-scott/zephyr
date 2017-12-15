@@ -225,15 +225,9 @@ class ZephyrBinaryRunner(abc.ABC):
         environment variables expected by that script are used to build
         the flasher in a backwards-compatible manner.'''
 
-    def run(self, command, **kwargs):
-        '''Runs command ('flash', 'debug', 'debugserver').
-
-        This is the main entry point to this runner.'''
-        self.do_run(command, **kwargs)
-
     @abc.abstractmethod
-    def do_run(self, command, **kwargs):
-        '''Concrete runner; run() delegates to this. Implement in subclasses.
+    def run(self, command, **kwargs):
+        '''Run a command ('flash', 'debug', 'debugserver').
 
         In case of an unsupported command, raise a ValueError.'''
 
