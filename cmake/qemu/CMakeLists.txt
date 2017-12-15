@@ -1,6 +1,16 @@
 if(EMU_PLATFORM)
   # TODO: Support more emulators
 
+  if("${ARCH}" STREQUAL "x86")
+    set_ifndef(QEMU_binary_suffix i386)
+  else()
+    set_ifndef(QEMU_binary_suffix ${ARCH})
+  endif()
+  find_program(
+    QEMU
+    qemu-system-${QEMU_binary_suffix}
+    )
+
   set(qemu_targets
     run
     debugserver
@@ -147,6 +157,10 @@ if(EMU_PLATFORM)
 
   list(APPEND MORE_FLAGS_FOR_debugserver -s -S)
 
+  set_ifndef(QEMU_KERNEL_OPTION
+    "-kernel;$<TARGET_FILE:${logical_target_for_zephyr_elf}>"
+    )
+
   foreach(target ${qemu_targets})
     add_custom_target(${target}
       ${PRE_QEMU_COMMANDS}
@@ -158,7 +172,7 @@ if(EMU_PLATFORM)
       ${QEMU_FLAGS}
       ${QEMU_EXTRA_FLAGS}
       ${MORE_FLAGS_FOR_${target}}
-      -kernel $<TARGET_FILE:${logical_target_for_zephyr_elf}>
+      ${QEMU_KERNEL_OPTION}
       DEPENDS ${logical_target_for_zephyr_elf}
       WORKING_DIRECTORY ${APPLICATION_BINARY_DIR}
       COMMENT "${QEMU_PIPE_COMMENT}[QEMU] CPU: ${QEMU_CPU_TYPE_${ARCH}}"
