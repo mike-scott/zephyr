@@ -1,1 +1,1 @@
-set(FLASH_SCRIPT esp32.sh)
+include($ENV{ZEPHYR_BASE}/boards/common/esp32.board.cmake)

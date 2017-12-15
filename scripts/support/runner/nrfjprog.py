@@ -4,10 +4,9 @@
 
 '''Runner for flashing with nrfjprog.'''
 
-from os import path
 import sys
 
-from .core import ZephyrBinaryRunner, get_env_or_bail
+from .core import ZephyrBinaryRunner, RunnerCaps
 
 
 class NrfJprogBinaryRunner(ZephyrBinaryRunner):
@@ -18,23 +17,24 @@ class NrfJprogBinaryRunner(ZephyrBinaryRunner):
         self.hex_ = hex_
         self.family = family
 
-    def replaces_shell_script(shell_script, command):
-        return command == 'flash' and shell_script == 'nrf_flash.sh'
+    @classmethod
+    def name(cls):
+        return 'nrfjprog'
 
-    def create_from_env(command, debug):
-        '''Create flasher from environment.
+    @classmethod
+    def capabilities(cls):
+        return RunnerCaps(commands={'flash'})
 
-        Required:
+    @classmethod
+    def do_add_parser(cls, parser):
+        parser.add_argument('--nrf-family', required=True,
+                            choices=['NRF51', 'NRF52'],
+                            help='family of nRF MCU')
 
-        - O: build output directory
-        - KERNEL_HEX_NAME: name of kernel binary in ELF format
-        - NRF_FAMILY: e.g. NRF51 or NRF52
-        '''
-        hex_ = path.join(get_env_or_bail('O'),
-                         get_env_or_bail('KERNEL_HEX_NAME'))
-        family = get_env_or_bail('NRF_FAMILY')
-
-        return NrfJprogBinaryRunner(hex_, family, debug=debug)
+    @classmethod
+    def create_from_args(cls, args):
+        return NrfJprogBinaryRunner(args.kernel_hex, args.nrf_family,
+                                    debug=args.verbose)
 
     def get_board_snr_from_user(self):
         snrs = self.check_output(['nrfjprog', '--ids'])
@@ -60,10 +60,7 @@ class NrfJprogBinaryRunner(ZephyrBinaryRunner):
 
         return snrs[value - 1]
 
-    def run(self, command, **kwargs):
-        if command != 'flash':
-            raise ValueError('only flash is supported')
-
+    def do_run(self, command, **kwargs):
         board_snr = self.get_board_snr_from_user()
 
         print('Flashing file: {}'.format(self.hex_))
