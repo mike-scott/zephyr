@@ -1,1 +1,1 @@
-set(BOARD_DEBUG_RUNNER openocd)
+set(DEBUG_SCRIPT openocd.sh)

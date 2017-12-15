@@ -1,1 +1,1 @@
-set(BOARD_DEBUG_RUNNER xtensa)
+set(DEBUG_SCRIPT xt-gdb.sh)

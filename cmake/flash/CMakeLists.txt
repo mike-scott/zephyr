@@ -1,6 +1,3 @@
-assert_not(FLASH_SCRIPT "FLASH_SCRIPT has been removed; use BOARD_FLASH_RUNNER")
-assert_not(DEBUG_SCRIPT "DEBUG_SCRIPT has been removed; use BOARD_DEBUG_RUNNER")
-
 get_property(ENV_VARS GLOBAL PROPERTY FLASH_SCRIPT_ENV_VARS)
 
 set(ENV_VARS_FORMATTED "")
@@ -24,13 +21,13 @@ list(APPEND ENV_VARS_FORMATTED
 foreach(target flash debug debugserver)
   if(target STREQUAL flash)
     set(comment "Flashing ${BOARD}")
-    set(runner ${BOARD_FLASH_RUNNER})
+    set(script ${FLASH_SCRIPT})
   elseif(target STREQUAL debug)
     set(comment "Debugging ${BOARD}")
-    set(runner ${BOARD_DEBUG_RUNNER})
+    set(script ${DEBUG_SCRIPT})
   elseif(target STREQUAL debugserver)
     set(comment "Debugging ${BOARD}")
-    set(runner ${BOARD_DEBUG_RUNNER})
+    set(script ${DEBUG_SCRIPT})
     if(EMU_PLATFORM)
       # cmake/qemu/CMakeLists.txt will add a debugserver target for
       # emulation platforms, so we don't add one here
@@ -38,14 +35,14 @@ foreach(target flash debug debugserver)
     endif()
   endif()
 
-  if(runner)
+  if(script)
     set(cmd
       ${CMAKE_COMMAND} -E env
       ${ENV_VARS_FORMATTED}
       ${PYTHON_EXECUTABLE}
       $ENV{ZEPHYR_BASE}/scripts/support/zephyr_flash_debug.py
-      ${runner}
       ${target}
+      ${script}
       DEPENDS ${logical_target_for_zephyr_elf}
       WORKING_DIRECTORY ${APPLICATION_BINARY_DIR}
       )

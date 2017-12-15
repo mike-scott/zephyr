@@ -27,12 +27,13 @@ from runner.core import ZephyrBinaryRunner, get_env_bool_or
 #   python zephyr_flash_debug.py openocd --openocd-bin=/openocd/path ...
 #
 # For now, maintain compatibility.
-def run(runner_name, command, debug):
+def run(shell_script, command, debug):
     try:
-        runner = ZephyrBinaryRunner.create_runner(runner_name, command, debug)
+        runner = ZephyrBinaryRunner.create_for_shell_script(shell_script,
+                                                            command,
+                                                            debug)
     except ValueError:
-        print('runner {} is not available or does not support {}'.format(
-                  runner_name, command),
+        print('Unrecognized shell script {}'.format(shell_script),
               file=sys.stderr)
         raise
 
@@ -44,10 +45,10 @@ if __name__ == '__main__':
     debug = True
     try:
         debug = get_env_bool_or('VERBOSE', False)
-        if len(sys.argv) != 3 or sys.argv[2] not in commands:
-            raise ValueError('usage: {} <runner-name> <{}>'.format(
+        if len(sys.argv) != 3 or sys.argv[1] not in commands:
+            raise ValueError('usage: {} <{}> script-name'.format(
                 sys.argv[0], '|'.join(commands)))
-        run(sys.argv[1], sys.argv[2], debug)
+        run(sys.argv[2], sys.argv[1], debug)
     except Exception as e:
         if debug:
             raise

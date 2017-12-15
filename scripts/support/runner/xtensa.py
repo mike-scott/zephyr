@@ -17,13 +17,8 @@ class XtensaBinaryRunner(ZephyrBinaryRunner):
         self.gdb_cmd = [gdb]
         self.elf_name = elf_name
 
-    @classmethod
-    def name(cls):
-        return 'xtensa'
-
-    @classmethod
-    def handles_command(cls, command):
-        return command == 'debug'
+    def replaces_shell_script(shell_script, command):
+        return command == 'debug' and shell_script == 'xt-gdb.sh'
 
     def create_from_env(command, debug):
         '''Create runner from environment.
@@ -41,6 +36,9 @@ class XtensaBinaryRunner(ZephyrBinaryRunner):
         return XtensaBinaryRunner(xt_gdb, elf_name)
 
     def do_run(self, command, **kwargs):
+        if command != 'debug':
+            raise ValueError('Only debug is supported')
+
         gdb_cmd = (self.gdb_cmd + [self.elf_name])
 
         self.check_call(gdb_cmd)
