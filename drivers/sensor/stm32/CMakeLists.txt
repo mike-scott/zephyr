@@ -1,1 +1,0 @@
-zephyr_sources_ifdef(CONFIG_TEMP_STM32F401X temp_stm32f401x.c)
