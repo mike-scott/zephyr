@@ -36,9 +36,6 @@ static int firmware_retry;
 static struct coap_block_context firmware_block_ctx;
 
 #if defined(CONFIG_LWM2M_FIRMWARE_UPDATE_PULL_COAP_PROXY_SUPPORT)
-#define COAP2COAP_PROXY_URI_PATH	"coap2coap"
-#define COAP2HTTP_PROXY_URI_PATH	"coap2http"
-
 static char proxy_uri[URI_LEN];
 #endif
 
@@ -57,14 +54,15 @@ static int transfer_request(struct coap_block_context *ctx,
 {
 	struct lwm2m_message *msg;
 	int ret;
-	u16_t off;
-	u16_t len;
-	char *cursor;
 #if !defined(CONFIG_LWM2M_FIRMWARE_UPDATE_PULL_COAP_PROXY_SUPPORT)
 	int i;
 	int path_len;
+	char *cursor;
+	u16_t off;
+	u16_t len;
 #else
-	char *uri_path;
+	char *uri_path =
+		CONFIG_LWM2M_FIRMWARE_UPDATE_PULL_COAP_PROXY_URI_PATH;
 #endif
 
 	msg = lwm2m_get_message(&firmware_ctx);
@@ -86,7 +84,14 @@ static int transfer_request(struct coap_block_context *ctx,
 		goto cleanup;
 	}
 
-#if !defined(CONFIG_LWM2M_FIRMWARE_UPDATE_PULL_COAP_PROXY_SUPPORT)
+#if defined(CONFIG_LWM2M_FIRMWARE_UPDATE_PULL_COAP_PROXY_SUPPORT)
+	ret = coap_packet_append_option(&msg->cpkt, COAP_OPTION_URI_PATH,
+					uri_path, strlen(uri_path));
+	if (ret < 0) {
+		SYS_LOG_ERR("Error adding URI_PATH '%s'", uri_path);
+		goto cleanup;
+	}
+#else
 	/* if path is not available, off/len will be zero */
 	off = parsed_uri.field_data[UF_PATH].off;
 	len = parsed_uri.field_data[UF_PATH].len;
@@ -135,39 +140,10 @@ static int transfer_request(struct coap_block_context *ctx,
 	}
 
 #if defined(CONFIG_LWM2M_FIRMWARE_UPDATE_PULL_COAP_PROXY_SUPPORT)
-	/* if path is not available, off/len will be zero */
-	off = parsed_uri.field_data[UF_SCHEMA].off;
-	len = parsed_uri.field_data[UF_SCHEMA].len;
-	cursor = firmware_uri + off;
-
 	ret = coap_packet_append_option(&msg->cpkt, COAP_OPTION_PROXY_URI,
 					firmware_uri, strlen(firmware_uri));
 	if (ret < 0) {
 		SYS_LOG_ERR("Error adding PROXY_URI '%s'", firmware_uri);
-		goto cleanup;
-	}
-
-	/* TODO: convert to lower case */
-	if (len < 4 || len > 5) {
-		ret = -EPROTONOSUPPORT;
-		SYS_LOG_ERR("Unsupported schema");
-		goto cleanup;
-	}
-
-	if (strncmp(cursor, (len == 4 ? "http" : "https"), len) == 0) {
-		uri_path = COAP2HTTP_PROXY_URI_PATH;
-	} else if (strncmp(cursor, (len == 4 ? "coap" : "coaps"), len) == 0) {
-		uri_path = COAP2COAP_PROXY_URI_PATH;
-	} else {
-		ret = -EPROTONOSUPPORT;
-		SYS_LOG_ERR("Unsupported schema");
-		goto cleanup;
-	}
-
-	ret = coap_packet_append_option(&msg->cpkt, COAP_OPTION_PROXY_SCHEME,
-					uri_path, strlen(uri_path));
-	if (ret < 0) {
-		SYS_LOG_ERR("Error adding URI_PATH '%s'", uri_path);
 		goto cleanup;
 	}
 #else
@@ -193,8 +169,6 @@ cleanup:
 
 	if (ret == -ENOMEM) {
 		lwm2m_firmware_set_update_result(RESULT_OUT_OF_MEM);
-	} else if (ret == -EPROTONOSUPPORT) {
-		lwm2m_firmware_set_update_result(RESULT_UNSUP_PROTO);
 	} else {
 		lwm2m_firmware_set_update_result(RESULT_CONNECTION_LOST);
 	}
