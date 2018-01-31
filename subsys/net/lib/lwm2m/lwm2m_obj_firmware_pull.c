@@ -51,25 +51,6 @@ firmware_udp_receive(struct net_app_ctx *app_ctx, struct net_pkt *pkt,
 	lwm2m_udp_receive(&firmware_ctx, pkt, true, NULL);
 }
 
-static void set_update_result_from_error(int error_code)
-{
-	if (error_code == -ENOMEM) {
-		lwm2m_firmware_set_update_result(RESULT_OUT_OF_MEM);
-	} else if (error_code == -ENOSPC) {
-		lwm2m_firmware_set_update_result(RESULT_NO_STORAGE);
-	} else if (error_code == -EFAULT) {
-		lwm2m_firmware_set_update_result(RESULT_INTEGRITY_FAILED);
-	} else if (error_code == -ENOMSG) {
-		lwm2m_firmware_set_update_result(RESULT_CONNECTION_LOST);
-	} else if (error_code == -ENOTSUP) {
-		lwm2m_firmware_set_update_result(RESULT_INVALID_URI);
-	} else if (error_code == -EPROTONOSUPPORT) {
-		lwm2m_firmware_set_update_result(RESULT_UNSUP_PROTO);
-	} else {
-		lwm2m_firmware_set_update_result(RESULT_UPDATE_FAILED);
-	}
-}
-
 static int transfer_request(struct coap_block_context *ctx,
 			    u8_t *token, u8_t tkl,
 			    coap_reply_t reply_cb)
@@ -101,8 +82,7 @@ static int transfer_request(struct coap_block_context *ctx,
 	msg->message_timeout_cb = do_transmit_timeout_cb;
 
 	ret = lwm2m_init_message(msg);
-	if (ret < 0) {
-		SYS_LOG_ERR("Error setting up lwm2m message");
+	if (ret) {
 		goto cleanup;
 	}
 
@@ -149,7 +129,7 @@ static int transfer_request(struct coap_block_context *ctx,
 #endif
 
 	ret = coap_append_block2_option(&msg->cpkt, ctx);
-	if (ret < 0) {
+	if (ret) {
 		SYS_LOG_ERR("Unable to add block2 option.");
 		goto cleanup;
 	}
@@ -193,7 +173,7 @@ static int transfer_request(struct coap_block_context *ctx,
 #else
 	/* Ask the server to provide a size estimate */
 	ret = coap_append_option_int(&msg->cpkt, COAP_OPTION_SIZE2, 0);
-	if (ret < 0) {
+	if (ret) {
 		SYS_LOG_ERR("Unable to add size2 option.");
 		goto cleanup;
 	}
@@ -210,6 +190,15 @@ static int transfer_request(struct coap_block_context *ctx,
 
 cleanup:
 	lwm2m_reset_message(msg, true);
+
+	if (ret == -ENOMEM) {
+		lwm2m_firmware_set_update_result(RESULT_OUT_OF_MEM);
+	} else if (ret == -EPROTONOSUPPORT) {
+		lwm2m_firmware_set_update_result(RESULT_UNSUP_PROTO);
+	} else {
+		lwm2m_firmware_set_update_result(RESULT_CONNECTION_LOST);
+	}
+
 	return ret;
 }
 
@@ -370,9 +359,6 @@ do_firmware_transfer_reply_cb(const struct coap_packet *response,
 		/* More block(s) to come, setup next transfer */
 		ret = transfer_request(&firmware_block_ctx, token, tkl,
 				       do_firmware_transfer_reply_cb);
-		if (ret < 0) {
-			goto error;
-		}
 	} else {
 		/* Download finished */
 		lwm2m_firmware_set_update_state(STATE_DOWNLOADED);
@@ -381,7 +367,18 @@ do_firmware_transfer_reply_cb(const struct coap_packet *response,
 	return 0;
 
 error:
-	set_update_result_from_error(ret);
+	if (ret == -ENOMEM) {
+		lwm2m_firmware_set_update_result(RESULT_OUT_OF_MEM);
+	} else if (ret == -ENOSPC) {
+		lwm2m_firmware_set_update_result(RESULT_NO_STORAGE);
+	} else if (ret == -EFAULT) {
+		lwm2m_firmware_set_update_result(RESULT_INTEGRITY_FAILED);
+	} else if (ret == -ENOMSG) {
+		lwm2m_firmware_set_update_result(RESULT_CONNECTION_LOST);
+	} else {
+		lwm2m_firmware_set_update_result(RESULT_UPDATE_FAILED);
+	}
+
 	return ret;
 }
 
@@ -389,22 +386,14 @@ static void do_transmit_timeout_cb(struct lwm2m_message *msg)
 {
 	u8_t token[8];
 	u8_t tkl;
-	int ret;
 
 	if (firmware_retry < PACKET_TRANSFER_RETRY_MAX) {
 		/* retry block */
 		SYS_LOG_WRN("TIMEOUT - Sending a retry packet!");
 		tkl = coap_header_get_token(&msg->cpkt, token);
 
-		ret = transfer_request(&firmware_block_ctx, token, tkl,
-				       do_firmware_transfer_reply_cb);
-		if (ret < 0) {
-			/* abort retries / transfer */
-			set_update_result_from_error(ret);
-			firmware_retry = PACKET_TRANSFER_RETRY_MAX;
-			return;
-		}
-
+		transfer_request(&firmware_block_ctx, token, tkl,
+				 do_firmware_transfer_reply_cb);
 		firmware_retry++;
 	} else {
 		SYS_LOG_ERR("TIMEOUT - Too many retry packet attempts! "
@@ -428,8 +417,8 @@ static void firmware_transfer(struct k_work *work)
 	server_addr = CONFIG_LWM2M_FIRMWARE_UPDATE_PULL_COAP_PROXY_ADDR;
 	if (strlen(server_addr) >= URI_LEN) {
 		SYS_LOG_ERR("Invalid Proxy URI: %s", server_addr);
-		ret = -ENOTSUP;
-		goto error;
+		lwm2m_firmware_set_update_result(RESULT_UNSUP_PROTO);
+		return;
 	}
 
 	/* Copy required as it gets modified when port is available */
@@ -446,15 +435,15 @@ static void firmware_transfer(struct k_work *work)
 				    &parsed_uri);
 	if (ret != 0) {
 		SYS_LOG_ERR("Invalid firmware URI: %s", server_addr);
-		ret = -ENOTSUP;
-		goto error;
+		lwm2m_firmware_set_update_result(RESULT_INVALID_URI);
+		return;
 	}
 
 	/* Check schema and only support coap for now */
 	if (!(parsed_uri.field_set & (1 << UF_SCHEMA))) {
 		SYS_LOG_ERR("No schema in package uri");
-		ret = -ENOTSUP;
-		goto error;
+		lwm2m_firmware_set_update_result(RESULT_INVALID_URI);
+		return;
 	}
 
 	/* TODO: enable coaps when DTLS is ready */
@@ -462,8 +451,8 @@ static void firmware_transfer(struct k_work *work)
 	len = parsed_uri.field_data[UF_SCHEMA].len;
 	if (len != 4 || memcmp(server_addr + off, "coap", 4)) {
 		SYS_LOG_ERR("Unsupported schema");
-		ret = -EPROTONOSUPPORT;
-		goto error;
+		lwm2m_firmware_set_update_result(RESULT_UNSUP_PROTO);
+		return;
 	}
 
 	if (!(parsed_uri.field_set & (1 << UF_PORT))) {
@@ -482,10 +471,10 @@ static void firmware_transfer(struct k_work *work)
 				      &server_addr[off], parsed_uri.port,
 				      firmware_ctx.net_init_timeout, NULL);
 	server_addr[off + len] = tmp;
-	if (ret < 0) {
+	if (ret) {
 		SYS_LOG_ERR("Could not get an UDP context (err:%d)", ret);
-		ret = -ENOMSG;
-		goto error;
+		lwm2m_firmware_set_update_result(RESULT_CONNECTION_LOST);
+		return;
 	}
 
 	SYS_LOG_INF("Connecting to server %s, port %d", server_addr + off,
@@ -496,10 +485,9 @@ static void firmware_transfer(struct k_work *work)
 	/* set net_app callbacks */
 	ret = net_app_set_cb(&firmware_ctx.net_app_ctx, NULL,
 			     firmware_udp_receive, NULL, NULL);
-	if (ret < 0) {
+	if (ret) {
 		SYS_LOG_ERR("Could not set receive callback (err:%d)", ret);
-		/* make sure this sets RESULT_CONNECTION_LOST */
-		ret = -ENOMSG;
+		lwm2m_firmware_set_update_result(RESULT_CONNECTION_LOST);
 		goto cleanup;
 	}
 
@@ -513,20 +501,13 @@ static void firmware_transfer(struct k_work *work)
 	/* reset block transfer context */
 	coap_block_transfer_init(&firmware_block_ctx,
 				 lwm2m_default_block_size(), 0);
-	ret = transfer_request(&firmware_block_ctx, coap_next_token(), 8,
-			       do_firmware_transfer_reply_cb);
-	if (ret < 0) {
-		goto cleanup;
-	}
-
+	transfer_request(&firmware_block_ctx, coap_next_token(), 8,
+			 do_firmware_transfer_reply_cb);
 	return;
 
 cleanup:
 	net_app_close(&firmware_ctx.net_app_ctx);
 	net_app_release(&firmware_ctx.net_app_ctx);
-
-error:
-	set_update_result_from_error(ret);
 }
 
 /* TODO: */
