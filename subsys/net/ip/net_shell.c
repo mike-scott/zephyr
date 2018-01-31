@@ -667,8 +667,8 @@ static void tcp_cb(struct net_tcp *tcp, void *user_data)
 	int *count = user_data;
 	u16_t recv_mss = net_tcp_get_recv_mss(tcp);
 
-	printk("%p    %5u     %5u %10u %10u %5u   %s\n",
-	       tcp,
+	printk("%p %p   %5u    %5u %10u %10u %5u   %s\n",
+	       tcp, tcp->context,
 	       ntohs(net_sin6_ptr(&tcp->context->local)->sin6_port),
 	       ntohs(net_sin6(&tcp->context->remote)->sin6_port),
 	       tcp->send_seq, tcp->send_ack, recv_mss,
@@ -1161,7 +1161,7 @@ int net_shell_cmd_conn(int argc, char *argv[])
 #endif
 
 #if defined(CONFIG_NET_TCP)
-	printk("\nTCP        Src port  Dst port   Send-Seq   Send-Ack  MSS"
+	printk("\nTCP        Context   Src port Dst port   Send-Seq   Send-Ack  MSS"
 	       "%s\n", IS_ENABLED(CONFIG_NET_DEBUG_TCP) ? "    State" : "");
 
 	count = 0;
@@ -1783,6 +1783,7 @@ static enum net_verdict _handle_ipv6_echo_reply(struct net_pkt *pkt)
 	k_sem_give(&ping_timeout);
 	_remove_ipv6_ping_handler();
 
+	net_pkt_unref(pkt);
 	return NET_OK;
 }
 
@@ -1860,6 +1861,7 @@ static enum net_verdict _handle_ipv4_echo_reply(struct net_pkt *pkt)
 	k_sem_give(&ping_timeout);
 	_remove_ipv4_ping_handler();
 
+	net_pkt_unref(pkt);
 	return NET_OK;
 }
 
@@ -2541,7 +2543,7 @@ static struct shell_cmd net_commands[] = {
 		"arp flush\n\tRemove all entries from ARP cache" },
 	{ "conn", net_shell_cmd_conn,
 		"\n\tPrint information about network connections" },
-	{ "dns", net_shell_cmd_dns, "\n\tShow how DNS is configure\n"
+	{ "dns", net_shell_cmd_dns, "\n\tShow how DNS is configured\n"
 		"dns cancel\n\tCancel all pending requests\n"
 		"dns <hostname> [A or AAAA]\n\tQuery IPv4 address (default) or "
 		"IPv6 address for a  host name" },

@@ -1138,7 +1138,7 @@ static inline s64_t __ticks_to_ms(s64_t ticks)
 #endif
 
 #else
-	__ASSERT(ticks == 0, "");
+	__ASSERT(ticks == 0, "ticks not zero");
 	return 0;
 #endif
 }
@@ -2417,7 +2417,7 @@ static inline int k_delayed_work_submit(struct k_delayed_work *work,
  *
  * This routine computes the (approximate) time remaining before a
  * delayed work gets executed. If the delayed work is not waiting to be
- * schedules, it returns zero.
+ * scheduled, it returns zero.
  *
  * @param work     Delayed work item.
  *
@@ -3659,6 +3659,18 @@ extern int k_mem_pool_alloc(struct k_mem_pool *pool, struct k_mem_block *block,
  * @return N/A
  */
 extern void k_mem_pool_free(struct k_mem_block *block);
+
+/**
+ * @brief Free memory allocated from a memory pool.
+ *
+ * This routine releases a previously allocated memory block back to its
+ * memory pool
+ *
+ * @param id Memory block identifier.
+ *
+ * @return N/A
+ */
+extern void k_mem_pool_free_id(struct k_mem_block_id *id);
 
 /**
  * @} end addtogroup mem_pool_apis

@@ -1,5 +1,5 @@
 common:
-  build_only: true
+  harness: net
   depends_on: ieee802154
   tags: net rpl ieee802154
 sample:
@@ -11,3 +11,4 @@ tests:
   test_quark_se_c1000_devboard:
     extra_args: CONF_FILE="prj_quark_se_c1000_devboard.conf"
     platform_whitelist: quark_se_c1000_devboard
+    filter: ASSERT == 0

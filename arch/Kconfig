@@ -18,6 +18,7 @@ config ARC
 
 config ARM
 	bool "ARM architecture"
+	select ARCH_HAS_THREAD_ABORT
 
 config X86
 	bool "x86 architecture"
@@ -32,6 +33,14 @@ config RISCV32
 
 config XTENSA
 	bool "Xtensa architecture"
+
+config ARCH_POSIX
+	bool "POSIX (native) architecture"
+	select ATOMIC_OPERATIONS_BUILTIN
+	select ARCH_HAS_CUSTOM_SWAP_TO_MAIN
+	select ARCH_HAS_CUSTOM_BUSY_WAIT
+	select ARCH_HAS_THREAD_ABORT
+	select NATIVE_APPLICATION
 
 endchoice
 
@@ -164,6 +173,13 @@ config ARCH_HAS_EXECUTABLE_PAGE_BIT
 	bool
 
 #
+# Other architecture related options
+#
+
+config ARCH_HAS_THREAD_ABORT
+	bool
+
+#
 # Hidden PM feature configs which are to be selected by
 # individual SoC.
 #
@@ -282,6 +298,6 @@ config BOARD
 	  arch/<arch>/soc/<family>/<series>
 
 
-source "arch/*/Kconfig"
+source "arch/$ENV_VAR_SYM_ARCH/Kconfig"
 
 source "boards/Kconfig"

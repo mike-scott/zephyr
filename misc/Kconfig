@@ -122,6 +122,13 @@ config CROSS_COMPILE
 	  need to set this unless you want the configured kernel build
 	  directory to select the cross-compiler automatically.
 
+config NATIVE_APPLICATION
+	bool "Build as a native host application"
+	default n
+	help
+	  Build as a native application that can run on the host and using
+	  resources and libraries provided by the host.
+
 config COMPILER_OPT
 	string
 	prompt "Custom compiler options"
@@ -162,6 +169,20 @@ config OUTPUT_DISASSEMBLY
 	help
 	  Create an .lst file with the assembly listing of the firmware.
 
+config OUTPUT_PRINT_MEMORY_USAGE
+	bool "Print memory usage to stdout"
+	default y
+	help
+	  If the toolchain supports it, this option will pass
+	  --print-memory-region to the linker when it is doing it's first
+	  linker pass. Note that the memory regions are symbolic concepts
+	  defined by the linker scripts and do not necessarily map
+	  directly to the real physical address space. Take also note that
+	  some platforms do two passes of the linker so the results do not
+	  match exactly to the final elf file. See also rom_report,
+	  ram_report and
+	  https://sourceware.org/binutils/docs/ld/MEMORY.html
+
 config BUILD_OUTPUT_HEX
 	bool "Build a binary in HEX format"
 	default n
@@ -175,6 +196,13 @@ config BUILD_OUTPUT_BIN
 	help
 	  Build a binary in BIN format. This will build a zephyr.bin file need
 	  by some platforms.
+
+config BUILD_OUTPUT_EXE
+	bool "Build a binary in ELF format with .exe extension"
+	default n
+	help
+	  Build a binary in ELF format that can run in the host system. This
+	  will build a zephyr.exe file.
 
 config BUILD_OUTPUT_S19
 	bool "Build a binary in S19 format"

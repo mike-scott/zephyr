@@ -57,6 +57,11 @@ struct core_register_service_cmd {
 	u8_t id;
 } __packed;
 
+#define CORE_UNREGISTER_SERVICE		0x04
+struct core_unregister_service_cmd {
+	u8_t id;
+} __packed;
+
 /* events */
 #define CORE_EV_IUT_READY		0x80
 
@@ -715,12 +720,52 @@ struct mesh_ivu_test_mode_cmd {
 
 #define MESH_IVU_TOGGLE_STATE			0x09
 
+#define MESH_NET_SEND			0x0a
+struct mesh_net_send_cmd {
+	u8_t ttl;
+	u16_t src;
+	u16_t dst;
+	u8_t payload_len;
+	u8_t payload[0];
+} __packed;
+
+#define MESH_HEALTH_GENERATE_FAULTS	0x0b
+struct mesh_health_generate_faults_rp {
+	u8_t test_id;
+	u8_t cur_faults_count;
+	u8_t reg_faults_count;
+	u8_t current_faults[0];
+	u8_t registered_faults[0];
+} __packed;
+
+#define MESH_HEALTH_CLEAR_FAULTS	0x0c
+
 #define MESH_LPN			0x0d
 struct mesh_lpn_set_cmd {
 	u8_t enable;
 } __packed;
 
 #define MESH_LPN_POLL			0x0e
+
+#define MESH_MODEL_SEND			0x0f
+struct mesh_model_send_cmd {
+	u16_t src;
+	u16_t dst;
+	u8_t payload_len;
+	u8_t payload[0];
+} __packed;
+
+#define MESH_LPN_SUBSCRIBE		0x10
+struct mesh_lpn_subscribe_cmd {
+	u16_t address;
+} __packed;
+
+#define MESH_LPN_UNSUBSCRIBE		0x11
+struct mesh_lpn_unsubscribe_cmd {
+	u16_t address;
+} __packed;
+
+#define MESH_RPL_CLEAR			0x12
 
 /* events */
 #define MESH_EV_OUT_NUMBER_ACTION	0x80
@@ -755,25 +800,46 @@ struct mesh_prov_link_closed_ev {
 	u8_t bearer;
 } __packed;
 
+#define MESH_EV_NET_RECV		0x86
+struct mesh_net_recv_ev {
+	u8_t ttl;
+	u8_t ctl;
+	u16_t src;
+	u16_t dst;
+	u8_t payload_len;
+	u8_t payload[0];
+} __packed;
+
+#define MESH_EV_INVALID_BEARER		0x87
+struct mesh_invalid_bearer_ev {
+	u8_t opcode;
+} __packed;
+
+#define MESH_EV_INCOMP_TIMER_EXP	0x88
+
 void tester_init(void);
 void tester_rsp(u8_t service, u8_t opcode, u8_t index, u8_t status);
 void tester_send(u8_t service, u8_t opcode, u8_t index, u8_t *data,
 		 size_t len);
 
 u8_t tester_init_gap(void);
+u8_t tester_unregister_gap(void);
 void tester_handle_gap(u8_t opcode, u8_t index, u8_t *data,
 		       u16_t len);
 u8_t tester_init_gatt(void);
+u8_t tester_unregister_gatt(void);
 void tester_handle_gatt(u8_t opcode, u8_t index, u8_t *data,
 			u16_t len);
 
 #if defined(CONFIG_BT_L2CAP_DYNAMIC_CHANNEL)
 u8_t tester_init_l2cap(void);
+u8_t tester_unregister_l2cap(void);
 void tester_handle_l2cap(u8_t opcode, u8_t index, u8_t *data,
 			 u16_t len);
 #endif /* CONFIG_BT_L2CAP_DYNAMIC_CHANNEL */
 
 #if defined(CONFIG_BT_MESH)
 u8_t tester_init_mesh(void);
+u8_t tester_unregister_mesh(void);
 void tester_handle_mesh(u8_t opcode, u8_t index, u8_t *data, u16_t len);
 #endif /* CONFIG_BT_MESH */
