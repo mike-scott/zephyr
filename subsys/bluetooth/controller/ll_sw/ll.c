@@ -75,72 +75,6 @@ static u8_t MALIGN(4) _radio[LL_MEM_TOTAL];
 
 static struct k_sem *sem_recv;
 
-static struct {
-	u8_t pub_addr[BDADDR_SIZE];
-	u8_t rnd_addr[BDADDR_SIZE];
-} _ll_context;
-
-void mayfly_enable_cb(u8_t caller_id, u8_t callee_id, u8_t enable)
-{
-	(void)caller_id;
-
-	LL_ASSERT(callee_id == MAYFLY_CALL_ID_1);
-
-	if (enable) {
-		irq_enable(SWI4_IRQn);
-	} else {
-		irq_disable(SWI4_IRQn);
-	}
-}
-
-u32_t mayfly_is_enabled(u8_t caller_id, u8_t callee_id)
-{
-	(void)caller_id;
-
-	if (callee_id == MAYFLY_CALL_ID_0) {
-		return irq_is_enabled(RTC0_IRQn);
-	} else if (callee_id == MAYFLY_CALL_ID_1) {
-		return irq_is_enabled(SWI4_IRQn);
-	}
-
-	LL_ASSERT(0);
-
-	return 0;
-}
-
-u32_t mayfly_prio_is_equal(u8_t caller_id, u8_t callee_id)
-{
-#if (RADIO_TICKER_USER_ID_WORKER_PRIO == RADIO_TICKER_USER_ID_JOB_PRIO)
-	return (caller_id == callee_id) ||
-	       ((caller_id == MAYFLY_CALL_ID_0) &&
-		(callee_id == MAYFLY_CALL_ID_1)) ||
-	       ((caller_id == MAYFLY_CALL_ID_1) &&
-		(callee_id == MAYFLY_CALL_ID_0));
-#else
-	return caller_id == callee_id;
-#endif
-}
-
-void mayfly_pend(u8_t caller_id, u8_t callee_id)
-{
-	(void)caller_id;
-
-	switch (callee_id) {
-	case MAYFLY_CALL_ID_0:
-		NVIC_SetPendingIRQ(RTC0_IRQn);
-		break;
-
-	case MAYFLY_CALL_ID_1:
-		NVIC_SetPendingIRQ(SWI4_IRQn);
-		break;
-
-	case MAYFLY_CALL_ID_PROGRAM:
-	default:
-		LL_ASSERT(0);
-		break;
-	}
-}
-
 void radio_active_callback(u8_t active)
 {
 }
@@ -266,34 +200,4 @@ void ll_timeslice_ticker_id_get(u8_t * const instance_index, u8_t * const user_i
 {
 	*user_id = (TICKER_NODES - FLASH_TICKER_NODES); /* The last index in the total tickers */
 	*instance_index = RADIO_TICKER_INSTANCE_ID_RADIO;
-}
-
-u8_t *ll_addr_get(u8_t addr_type, u8_t *bdaddr)
-{
-	if (addr_type > 1) {
-		return NULL;
-	}
-
-	if (addr_type) {
-		if (bdaddr) {
-			memcpy(bdaddr, _ll_context.rnd_addr, BDADDR_SIZE);
-		}
-
-		return _ll_context.rnd_addr;
-	}
-
-	if (bdaddr) {
-		memcpy(bdaddr, _ll_context.pub_addr, BDADDR_SIZE);
-	}
-
-	return _ll_context.pub_addr;
-}
-
-void ll_addr_set(u8_t addr_type, u8_t const *const bdaddr)
-{
-	if (addr_type) {
-		memcpy(_ll_context.rnd_addr, bdaddr, BDADDR_SIZE);
-	} else {
-		memcpy(_ll_context.pub_addr, bdaddr, BDADDR_SIZE);
-	}
 }
