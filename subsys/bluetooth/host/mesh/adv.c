@@ -58,6 +58,7 @@ static const u8_t adv_type[] = {
 	[BT_MESH_ADV_PROV]   = BT_DATA_MESH_PROV,
 	[BT_MESH_ADV_DATA]   = BT_DATA_MESH_MESSAGE,
 	[BT_MESH_ADV_BEACON] = BT_DATA_MESH_BEACON,
+	[BT_MESH_ADV_URI]    = BT_DATA_URI,
 };
 
 NET_BUF_POOL_DEFINE(adv_buf_pool, CONFIG_BT_MESH_ADV_BUF_COUNT,
@@ -249,7 +250,7 @@ static void bt_mesh_scan_cb(const bt_addr_le_t *addr, s8_t rssi,
 			return;
 		}
 
-		if (len > buf->len || buf->len < 1) {
+		if (len > buf->len) {
 			BT_WARN("AD malformed");
 			return;
 		}

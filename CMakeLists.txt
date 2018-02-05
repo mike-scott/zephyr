@@ -74,22 +74,26 @@ endif()
 
 # We need to set an optimization level.
 # Default to -Os
-# unless CONFIG_DEBUG is set, then it is -Og
+# unless CONFIG_NO_OPTIMIZATIONS is set, then it is -O0
+# or unless CONFIG_DEBUG is set, then it is -Og
 #
 # also, some toolchain's break with -Os, and some toolchain's break
 # with -Og so allow them to override what flag to use
 #
 # Finally, the user can use Kconfig to add compiler options that will
 # come after these options and override them
-set_ifndef(OPTIMIZE_FOR_SIZE_FLAG     "-Os")
-set_ifndef(OPTIMIZE_FOR_DEBUG_FLAG    "-Og")
-set_ifndef(OPTIMIZE_FOR_COVERAGE_FLAG "-O0")
-if(CONFIG_DEBUG)
+set_ifndef(OPTIMIZE_FOR_NO_OPTIMIZATIONS_FLAG "-O0")
+set_ifndef(OPTIMIZE_FOR_DEBUG_FLAG            "-Og")
+set_ifndef(OPTIMIZE_FOR_SIZE_FLAG             "-Os")
+
+if(CONFIG_NO_OPTIMIZATIONS)
+  set(OPTIMIZATION_FLAG ${OPTIMIZE_FOR_NO_OPTIMIZATIONS_FLAG})
+elseif(CONFIG_DEBUG_OPTIMIZATIONS)
   set(OPTIMIZATION_FLAG ${OPTIMIZE_FOR_DEBUG_FLAG})
-elseif(CONFIG_COVERAGE)
-  set(OPTIMIZATION_FLAG ${OPTIMIZE_FOR_COVERAGE_FLAG})
-else()
+elseif(CONFIG_SIZE_OPTIMIZATIONS)
   set(OPTIMIZATION_FLAG ${OPTIMIZE_FOR_SIZE_FLAG}) # Default
+else()
+  assert(0 "Unreachable code. Expected optimization level to have been chosen. See misc/Kconfig.")
 endif()
 
 zephyr_compile_options(
@@ -676,7 +680,7 @@ if(CONFIG_USERSPACE)
     ${GPERF}
     --output-file ${OUTPUT_SRC_PRE}
     ${OBJ_LIST}
-    DEPENDS obj_list
+    DEPENDS obj_list ${OBJ_LIST}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     )
   add_custom_target(output_src_pre DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_SRC_PRE})
@@ -693,7 +697,7 @@ if(CONFIG_USERSPACE)
     -i ${OUTPUT_SRC_PRE}
     -o ${OUTPUT_SRC}
     $<$<BOOL:${CMAKE_VERBOSE_MAKEFILE}>:--verbose>
-    DEPENDS output_src_pre
+    DEPENDS output_src_pre ${OUTPUT_SRC_PRE}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     )
   add_custom_target(output_src DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_SRC})
@@ -705,6 +709,8 @@ if(CONFIG_USERSPACE)
     ${CMAKE_CURRENT_BINARY_DIR}/${OUTPUT_SRC}
     )
 
+  # always compile kobject_hash.c at optimization -Os
+  set_source_files_properties(${OUTPUT_SRC} PROPERTIES COMPILE_FLAGS -Os)
   target_link_libraries(output_lib zephyr_interface)
 
   # Turn off -ffunction-sections, etc.
