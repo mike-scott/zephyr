@@ -122,6 +122,19 @@
 &uart2 {
 	status = "ok";
 	current-speed = <115200>;
+
+#ifdef CONFIG_MODEM_WCN14A2A
+	wcn14a2a {
+		compatible = "wcn,m14a2a";
+		label = "wcn14a2a";
+		mdm-boot-mode-sel-gpios = <&gpioc 17 0>;
+		mdm-power-gpios = <&gpiob 9 0>;
+		mdm-keep-awake-gpios = <&gpioc 2 0>;
+		mdm-reset-gpios = <&gpioc 12 0>;
+		mdm-shld-trans-ena-gpios = <&gpioc 4 0>;
+		status = "ok";
+	};
+#endif
 };
 #endif
 
