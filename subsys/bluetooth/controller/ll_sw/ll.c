@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2017 Nordic Semiconductor ASA
+ * Copyright (c) 2016-2018 Nordic Semiconductor ASA
  * Copyright (c) 2016 Vinayak Kariappa Chettimada
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -25,6 +25,10 @@
 #include "hal/ccm.h"
 #include "hal/radio.h"
 #include "hal/debug.h"
+
+#if defined(CONFIG_SOC_FAMILY_NRF5)
+#include "hal/nrf5/ticker.h"
+#endif /* CONFIG_SOC_FAMILY_NRF5 */
 
 #include "util/util.h"
 #include "util/mem.h"
@@ -157,9 +161,14 @@ int ll_init(struct k_sem *sem_rx)
 	_ticker_users[MAYFLY_CALL_ID_2][0] = 0;
 	_ticker_users[MAYFLY_CALL_ID_PROGRAM][0] = TICKER_USER_APP_OPS;
 
-	ticker_init(RADIO_TICKER_INSTANCE_ID_RADIO, TICKER_NODES,
-		    &_ticker_nodes[0], MAYFLY_CALLER_COUNT, &_ticker_users[0],
-		    TICKER_USER_OPS, &_ticker_user_ops[0]);
+	err = ticker_init(RADIO_TICKER_INSTANCE_ID_RADIO,
+			  TICKER_NODES, &_ticker_nodes[0],
+			  MAYFLY_CALLER_COUNT, &_ticker_users[0],
+			  TICKER_USER_OPS, &_ticker_user_ops[0],
+			  hal_ticker_instance0_caller_id_get,
+			  hal_ticker_instance0_sched,
+			  hal_ticker_instance0_trigger_set);
+	LL_ASSERT(!err);
 
 	clk_m16 = device_get_binding(CONFIG_CLOCK_CONTROL_NRF5_M16SRC_DRV_NAME);
 	if (!clk_m16) {
