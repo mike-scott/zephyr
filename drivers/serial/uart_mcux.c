@@ -16,6 +16,7 @@ struct uart_mcux_config {
 	char *clock_name;
 	clock_control_subsys_t clock_subsys;
 	u32_t baud_rate;
+	bool use_flow_control;
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	void (*irq_config_func)(struct device *dev);
 #endif
@@ -245,6 +246,10 @@ static int uart_mcux_init(struct device *dev)
 	uart_config.enableTx = true;
 	uart_config.enableRx = true;
 	uart_config.baudRate_Bps = config->baud_rate;
+	if (config->use_flow_control) {
+		uart_config.enableRxRTS = true;
+		uart_config.enableTxCTS = true;
+	}
 
 	UART_Init(config->base, &uart_config, clock_freq);
 
@@ -288,6 +293,7 @@ static const struct uart_mcux_config uart_mcux_0_config = {
 	.clock_name = CONFIG_UART_MCUX_0_CLOCK_NAME,
 	.clock_subsys = (clock_control_subsys_t)CONFIG_UART_MCUX_0_CLOCK_SUBSYS,
 	.baud_rate = CONFIG_UART_MCUX_0_BAUD_RATE,
+	.use_flow_control = IS_ENABLED(CONFIG_UART_MCUX_0_FLOW_CONTROL),
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.irq_config_func = uart_mcux_config_func_0,
 #endif
@@ -331,6 +337,7 @@ static const struct uart_mcux_config uart_mcux_1_config = {
 	.clock_name = CONFIG_UART_MCUX_1_CLOCK_NAME,
 	.clock_subsys = (clock_control_subsys_t)CONFIG_UART_MCUX_1_CLOCK_SUBSYS,
 	.baud_rate = CONFIG_UART_MCUX_1_BAUD_RATE,
+	.use_flow_control = IS_ENABLED(CONFIG_UART_MCUX_1_FLOW_CONTROL),
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.irq_config_func = uart_mcux_config_func_1,
 #endif
@@ -374,6 +381,7 @@ static const struct uart_mcux_config uart_mcux_2_config = {
 	.clock_name = CONFIG_UART_MCUX_2_CLOCK_NAME,
 	.clock_subsys = (clock_control_subsys_t)CONFIG_UART_MCUX_2_CLOCK_SUBSYS,
 	.baud_rate = CONFIG_UART_MCUX_2_BAUD_RATE,
+	.use_flow_control = IS_ENABLED(CONFIG_UART_MCUX_2_FLOW_CONTROL),
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.irq_config_func = uart_mcux_config_func_2,
 #endif
@@ -417,6 +425,7 @@ static const struct uart_mcux_config uart_mcux_3_config = {
 	.clock_name = CONFIG_UART_MCUX_3_CLOCK_NAME,
 	.clock_subsys = (clock_control_subsys_t)CONFIG_UART_MCUX_3_CLOCK_SUBSYS,
 	.baud_rate = CONFIG_UART_MCUX_3_BAUD_RATE,
+	.use_flow_control = IS_ENABLED(CONFIG_UART_MCUX_3_FLOW_CONTROL),
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.irq_config_func = uart_mcux_config_func_3,
 #endif
@@ -460,6 +469,7 @@ static const struct uart_mcux_config uart_mcux_4_config = {
 	.clock_name = CONFIG_UART_MCUX_4_CLOCK_NAME,
 	.clock_subsys = (clock_control_subsys_t)CONFIG_UART_MCUX_4_CLOCK_SUBSYS,
 	.baud_rate = CONFIG_UART_MCUX_4_BAUD_RATE,
+	.use_flow_control = IS_ENABLED(CONFIG_UART_MCUX_4_FLOW_CONTROL),
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.irq_config_func = uart_mcux_config_func_4,
 #endif
@@ -503,6 +513,7 @@ static const struct uart_mcux_config uart_mcux_5_config = {
 	.clock_name = CONFIG_UART_MCUX_5_CLOCK_NAME,
 	.clock_subsys = (clock_control_subsys_t)CONFIG_UART_MCUX_5_CLOCK_SUBSYS,
 	.baud_rate = CONFIG_UART_MCUX_5_BAUD_RATE,
+	.use_flow_control = IS_ENABLED(CONFIG_UART_MCUX_5_FLOW_CONTROL),
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.irq_config_func = uart_mcux_config_func_5,
 #endif
