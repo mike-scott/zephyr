@@ -176,6 +176,10 @@ typedef struct _uart_config
     uint8_t txFifoWatermark; /*!< TX FIFO watermark */
     uint8_t rxFifoWatermark; /*!< RX FIFO watermark */
 #endif
+#if defined(FSL_FEATURE_UART_HAS_MODEM_SUPPORT) && FSL_FEATURE_UART_HAS_MODEM_SUPPORT
+    bool enableRxRTS; /*!< RX RTS enable */
+    bool enableTxCTS; /*!< TX CTS enable */
+#endif
     bool enableTx; /*!< Enable TX */
     bool enableRx; /*!< Enable RX */
 } uart_config_t;
