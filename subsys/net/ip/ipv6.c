@@ -46,6 +46,12 @@
  */
 #define MAX_REACHABLE_TIME 3600000
 
+/* IPv6 minimum link MTU specified in RFC 8200 section 5
+ * Packet Size Issues
+ */
+#define MIN_IPV6_MTU NET_IPV6_MTU
+#define MAX_IPV6_MTU 0xffff
+
 /* IPv6 wildcard and loopback address defined by RFC2553 */
 const struct in6_addr in6addr_any = IN6ADDR_ANY_INIT;
 const struct in6_addr in6addr_loopback = IN6ADDR_LOOPBACK_INIT;
@@ -584,6 +590,11 @@ struct in6_addr *net_ipv6_nbr_lookup_by_index(struct net_if *iface,
 
 	return NULL;
 }
+#else
+const char *net_ipv6_nbr_state2str(enum net_ipv6_nbr_state state)
+{
+	return "<unknown state>";
+}
 #endif /* CONFIG_NET_IPV6_NBR_CACHE */
 
 int net_ipv6_find_last_ext_hdr(struct net_pkt *pkt, u16_t *next_hdr_idx,
@@ -768,13 +779,15 @@ int net_ipv6_finalize_raw(struct net_pkt *pkt, u8_t next_header)
 	NET_IPV6_HDR(pkt)->len[1] = total_len & 0xff;
 
 #if defined(CONFIG_NET_UDP)
-	if (next_header == IPPROTO_UDP) {
+	if (next_header == IPPROTO_UDP &&
+	    net_if_need_calc_tx_checksum(net_pkt_iface(pkt))) {
 		net_udp_set_chksum(pkt, pkt->frags);
 	} else
 #endif
 
 #if defined(CONFIG_NET_TCP)
-	if (next_header == IPPROTO_TCP) {
+	if (next_header == IPPROTO_TCP &&
+	    net_if_need_calc_tx_checksum(net_pkt_iface(pkt))) {
 		net_tcp_set_chksum(pkt, pkt->frags);
 	} else
 #endif
@@ -2138,6 +2151,10 @@ int net_ipv6_send_ns(struct net_if *iface,
 		if (!nbr) {
 			NET_DBG("Could not create new neighbor %s",
 				net_sprint_ipv6_addr(&ns_hdr->tgt));
+			if (pending) {
+				net_pkt_unref(pending);
+			}
+
 			goto drop;
 		}
 	}
@@ -2645,12 +2662,14 @@ static enum net_verdict handle_ra_input(struct net_pkt *pkt)
 				goto drop;
 			}
 
-			net_if_set_mtu(net_pkt_iface(pkt), mtu);
-
-			if (mtu > 0xffff) {
-				/* TODO: discard packet? */
-				NET_ERR("MTU %u, max is %u", mtu, 0xffff);
+			if (mtu < MIN_IPV6_MTU || mtu > MAX_IPV6_MTU) {
+				NET_ERR("Unsupported MTU %u, min is %u, "
+					"max is %u",
+					mtu, MIN_IPV6_MTU, MAX_IPV6_MTU);
+				goto drop;
 			}
+
+			net_if_set_mtu(net_pkt_iface(pkt), mtu);
 
 			break;
 		case NET_ICMPV6_ND_OPT_PREFIX_INFO:

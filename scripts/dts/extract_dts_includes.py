@@ -137,8 +137,7 @@ class Loader(yaml.Loader):
         if not os.path.isfile(filepath):
             # we need to look in bindings/* directories
             # take path and back up 1 directory and parse in '/bindings/*'
-            filepath = os.path.dirname(self._root).split('/')
-            filepath = '/'.join(filepath[:-1])
+            filepath = os.path.dirname(os.path.dirname(self._root))
             for root, dirnames, file in os.walk(filepath):
                 if fnmatch.filter(file, filename):
                     filepath = os.path.join(root, filename)
@@ -905,7 +904,8 @@ def main():
         load_defs['CONFIG_FLASH_LOAD_OFFSET'] = 0
         load_defs['CONFIG_FLASH_LOAD_SIZE'] = 0
 
-    insert_defs(chosen['zephyr,flash'], defs, load_defs, {})
+    if 'zephyr,flash' in chosen:
+        insert_defs(chosen['zephyr,flash'], defs, load_defs, {})
 
     # generate include file
     if args.keyvalue:
