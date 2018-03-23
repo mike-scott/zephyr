@@ -790,6 +790,8 @@ void coap_reply_clear(struct coap_reply *reply)
 	reply->id = 0;
 	reply->tkl = 0;
 	reply->reply = NULL;
+	reply->user_data = NULL;
+	reply->age = 0;
 }
 
 int coap_resource_notify(struct coap_resource *resource)
