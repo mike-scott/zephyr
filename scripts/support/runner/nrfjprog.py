@@ -40,6 +40,9 @@ class NrfJprogBinaryRunner(ZephyrBinaryRunner):
 
     @classmethod
     def create_from_args(cls, args):
+        if args.hack_override_hex is not None:
+            args.kernel_hex = args.hack_override_hex
+
         return NrfJprogBinaryRunner(args.kernel_hex, args.nrf_family,
                                     args.softreset, erase=args.erase,
                                     debug=args.verbose)

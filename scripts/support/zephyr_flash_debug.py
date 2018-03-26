@@ -32,6 +32,7 @@ def runner_handler(cls, args):
     # about the signed mcuboot blob.
     import os
     args.hack_override_bin = os.environ.get('ZEPHYR_HACK_OVERRIDE_BIN')
+    args.hack_override_hex = os.environ.get('ZEPHYR_HACK_OVERRIDE_HEX')
 
     runner = cls.create_from_args(args)
     # This relies on ZephyrBinaryRunner.add_parser() having command as
