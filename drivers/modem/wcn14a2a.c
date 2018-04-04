@@ -1643,7 +1643,7 @@ static void offload_iface_init(struct net_if *iface)
 	struct device *dev = net_if_get_device(iface);
 	struct wcn14a2a_iface_ctx *ctx = dev->driver_data;
 
-	iface->offload = &offload_funcs;
+	iface->if_dev->offload = &offload_funcs;
 	net_if_set_link_addr(iface, wcn14a2a_get_mac(dev),
 			     sizeof(ctx->mac_addr),
 			     NET_LINK_ETHERNET);
