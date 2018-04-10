@@ -17,6 +17,10 @@
 #ifndef __USB_HID_H__
 #define __USB_HID_H__
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct usb_hid_class_subdescriptor {
 	u8_t bDescriptorType;
 	u16_t wDescriptorLength;
@@ -49,6 +53,7 @@ struct usb_hid_descriptor {
 
 typedef int (*hid_cb_t)(struct usb_setup_packet *setup, s32_t *len,
 			u8_t **data);
+typedef void (*hid_int_ready_callback)(void);
 
 struct hid_ops {
 	hid_cb_t get_report;
@@ -57,6 +62,13 @@ struct hid_ops {
 	hid_cb_t set_report;
 	hid_cb_t set_idle;
 	hid_cb_t set_protocol;
+	/*
+	 * int_in_ready is an optional callback that is called when
+	 * the current interrupt IN transfer has completed.  This can
+	 * be used to wait for the endpoint to go idle or to trigger
+	 * the next transfer.
+	 */
+	hid_int_ready_callback int_in_ready;
 };
 
 /* HID Report Definitions */
@@ -144,5 +156,9 @@ void usb_hid_register_device(const u8_t *desc, size_t size,
 
 /* Initialize USB HID */
 int usb_hid_init(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __USB_HID_H__ */

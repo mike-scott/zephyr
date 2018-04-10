@@ -59,8 +59,11 @@ static struct in_addr in4addr_my = { { { 192, 0, 2, 1 } } };
 static struct in_addr in4addr_dst = { { { 192, 168, 1, 1 } } };
 static struct in_addr in4addr_my2 = { { { 192, 0, 42, 1 } } };
 
-/* Keep track of all ethernet interfaces */
-static struct net_if *eth_interfaces[2];
+/* Keep track of all ethernet interfaces. For native_posix board, we need
+ * to increase the count as it has one extra network interface defined in
+ * eth_native_posix driver.
+ */
+static struct net_if *eth_interfaces[2 + IS_ENABLED(CONFIG_ETH_NATIVE_POSIX)];
 
 static struct net_context *udp_v6_ctx_1;
 static struct net_context *udp_v6_ctx_2;
@@ -96,6 +99,8 @@ static void eth_iface_init(struct net_if *iface)
 
 	DBG("Iface %p addr %s\n", iface,
 	    net_sprint_ll_addr(context->mac_addr, sizeof(context->mac_addr)));
+
+	ethernet_init(iface);
 }
 
 static int eth_tx_offloading_disabled(struct net_if *iface, struct net_pkt *pkt)
@@ -212,15 +217,22 @@ static int eth_tx_offloading_enabled(struct net_if *iface, struct net_pkt *pkt)
 	return 0;
 }
 
-static enum eth_hw_caps eth_offloading_enabled(struct device *dev)
+static enum ethernet_hw_caps eth_offloading_enabled(struct device *dev)
 {
-	return ETH_HW_TX_CHKSUM_OFFLOAD |
-		ETH_HW_RX_CHKSUM_OFFLOAD;
+	return ETHERNET_HW_TX_CHKSUM_OFFLOAD |
+		ETHERNET_HW_RX_CHKSUM_OFFLOAD;
+}
+
+static enum ethernet_hw_caps eth_offloading_disabled(struct device *dev)
+{
+	return 0;
 }
 
 static struct ethernet_api api_funcs_offloading_disabled = {
 	.iface_api.init = eth_iface_init,
 	.iface_api.send = eth_tx_offloading_disabled,
+
+	.get_capabilities = eth_offloading_disabled,
 };
 
 static struct ethernet_api api_funcs_offloading_enabled = {
@@ -250,15 +262,17 @@ static int eth_init(struct device *dev)
 	return 0;
 }
 
-NET_DEVICE_INIT(eth_offloading_disabled_test, "eth_offloading_disabled_test",
-		eth_init, &eth_context_offloading_disabled,
-		NULL, CONFIG_ETH_INIT_PRIORITY, &api_funcs_offloading_disabled,
-		ETHERNET_L2, NET_L2_GET_CTX_TYPE(ETHERNET_L2), 1500);
+ETH_NET_DEVICE_INIT(eth_offloading_disabled_test,
+		    "eth_offloading_disabled_test",
+		    eth_init, &eth_context_offloading_disabled,
+		    NULL, CONFIG_ETH_INIT_PRIORITY,
+		    &api_funcs_offloading_disabled, 1500);
 
-NET_DEVICE_INIT(eth_offloading_enabled_test, "eth_offloading_enabled_test",
-		eth_init, &eth_context_offloading_enabled,
-		NULL, CONFIG_ETH_INIT_PRIORITY, &api_funcs_offloading_enabled,
-		ETHERNET_L2, NET_L2_GET_CTX_TYPE(ETHERNET_L2), 1500);
+ETH_NET_DEVICE_INIT(eth_offloading_enabled_test,
+		    "eth_offloading_enabled_test",
+		    eth_init, &eth_context_offloading_enabled,
+		    NULL, CONFIG_ETH_INIT_PRIORITY,
+		    &api_funcs_offloading_enabled, 1500);
 
 struct user_data {
 	int eth_if_count;

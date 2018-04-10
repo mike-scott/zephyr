@@ -11,4 +11,6 @@ supported:
 ram: 64
 flash: 256
 testing:
-        default: true
+  default: true
+  ignore_tags:
+    - net

@@ -784,6 +784,11 @@ class MakeGenerator:
 \t\t{verb} {make_args}\\
 \t\t>>{logfile} 2>&1
 """
+    MAKE_RULE_TMPL_RUN = """\t@echo sanity_test_{phase} {goal} >&2
+\t{generator_cmd} -C {outdir}\\
+\t\t{verb} {make_args}\\
+\t\t>>{logfile} 2>&1
+"""
 
     GOAL_FOOTER_TMPL = "\t@echo sanity_test_finished {goal} >&2\n\n"
 
@@ -839,20 +844,31 @@ class MakeGenerator:
             generator_cmd = "$(MAKE)"
             verb = "VERBOSE=1" if VERBOSE else "VERBOSE=0"
 
-        return MakeGenerator.MAKE_RULE_TMPL.format(
-            generator=generator,
-            generator_cmd=generator_cmd,
-            phase=phase,
-            goal=name,
-            outdir=outdir,
-            cflags=cflags,
-            ldflags=ldflags,
-            directory=workdir,
-            verb=verb,
-            args=args,
-            logfile=logfile,
-            make_args=make_args
-        )
+        if phase == 'running':
+            return MakeGenerator.MAKE_RULE_TMPL_RUN.format(
+                generator_cmd=generator_cmd,
+                phase=phase,
+                goal=name,
+                outdir=outdir,
+                verb=verb,
+                logfile=logfile,
+                make_args=make_args
+            )
+        else:
+            return MakeGenerator.MAKE_RULE_TMPL.format(
+                generator=generator,
+                generator_cmd=generator_cmd,
+                phase=phase,
+                goal=name,
+                outdir=outdir,
+                cflags=cflags,
+                ldflags=ldflags,
+                directory=workdir,
+                verb=verb,
+                args=args,
+                logfile=logfile,
+                make_args=make_args
+            )
 
     def _get_rule_footer(self, name):
         return MakeGenerator.GOAL_FOOTER_TMPL.format(goal=name)
@@ -999,12 +1015,19 @@ class MakeGenerator:
 
         args.append("BOARD={}".format(ti.platform.name))
         args.extend(extra_args)
-        if (ti.platform.qemu_support and (not ti.build_only) and
-                (not build_only) and (enable_slow or not ti.test.slow)):
+
+        do_run_slow = enable_slow or not ti.test.slow
+        do_build_only = ti.build_only or build_only
+        do_run = (not do_build_only) and do_run_slow
+
+
+        if ti.platform.qemu_support and do_run:
             self.add_qemu_goal(ti, args)
+
         elif ti.test.type == "unit":
             self.add_unit_goal(ti, args, coverage)
-        elif ti.platform.type == "native" and (not ti.build_only) and (not build_only):
+
+        elif ti.platform.type == "native" and do_run:
             self.add_native_goal(ti, args, coverage)
         else:
             self.add_instance_build_goal(ti, args, "build.log")
@@ -1204,6 +1227,7 @@ class SanityConfigParser:
         d = {}
         for k, v in self.common.items():
             d[k] = v
+
         for k, v in self.tests[name].items():
             if k not in valid_keys:
                 raise ConfigurationError(
@@ -1216,6 +1240,7 @@ class SanityConfigParser:
                     d[k] += " " + v
             else:
                 d[k] = v
+
         for k, kinfo in valid_keys.items():
             if k not in d:
                 if "required" in kinfo:
@@ -1368,7 +1393,7 @@ class TestCase:
         self.defconfig = {}
         self.yamlfile = yamlfile
 
-    def __repr__(self):
+    def __str__(self):
         return self.name
 
 
@@ -1805,7 +1830,6 @@ class TestSuite:
                                 tc.tc_filter)
                             continue
 
-                    instance.create_overlay()
                     instance_list.append(instance)
 
                 if not instance_list:
@@ -1827,6 +1851,10 @@ class TestSuite:
                         discards[instance] = "Not a default test platform"
                 else:
                     self.add_instances(instance_list)
+
+                for name, case in self.instances.items():
+                    case.create_overlay()
+
         self.discards = discards
         return discards
 
@@ -2107,6 +2135,9 @@ def parse_arguments():
         "run them. Useful if you're just interested in "
         "--discard-report")
 
+    parser.add_argument("--list-tags", action="store_true",
+            help="list all tags in selected tests")
+
     parser.add_argument(
         "-r", "--release", action="store_true",
         help="Update the benchmark database with the results of this test "
@@ -2160,6 +2191,10 @@ def parse_arguments():
         "-j", "--jobs", type=int,
         help="Number of cores to use when building, defaults to "
         "number of CPUs * 2")
+    parser.add_argument(
+            "--show-footprint", action="store_true",
+            help="Show footprint statistics and deltas since last release."
+            )
     parser.add_argument(
         "-H", "--footprint-threshold", type=float, default=5,
         help="When checking test case footprint sizes, warn the user if "
@@ -2389,6 +2424,16 @@ def main():
     ts = TestSuite(options.board_root, options.testcase_root,
                    options.outdir, options.coverage)
 
+    if options.list_tags:
+        tags = set()
+        for n,tc in ts.testcases.items():
+            tags = tags.union(tc.tags)
+
+        for t in tags:
+            print("- {}".format(t))
+
+        return
+
     discards = []
     if options.load_tests:
         ts.load_from_file(options.load_tests)
@@ -2480,7 +2525,7 @@ def main():
 
     deltas = ts.compare_metrics(report_to_use)
     warnings = 0
-    if deltas:
+    if deltas and options.show_footprint:
         for i, metric, value, delta, lower_better in deltas:
             if not options.all_deltas and ((delta < 0 and lower_better) or
                                         (delta > 0 and not lower_better)):

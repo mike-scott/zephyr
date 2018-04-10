@@ -106,12 +106,12 @@ static inline void net_context_send_cb(struct net_context *context,
 
 #if defined(CONFIG_NET_UDP)
 	if (net_context_get_ip_proto(context) == IPPROTO_UDP) {
-		net_stats_update_udp_sent();
+		net_stats_update_udp_sent(net_context_get_iface(context));
 	} else
 #endif
 #if defined(CONFIG_NET_TCP)
 	if (net_context_get_ip_proto(context) == IPPROTO_TCP) {
-		net_stats_update_tcp_seg_sent();
+		net_stats_update_tcp_seg_sent(net_context_get_iface(context));
 	} else
 #endif
 	{
@@ -156,7 +156,7 @@ static bool net_if_tx(struct net_if *iface, struct net_pkt *pkt)
 
 		net_pkt_unref(pkt);
 	} else {
-		net_stats_update_bytes_sent(pkt->total_pkt_len);
+		net_stats_update_bytes_sent(iface, pkt->total_pkt_len);
 	}
 
 	if (context) {
@@ -192,9 +192,9 @@ void net_if_queue_tx(struct net_if *iface, struct net_pkt *pkt)
 #if defined(CONFIG_NET_STATISTICS)
 	pkt->total_pkt_len = net_pkt_get_len(pkt);
 
-	net_stats_update_tc_sent_pkt(tc);
-	net_stats_update_tc_sent_bytes(tc, pkt->total_pkt_len);
-	net_stats_update_tc_sent_priority(tc, prio);
+	net_stats_update_tc_sent_pkt(iface, tc);
+	net_stats_update_tc_sent_bytes(iface, tc, pkt->total_pkt_len);
+	net_stats_update_tc_sent_priority(iface, tc, prio);
 #endif
 
 #if NET_TC_TX_COUNT > 1
@@ -2010,7 +2010,7 @@ void net_if_call_link_cb(struct net_if *iface, struct net_linkaddr *lladdr,
 	}
 }
 
-static bool need_calc_checksum(struct net_if *iface, enum eth_hw_caps caps)
+static bool need_calc_checksum(struct net_if *iface, enum ethernet_hw_caps caps)
 {
 #if defined(CONFIG_NET_L2_ETHERNET)
 	if (net_if_l2(iface) != &NET_L2_GET_NAME(ETHERNET)) {
@@ -2025,12 +2025,12 @@ static bool need_calc_checksum(struct net_if *iface, enum eth_hw_caps caps)
 
 bool net_if_need_calc_tx_checksum(struct net_if *iface)
 {
-	return need_calc_checksum(iface, ETH_HW_TX_CHKSUM_OFFLOAD);
+	return need_calc_checksum(iface, ETHERNET_HW_TX_CHKSUM_OFFLOAD);
 }
 
 bool net_if_need_calc_rx_checksum(struct net_if *iface)
 {
-	return need_calc_checksum(iface, ETH_HW_RX_CHKSUM_OFFLOAD);
+	return need_calc_checksum(iface, ETHERNET_HW_RX_CHKSUM_OFFLOAD);
 }
 
 struct net_if *net_if_get_by_index(u8_t index)
@@ -2192,6 +2192,24 @@ void net_if_init(void)
 #endif
 	}
 #endif /* CONFIG_NET_IPV6 */
+
+#if defined(CONFIG_NET_VLAN)
+	/* Make sure that we do not have too many network interfaces
+	 * compared to the number of VLAN interfaces.
+	 */
+	for (iface = __net_if_start, if_count = 0;
+	     iface != __net_if_end; iface++) {
+		if (net_if_l2(iface) == &NET_L2_GET_NAME(ETHERNET)) {
+			if_count++;
+		}
+	}
+
+	if (if_count > CONFIG_NET_VLAN_COUNT) {
+		NET_WARN("You have configured only %d VLAN interfaces"
+			 " but you have %d network interfaces.",
+			 CONFIG_NET_VLAN_COUNT, if_count);
+	}
+#endif
 }
 
 void net_if_post_init(void)

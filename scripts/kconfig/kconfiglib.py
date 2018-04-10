@@ -589,7 +589,7 @@ class Kconfig(object):
         self.const_syms = {}
         self.defined_syms = []
         self.named_choices = {}
-        # Used for quickly invalidating all choices
+        # List containing all choices. Not sure it's helpful to expose this.
         self._choices = []
 
         for nmy in "n", "m", "y":
@@ -633,6 +633,7 @@ class Kconfig(object):
         self.top_node = MenuNode()
         self.top_node.kconfig = self
         self.top_node.item = MENU
+        self.top_node.is_menuconfig = True
         self.top_node.visibility = self.y
         self.top_node.prompt = ("Linux Kernel Configuration", self.y)
         self.top_node.parent = None
@@ -667,6 +668,17 @@ class Kconfig(object):
 
         # Do various post-processing of the menu tree
         _finalize_tree(self.top_node)
+
+
+        # Do sanity checks. Some of these depend on everything being
+        # finalized.
+
+        for sym in self.defined_syms:
+            _check_sym_sanity(sym)
+
+        for choice in self._choices:
+            _check_choice_sanity(choice)
+
 
         # Build Symbol._dependents for all symbols
         self._build_dep()
@@ -1827,11 +1839,11 @@ class Kconfig(object):
                 node = MenuNode()
                 node.kconfig = self
                 node.item = sym
+                node.is_menuconfig = (t0 == _T_MENUCONFIG)
                 node.prompt = node.help = node.list = None
                 node.parent = parent
                 node.filename = self._filename
                 node.linenr = self._linenr
-                node.is_menuconfig = (t0 == _T_MENUCONFIG)
 
                 sym.nodes.append(node)
 
@@ -1915,6 +1927,7 @@ class Kconfig(object):
                 node = MenuNode()
                 node.kconfig = self
                 node.item = MENU
+                node.is_menuconfig = True
                 node.visibility = self.y
                 node.parent = parent
                 node.filename = self._filename
@@ -1935,6 +1948,7 @@ class Kconfig(object):
                 node = MenuNode()
                 node.kconfig = self
                 node.item = COMMENT
+                node.is_menuconfig = False
                 node.list = None
                 node.parent = parent
                 node.filename = self._filename
@@ -1965,6 +1979,7 @@ class Kconfig(object):
                 node = MenuNode()
                 node.kconfig = self
                 node.item = choice
+                node.is_menuconfig = True
                 node.prompt = node.help = None
                 node.parent = parent
                 node.filename = self._filename
@@ -3913,11 +3928,19 @@ class MenuNode(object):
       symbols and choices within the menu.
 
     is_menuconfig:
-      True if the symbol for the menu node (it must be a symbol) was defined
-      with 'menuconfig' rather than 'config' (at this location). This is a hint
-      on how to display the menu entry (display the children in a separate menu
-      rather than indenting them). It's ignored internally by Kconfiglib,
-      except when printing symbols.
+      Set to True if the children of the menu node should be displayed in a
+      separate menu. This is the case for the following items:
+
+        - Menus (node.item == MENU)
+
+        - Choices
+
+        - Symbols defined with the 'menuconfig' keyword. The children come from
+          implicitly created submenus, and should be displayed in a separate
+          menu rather than being indented.
+
+      'is_menuconfig' is just a hint on how to display the menu node. It's
+      ignored internally by Kconfiglib, except when printing symbols.
 
     filename/linenr:
       The location where the menu node appears.
@@ -4528,8 +4551,6 @@ def _finalize_tree(node):
             node.next = cur.next
             cur.next = None
 
-        _check_sym_sanity(node.item)
-
 
     if node.list:
         # We have a node with child nodes where the child nodes are now
@@ -4541,7 +4562,6 @@ def _finalize_tree(node):
     # Empty choices (node.list None) are possible, so this needs to go outside
     if isinstance(node.item, Choice):
         _finalize_choice(node)
-        _check_choice_sanity(node.item)
 
 def _check_sym_sanity(sym):
     # Checks various symbol properties that are handiest to check after
