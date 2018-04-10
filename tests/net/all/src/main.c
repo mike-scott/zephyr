@@ -16,6 +16,12 @@
 #include <net/net_pkt.h>
 #include <net/net_l2.h>
 
+/* Net offloading support needs L2 defined here, otherwise there will
+ * be a linking error as by default there is no L2 offloading driver
+ * in Zephyr.
+ */
+NET_L2_INIT(OFFLOAD_IP_L2, NULL, NULL, NULL, NULL);
+
 static struct offload_context {
 	void *none;
 } offload_context_data = {
