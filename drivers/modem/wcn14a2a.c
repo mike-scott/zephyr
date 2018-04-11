@@ -30,7 +30,7 @@
 #include <net/tcp.h>
 #endif
 
-#include "modem_receiver.h"
+#include <drivers/modem/modem_receiver.h>
 
 /* Uncomment the #define below to enable a hexdump of all incoming
  * data from the modem receiver
