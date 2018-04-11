@@ -30,6 +30,13 @@ struct mdm_receiver_context {
 	size_t uart_pipe_size;
 	struct k_pipe uart_pipe;
 	struct k_sem rx_sem;
+
+	/* modem data */
+	char *data_manufacturer;
+	char *data_model;
+	char *data_revision;
+	char *data_imei;
+	int   data_rssi;
 };
 
 struct mdm_receiver_context *mdm_receiver_context_from_id(int id);
