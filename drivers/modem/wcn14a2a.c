@@ -96,6 +96,13 @@ enum mdm_control_pins {
 	.func = on_cmd_ ## cb_ \
 }
 
+#define MDM_MANUFACTURER_LENGTH		10
+#define MDM_MODEL_LENGTH		16
+#define MDM_REVISION_LENGTH		64
+#define MDM_IMEI_LENGTH			16
+
+#define RSSI_TIMEOUT_SECS		30
+
 NET_BUF_POOL_DEFINE(mdm_recv_pool, MDM_RECV_MAX_BUF, MDM_RECV_BUF_SIZE,
 		    0, NULL);
 
@@ -149,6 +156,15 @@ struct wcn14a2a_iface_ctx {
 
 	/* semaphores */
 	struct k_sem response_sem;
+
+	/* RSSI work */
+	struct k_delayed_work rssi_query_work;
+
+	/* modem data */
+	char mdm_manufacturer[MDM_MANUFACTURER_LENGTH];
+	char mdm_model[MDM_MODEL_LENGTH];
+	char mdm_revision[MDM_REVISION_LENGTH];
+	char mdm_imei[MDM_IMEI_LENGTH];
 
 	/* modem state */
 	int ev_csps;
@@ -602,6 +618,99 @@ static void on_cmd_atcmdecho_nosock(struct net_buf **buf, u16_t len)
 	SYS_LOG_DBG("last_socket_id:%d", ictx.last_socket_id);
 }
 
+static void on_cmd_atcmdinfo_manufacturer(struct net_buf **buf, u16_t len)
+{
+	net_buf_linearize(ictx.mdm_manufacturer, sizeof(ictx.mdm_manufacturer),
+				  *buf, 0, len);
+	SYS_LOG_INF("Manufacturer: %s", ictx.mdm_manufacturer);
+}
+
+static void on_cmd_atcmdinfo_model(struct net_buf **buf, u16_t len)
+{
+	net_buf_linearize(ictx.mdm_model, sizeof(ictx.mdm_model),
+				  *buf, 0, len);
+	SYS_LOG_INF("Model: %s", ictx.mdm_model);
+}
+
+static void on_cmd_atcmdinfo_revision(struct net_buf **buf, u16_t len)
+{
+	net_buf_linearize(ictx.mdm_revision, sizeof(ictx.mdm_revision),
+				  *buf, 0, len);
+	SYS_LOG_INF("Revision: %s", ictx.mdm_revision);
+}
+
+static void on_cmd_atcmdecho_nosock_imei(struct net_buf **buf, u16_t len)
+{
+	struct net_buf *frag = NULL;
+	u16_t offset;
+
+	/* make sure IMEI data is received */
+	if (len < MDM_IMEI_LENGTH) {
+		SYS_LOG_DBG("Waiting for data");
+		/* wait for more data */
+		k_sleep(K_MSEC(100));
+		wcn14a2a_read_rx(buf);
+	}
+
+	net_buf_skipcrlf(buf);
+	if (!*buf) {
+		SYS_LOG_DBG("Unable to find IMEI (net_buf_skipcrlf)");
+		return;
+	}
+
+	frag = NULL;
+	len = net_buf_findcrlf(*buf, &frag, &offset);
+	if (!frag) {
+		SYS_LOG_DBG("Unable to find IMEI (net_buf_findcrlf)");
+		return;
+	}
+
+	net_buf_linearize(ictx.mdm_imei, sizeof(ictx.mdm_imei), *buf, 0, len);
+
+	SYS_LOG_INF("IMEI: %s", ictx.mdm_imei);
+}
+
+/* Handler: %MEAS: RSSI:Reported= -68, Ant0= -63, Ant1= -251 */
+static void on_cmd_atcmdinfo_rssi(struct net_buf **buf, u16_t len)
+{
+	int start = 0, i = 0;
+	size_t value_size;
+	char value[64];
+
+	value_size = sizeof(value);
+	memset(value, 0, value_size);
+	while (*buf && len > 0 && i < value_size) {
+		value[i] = net_buf_pull_u8(*buf);
+		if (!(*buf)->len) {
+			*buf = net_buf_frag_del(NULL, *buf);
+		}
+
+		/* 2nd "=" marks the beginning of the RSSI value */
+		if (start < 2) {
+			if (value[i] == '=') {
+				start++;
+			}
+
+			continue;
+		}
+
+		/* "," marks the end of the RSSI value */
+		if (value[i] == ',') {
+			value[i] = '\0';
+			break;
+		}
+
+		i++;
+	}
+
+	if (i > 0) {
+		ictx.mdm_ctx.data_rssi = atoi(value);
+		SYS_LOG_INF("RSSI: %d", ictx.mdm_ctx.data_rssi);
+	} else {
+		SYS_LOG_WRN("Bad format found for RSSI");
+	}
+}
+
 /* Handler: OK */
 static void on_cmd_sockok(struct net_buf **buf, u16_t len)
 {
@@ -964,7 +1073,7 @@ static void on_cmd_socknotifyev(struct net_buf **buf, u16_t len)
 	/* RRCSTATE: 0: RRC Idle, 1: RRC Connected, 2: RRC Unknown */
 	} else if (!strncmp(&value[p1], "RRCSTATE", 8)) {
 		ictx.ev_rrcstate = atoi(&value[p2]);
-		SYS_LOG_INF("RRCSTATE:%d", ictx.ev_rrcstate);
+		SYS_LOG_DBG("RRCSTATE:%d", ictx.ev_rrcstate);
 	} else if (!strncmp(&value[p1], "LTIME", 5)) {
 		/* local time from network */
 		SYS_LOG_INF("LTIME:%s", &value[p2]);
@@ -1050,6 +1159,9 @@ static void wcn14a2a_rx(void)
 		/* NON-SOCKET COMMAND ECHOES to clear last_socket_id */
 		CMD_HANDLER("ATE1", atcmdecho_nosock),
 		CMD_HANDLER("AT%PDNSET=", atcmdecho_nosock),
+		CMD_HANDLER("ATI", atcmdecho_nosock),
+		CMD_HANDLER("AT+CGSN", atcmdecho_nosock_imei),
+		CMD_HANDLER("AT%MEAS=", atcmdecho_nosock),
 		CMD_HANDLER("AT@INTERNET=", atcmdecho_nosock),
 		CMD_HANDLER("AT@SOCKDIAL=", atcmdecho_nosock),
 		CMD_HANDLER("AT@SOCKCREAT=", atcmdecho_nosock),
@@ -1059,6 +1171,12 @@ static void wcn14a2a_rx(void)
 		CMD_HANDLER("AT@SOCKWRITE=", atcmdecho),
 		CMD_HANDLER("AT@SOCKREAD=", atcmdecho),
 		CMD_HANDLER("AT@SOCKCLOSE=", atcmdecho),
+
+		/* MODEM Information */
+		CMD_HANDLER("Manufacturer: ", atcmdinfo_manufacturer),
+		CMD_HANDLER("Model: ", atcmdinfo_model),
+		CMD_HANDLER("Revision: ", atcmdinfo_revision),
+		CMD_HANDLER("%MEAS: RSSI:", atcmdinfo_rssi),
 
 		/* SOLICITED SOCKET RESPONSES */
 		CMD_HANDLER("OK", sockok),
@@ -1153,6 +1271,8 @@ static void wcn14a2a_rx(void)
 
 static int modem_pin_init(void)
 {
+	SYS_LOG_INF("Setting Modem Pins");
+
 	/* Hard reset the modem (>5 seconds required)
 	 * (doesn't go through the signal level translator)
 	 */
@@ -1204,6 +1324,8 @@ static int modem_pin_init(void)
 		       pinconfig[SHLD_3V3_1V8_SIG_TRANS_ENA].pin,
 		       SHLD_3V3_1V8_SIG_TRANS_ENABLED);
 
+	SYS_LOG_INF("... Done!");
+
 	return 0;
 }
 
@@ -1222,12 +1344,148 @@ static void modem_wakeup_pin_fix(void)
 	gpio_pin_write(ictx.gpio_port_dev[MDM_KEEP_AWAKE],
 		       pinconfig[MDM_KEEP_AWAKE].pin, MDM_KEEP_AWAKE_ENABLED);
 	k_sleep(K_MSEC(20));
-	SYS_LOG_DBG("Toggling done");
+}
+
+static void wcn14a2a_rssi_query_work(struct k_work *work)
+{
+	int ret;
+
+	/* query modem RSSI */
+	ret = send_at_cmd(NULL, "AT%MEAS=\"23\"", MDM_CMD_TIMEOUT);
+	if (ret < 0) {
+		SYS_LOG_ERR("AT%MEAS ret:%d", ret);
+		return;
+	}
+
+	/* re-start RSSI query work */
+	k_delayed_work_submit_to_queue(&wcn14a2a_workq,
+				       &ictx.rssi_query_work,
+				       K_SECONDS(RSSI_TIMEOUT_SECS));
+}
+
+static void wcn14a2a_modem_reset(void)
+{
+	int ret = 0, retry_count = 0, counter = 0;
+
+	/* bring down network interface */
+	atomic_clear_bit(ictx.iface->if_dev->flags, NET_IF_UP);
+
+restart:
+	/* stop RSSI delay work */
+	k_delayed_work_cancel(&ictx.rssi_query_work);
+
+	modem_pin_init();
+
+	SYS_LOG_INF("Waiting for modem to respond");
+
+	/* Give the modem a while to start responding to simple 'AT' commands.
+	 * Also wait for CSPS=1 or RRCSTATE=1 notification
+	 */
+	ret = -1;
+	while (counter++ < 50 && ret < 0) {
+		k_sleep(K_SECONDS(2));
+		ret = send_at_cmd(NULL, "AT", MDM_CMD_TIMEOUT);
+		if (ret < 0 && ret != -ETIMEDOUT) {
+			break;
+		}
+	}
+
+	if (ret < 0) {
+		SYS_LOG_ERR("MODEM WAIT LOOP ERROR: %d", ret);
+		goto error;
+	}
+
+	SYS_LOG_INF("Setting modem to always stay awake");
+	modem_wakeup_pin_fix();
+
+	ret = send_at_cmd(NULL, "ATE1", MDM_CMD_TIMEOUT);
+	if (ret < 0) {
+		SYS_LOG_ERR("ATE1 ret:%d", ret);
+		goto error;
+	}
+
+	ret = send_at_cmd(NULL, "AT%PDNSET=1,\"" CONFIG_MODEM_WCN14A2A_APN_NAME
+			  "\",\"IPV4V6\"", MDM_CMD_TIMEOUT);
+	if (ret < 0) {
+		SYS_LOG_ERR("AT%%PDNSET ret:%d", ret);
+		goto error;
+	}
+
+	/* query modem info */
+	SYS_LOG_INF("Querying modem information");
+	ret = send_at_cmd(NULL, "ATI", MDM_CMD_TIMEOUT);
+	if (ret < 0) {
+		SYS_LOG_ERR("ATI ret:%d", ret);
+		goto error;
+	}
+
+	/* query modem IMEI */
+	ret = send_at_cmd(NULL, "AT+CGSN", MDM_CMD_TIMEOUT);
+	if (ret < 0) {
+		SYS_LOG_ERR("AT+CGSN ret:%d", ret);
+		goto error;
+	}
+
+	SYS_LOG_INF("Waiting for network");
+
+	/* query modem RSSI */
+	wcn14a2a_rssi_query_work(NULL);
+	k_sleep(K_SECONDS(2));
+
+	counter = 0;
+	/* wait for RSSI > -1000 and != 0 */
+	while (counter++ < 15 &&
+	       (ictx.mdm_ctx.data_rssi <= -1000 ||
+		ictx.mdm_ctx.data_rssi == 0)) {
+		/* stop RSSI delay work */
+		k_delayed_work_cancel(&ictx.rssi_query_work);
+		wcn14a2a_rssi_query_work(NULL);
+		k_sleep(K_SECONDS(2));
+	}
+
+	if (ictx.mdm_ctx.data_rssi <= -1000 || ictx.mdm_ctx.data_rssi == 0) {
+		retry_count++;
+		if (retry_count > 3) {
+			SYS_LOG_ERR("Failed network init.  Too many attempts!");
+			ret = -ENETUNREACH;
+			goto error;
+		}
+
+		SYS_LOG_ERR("Failed network init.  Restarting process.");
+		goto restart;
+	}
+
+	SYS_LOG_INF("Network is ready.");
+
+	ret = send_at_cmd(NULL, "AT@INTERNET=1", MDM_CMD_TIMEOUT);
+	if (ret < 0) {
+		SYS_LOG_ERR("AT@INTERNET ret:%d", ret);
+		goto error;
+	}
+
+	ret = send_at_cmd(NULL, "AT@SOCKDIAL=1", MDM_CMD_TIMEOUT);
+	if (ret < 0) {
+		SYS_LOG_ERR("SOCKDIAL=1 CHECK ret:%d", ret);
+		/* don't report this as an error, we retry later */
+		ret = 0;
+	}
+
+	/* Set iface up */
+	net_if_up(ictx.iface);
+
+error:
+	return;
+}
+
+static void wcn14a2a_modem_reset_work(struct k_work *work)
+{
+	wcn14a2a_modem_reset();
 }
 
 static int wcn14a2a_init(struct device *dev)
 {
-	int i, ret = 0, counter = 0;
+	static struct k_delayed_work reset_work;
+	int i, ret = 0;
 
 	ARG_UNUSED(dev);
 
@@ -1265,13 +1523,17 @@ static int wcn14a2a_init(struct device *dev)
 			   GPIO_DIR_OUT);
 	}
 
-	modem_pin_init();
+	/* Set modem data storage */
+	ictx.mdm_ctx.data_manufacturer = ictx.mdm_manufacturer;
+	ictx.mdm_ctx.data_model = ictx.mdm_model;
+	ictx.mdm_ctx.data_revision = ictx.mdm_revision;
+	ictx.mdm_ctx.data_imei = ictx.mdm_imei;
 
 	ret = mdm_receiver_register(&ictx.mdm_ctx, MDM_UART_DEV_NAME,
 				    mdm_recv_buf, sizeof(mdm_recv_buf));
 	if (ret < 0) {
 		SYS_LOG_ERR("Error registering modem receiver (%d)!", ret);
-		return ret;
+		goto error;
 	}
 
 	/* start RX thread */
@@ -1280,50 +1542,13 @@ static int wcn14a2a_init(struct device *dev)
 			(k_thread_entry_t) wcn14a2a_rx,
 			NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
 
-	/* Give the modem a while to start responding to simple 'AT' commands.
-	 * Also wait for CSPS=1 or RRCSTATE=1 notification
-	 */
-	ret = -1;
-	while (counter++ < 50 && (ictx.ev_rrcstate != 1 || ret < 0)) {
-		k_sleep(K_SECONDS(2));
-		ret = send_at_cmd(NULL, "AT", MDM_CMD_TIMEOUT);
-		if (ret < 0 && ret != -ETIMEDOUT) {
-			break;
-		}
-	}
+	/* init RSSI query */
+	k_delayed_work_init(&ictx.rssi_query_work, wcn14a2a_rssi_query_work);
 
-	if (ret < 0) {
-		SYS_LOG_ERR("MODEM WAIT LOOP ERROR: %d", ret);
-		goto error;
-	}
-
-	modem_wakeup_pin_fix();
-
-	ret = send_at_cmd(NULL, "ATE1", MDM_CMD_TIMEOUT);
-	if (ret < 0) {
-		SYS_LOG_ERR("ATE1 ret:%d", ret);
-		goto error;
-	}
-
-	ret = send_at_cmd(NULL, "AT%PDNSET=1,\"" CONFIG_MODEM_WCN14A2A_APN_NAME
-			  "\",\"IPV4V6\"", MDM_CMD_TIMEOUT);
-	if (ret < 0) {
-		SYS_LOG_ERR("AT%%PDNSET ret:%d", ret);
-		goto error;
-	}
-
-	ret = send_at_cmd(NULL, "AT@INTERNET=1", MDM_CMD_TIMEOUT);
-	if (ret < 0) {
-		SYS_LOG_ERR("AT@INTERNET ret:%d", ret);
-		goto error;
-	}
-
-	ret = send_at_cmd(NULL, "AT@SOCKDIAL=1", MDM_CMD_TIMEOUT);
-	if (ret < 0) {
-		SYS_LOG_ERR("SOCKDIAL=1 CHECK ret:%d", ret);
-		/* don't report this as an error, we retry later */
-		ret = 0;
-	}
+	/* Let's start the modem reset in a workq so that init can proceed */
+	k_delayed_work_init(&reset_work, wcn14a2a_modem_reset_work);
+	ret = k_delayed_work_submit_to_queue(&wcn14a2a_workq,
+					     &reset_work, K_MSEC(10));
 
 error:
 	return ret;
