@@ -18,7 +18,7 @@
 
 #include <misc/printk.h>
 
-#include <drivers/modem/modem_receiver.h>
+#include "modem_receiver.h"
 
 #define MODEM_SHELL_MODULE "modem"
 

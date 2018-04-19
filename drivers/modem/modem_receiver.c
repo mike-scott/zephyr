@@ -19,7 +19,7 @@
 #include <uart.h>
 #include <net/net_pkt.h>
 
-#include <drivers/modem/modem_receiver.h>
+#include "modem_receiver.h"
 
 #define MAX_MDM_CTX	CONFIG_MODEM_RECEIVER_MAX_CONTEXTS
 #define MAX_READ_SIZE	128
