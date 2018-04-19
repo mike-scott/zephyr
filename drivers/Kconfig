@@ -73,6 +73,4 @@ source "drivers/display/Kconfig"
 
 source "drivers/led_strip/Kconfig"
 
-source "drivers/modem/Kconfig"
-
 endmenu
