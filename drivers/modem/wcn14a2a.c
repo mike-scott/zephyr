@@ -163,8 +163,6 @@ struct cmd_handler {
 
 static struct wcn14a2a_iface_ctx ictx;
 
-static void wcn14a2a_read_rx(struct net_buf **buf);
-
 /*** Verbose Debugging Functions ***/
 #if defined(ENABLE_VERBOSE_MODEM_RECV_HEXDUMP)
 static inline void _hexdump(const u8_t *packet, size_t length)
@@ -999,52 +997,15 @@ static int net_buf_ncmp(struct net_buf *buf, const u8_t *s2, size_t n)
 	return (n == 0) ? 0 : (*(frag->data + offset) - *s2);
 }
 
-static void wcn14a2a_read_rx(struct net_buf **buf)
-{
-	u8_t uart_buffer[MDM_RECV_BUF_SIZE];
-	size_t bytes_read = 0;
-	int ret;
-	u16_t rx_len;
-
-	/* read all of the data from mdm_receiver */
-	while (true) {
-		ret = mdm_receiver_recv(&ictx.mdm_ctx,
-					uart_buffer,
-					sizeof(uart_buffer),
-					&bytes_read);
-		if (ret < 0) {
-			/* mdm_receiver buffer is empty */
-			break;
-		}
-
-		_hexdump(uart_buffer, bytes_read);
-
-		/* make sure we have storage */
-		if (!*buf) {
-			*buf = net_buf_alloc(&mdm_recv_pool, BUF_ALLOC_TIMEOUT);
-			if (!*buf) {
-				SYS_LOG_ERR("Can't allocate RX data! "
-					    "Skipping data!");
-				break;
-			}
-		}
-
-		rx_len = net_buf_append(*buf, uart_buffer,
-					bytes_read, BUF_ALLOC_TIMEOUT);
-		if (rx_len < bytes_read) {
-			SYS_LOG_ERR("Data was lost! read %u of %u!",
-				    rx_len, bytes_read);
-		}
-	}
-}
-
 /* RX thread */
 static void wcn14a2a_rx(void)
 {
+	u8_t uart_buffer[MDM_RECV_BUF_SIZE];
 	struct net_buf *rx_buf = NULL;
 	struct net_buf *frag = NULL;
-	int i;
-	u16_t offset, len;
+	size_t bytes_read = 0;
+	int i, ret;
+	u16_t rx_len, offset, len;
 
 	static const struct cmd_handler handlers[] = {
 		/* NON-SOCKET COMMAND ECHOES to clear last_socket_id */
@@ -1079,7 +1040,37 @@ static void wcn14a2a_rx(void)
 		/* wait for incoming data */
 		k_sem_take(&ictx.mdm_ctx.rx_sem, K_FOREVER);
 
-		wcn14a2a_read_rx(&rx_buf);
+		/* read all of the data from mdm_receiver */
+		while (true) {
+			ret = mdm_receiver_recv(&ictx.mdm_ctx,
+						uart_buffer,
+						sizeof(uart_buffer),
+						&bytes_read);
+			if (ret < 0) {
+				/* mdm_receiver buffer is empty */
+				break;
+			}
+
+			_hexdump(uart_buffer, bytes_read);
+
+			/* make sure we have storage */
+			if (!rx_buf) {
+				rx_buf = net_buf_alloc(&mdm_recv_pool,
+							    BUF_ALLOC_TIMEOUT);
+				if (!rx_buf) {
+					SYS_LOG_ERR("Can't allocate RX data! "
+						    "Skipping data!");
+					break;
+				}
+			}
+
+			rx_len = net_buf_append(rx_buf, uart_buffer,
+						bytes_read, BUF_ALLOC_TIMEOUT);
+			if (rx_len < bytes_read) {
+				SYS_LOG_ERR("Data was lost! read %u of %u!",
+					    rx_len, bytes_read);
+			}
+		}
 
 		while (rx_buf) {
 			net_buf_skipcrlf(&rx_buf);
