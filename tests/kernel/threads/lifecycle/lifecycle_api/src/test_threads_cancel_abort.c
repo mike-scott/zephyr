@@ -37,63 +37,6 @@ static void thread_entry_abort(void *p1, void *p2, void *p3)
 	zassert_true(1 == 0, NULL);
 }
 
-/*test cases*/
-void test_threads_cancel_undelayed(void)
-{
-	int cur_prio = k_thread_priority_get(k_current_get());
-
-	/* spawn thread with lower priority */
-	int spawn_prio = cur_prio + 1;
-
-	k_tid_t tid = k_thread_create(&tdata, tstack, STACK_SIZE,
-				      thread_entry, NULL, NULL, NULL,
-				      spawn_prio, K_USER, 0);
-
-	/**TESTPOINT: check cancel retcode when thread is not delayed*/
-	int cancel_ret = k_thread_cancel(tid);
-
-	zassert_equal(cancel_ret, -EINVAL, NULL);
-	k_thread_abort(tid);
-}
-
-void test_threads_cancel_started(void)
-{
-	int cur_prio = k_thread_priority_get(k_current_get());
-
-	/* spawn thread with lower priority */
-	int spawn_prio = cur_prio + 1;
-
-	k_tid_t tid = k_thread_create(&tdata, tstack, STACK_SIZE,
-				      thread_entry, NULL, NULL, NULL,
-				      spawn_prio, K_USER, 0);
-
-	k_sleep(50);
-	/**TESTPOINT: check cancel retcode when thread is started*/
-	int cancel_ret = k_thread_cancel(tid);
-
-	zassert_equal(cancel_ret, -EINVAL, NULL);
-	k_thread_abort(tid);
-}
-
-void test_threads_cancel_delayed(void)
-{
-	int cur_prio = k_thread_priority_get(k_current_get());
-
-	/* spawn thread with lower priority */
-	int spawn_prio = cur_prio + 1;
-
-	k_tid_t tid = k_thread_create(&tdata, tstack, STACK_SIZE,
-				      thread_entry, NULL, NULL, NULL,
-				      spawn_prio, K_USER, 100);
-
-	k_sleep(50);
-	/**TESTPOINT: check cancel retcode when thread is started*/
-	int cancel_ret = k_thread_cancel(tid);
-
-	zassert_equal(cancel_ret, 0, NULL);
-	k_thread_abort(tid);
-}
-
 void test_threads_abort_self(void)
 {
 	execute_flag = 0;
@@ -161,15 +104,15 @@ static void uthread_entry(void)
 {
 	block = k_malloc(BLOCK_SIZE);
 	zassert_true(block != NULL, NULL);
-		printk("Child thread is running\n");
+	printk("Child thread is running\n");
 	k_sleep(K_MSEC(2));
 }
 
 void test_abort_handler(void)
 {
 	k_tid_t tid = k_thread_create(&tdata, tstack, STACK_SIZE,
-			(k_thread_entry_t)uthread_entry, NULL, NULL, NULL,
-			0, 0, 0);
+				      (k_thread_entry_t)uthread_entry, NULL, NULL, NULL,
+				      0, 0, 0);
 
 	tdata.fn_abort = &abort_function;
 
@@ -181,5 +124,43 @@ void test_abort_handler(void)
 	k_thread_abort(tid);
 
 	zassert_true(abort_called == true, "Abort handler"
-			" is not called");
+		     " is not called");
+}
+
+static void delayed_thread_entry(void *p1, void *p2, void *p3)
+{
+	execute_flag = 1;
+
+	zassert_unreachable("Delayed thread shouldn't be executed\n");
+}
+
+void test_delayed_thread_abort(void)
+{
+	int current_prio = k_thread_priority_get(k_current_get());
+
+	/* Make current thread preemptive */
+	k_thread_priority_set(k_current_get(), K_PRIO_PREEMPT(2));
+
+	/* Create a preemptive thread of higher priority than
+	 * current thread
+	 */
+	k_tid_t tid = k_thread_create(&tdata, tstack, STACK_SIZE,
+				      (k_thread_entry_t)delayed_thread_entry, NULL, NULL, NULL,
+				      K_PRIO_PREEMPT(1), 0, 100);
+
+	/* Give up CPU */
+	k_sleep(50);
+
+	/* Test point: check if thread delayed for 100ms has not started*/
+	zassert_true(execute_flag == 0, "Delayed thread created is not"
+		     " put to wait queue\n");
+
+	k_thread_abort(tid);
+
+	/* Test point: Test abort of thread before its execution*/
+	zassert_false(execute_flag == 1, "Delayed thread is has executed"
+		      " before cancellation\n");
+
+	/* Restore the priority */
+	k_thread_priority_set(k_current_get(), current_prio);
 }
