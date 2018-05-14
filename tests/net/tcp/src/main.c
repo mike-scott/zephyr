@@ -22,7 +22,6 @@
 #include <net/net_pkt.h>
 #include <net/net_ip.h>
 #include <net/ethernet.h>
-#include <net/tcp.h>
 
 #include <tc_util.h>
 
@@ -33,7 +32,7 @@
 #define DBG(fmt, ...)
 #endif
 
-#include "tcp_internal.h"
+#include "tcp.h"
 #include "net_private.h"
 
 static bool test_failed;
