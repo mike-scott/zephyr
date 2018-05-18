@@ -35,10 +35,9 @@
 #include <net/buf.h>
 #include <net/net_pkt.h>
 #include <net/udp.h>
-#include <net/tcp.h>
 
 #include "net_private.h"
-#include "tcp_internal.h"
+#include "tcp.h"
 #include "rpl.h"
 
 #if defined(CONFIG_NET_TCP)
