@@ -4,18 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/**
- * @addtogroup t_pipe_api
- * @{
- * @defgroup t_pipe_api_basic test_pipe_api_basic
- * @brief TestPurpose: verify zephyr pipe apis under different context
- * - API coverage
- *   -# k_pipe_init K_PIPE_DEFINE
- *   -# k_pipe_put
- *   -# k_pipe_get
- * @}
- */
-
 #include <ztest.h>
 
 #define STACK_SIZE 1024
@@ -32,6 +20,12 @@ __kernel struct k_pipe pipe;
 K_THREAD_STACK_DEFINE(tstack, STACK_SIZE);
 __kernel struct k_thread tdata;
 K_SEM_DEFINE(end_sema, 0, 1);
+
+/* By design, only two blocks. We should never need more than that, one
+ * to allocate the pipe object, one for its buffer. Both should be auto-
+ * released when the thread exits
+ */
+K_MEM_POOL_DEFINE(test_pool, 128, 128, 2, 4);
 
 static void tpipe_put(struct k_pipe *ppipe)
 {
@@ -127,6 +121,22 @@ void test_pipe_thread2thread(void)
 	tpipe_thread_thread(&kpipe);
 }
 
+#ifdef CONFIG_USERSPACE
+void test_pipe_user_thread2thread(void)
+{
+	/**TESTPOINT: test k_pipe_init pipe*/
+
+	struct k_pipe *p = k_object_alloc(K_OBJ_PIPE);
+
+	zassert_true(p != NULL, NULL);
+	zassert_false(k_pipe_alloc_init(p, PIPE_LEN), NULL);
+	tpipe_thread_thread(&pipe);
+
+	/**TESTPOINT: test K_PIPE_DEFINE pipe*/
+	tpipe_thread_thread(&kpipe);
+}
+#endif
+
 void test_pipe_block_put(void)
 {
 
@@ -172,3 +182,13 @@ void test_pipe_get_put(void)
 	k_thread_abort(tid);
 }
 
+#ifdef CONFIG_USERSPACE
+void test_resource_pool_auto_free(void)
+{
+	/* Pool has 2 blocks, both should succeed if kernel object and pipe
+	 * buffer are auto-freed when the allocating threads exit
+	 */
+	zassert_true(k_mem_pool_malloc(&test_pool, 64) != NULL, NULL);
+	zassert_true(k_mem_pool_malloc(&test_pool, 64) != NULL, NULL);
+}
+#endif

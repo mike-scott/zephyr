@@ -4,15 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/**
- * @addtogroup t_kernel_threads
- * @{
- * @defgroup t_threads_scheduling test_threads_scheduling
- * @brief TestPurpose: verify threads scheduling based on priority, time
- * slice and lock/unlock
- * @}
- */
-
 #include "test_sched.h"
 
 /*test case main entry*/
@@ -24,6 +15,7 @@ void test_main(void)
 			 ztest_unit_test(test_yield_cooperative),
 			 ztest_unit_test(test_sleep_cooperative),
 			 ztest_unit_test(test_sleep_wakeup_preemptible),
+			 ztest_unit_test(test_pending_thread_wakeup),
 			 ztest_unit_test(test_time_slicing_preemptible),
 			 ztest_unit_test(test_time_slicing_disable_preemptible),
 			 ztest_unit_test(test_lock_preemptible),

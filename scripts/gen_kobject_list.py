@@ -16,6 +16,8 @@ kobjects = [
     "k_msgq",
     "k_mutex",
     "k_pipe",
+    "k_queue",
+    "k_poll_signal",
     "k_sem",
     "k_stack",
     "k_thread",
@@ -119,18 +121,17 @@ def write_gperf_table(fp, eh, objs, static_begin, static_end):
 
 
 driver_macro_tpl = """
-#define _SYSCALL_DRIVER_%(driver_upper)s(ptr, op) _SYSCALL_DRIVER_GEN(ptr, op, %(driver_lower)s, %(driver_upper)s)
+#define Z_SYSCALL_DRIVER_%(driver_upper)s(ptr, op) Z_SYSCALL_DRIVER_GEN(ptr, op, %(driver_lower)s, %(driver_upper)s)
 """
 
 def write_validation_output(fp):
     fp.write("#ifndef __DRIVER_VALIDATION_GEN_H__\n")
     fp.write("#define __DRIVER_VALIDATION_GEN_H__\n")
 
-    fp.write("""#define _SYSCALL_DRIVER_GEN(ptr, op, driver_lower_case, driver_upper_case) \\
-	do { \\
-		_SYSCALL_OBJ(ptr, K_OBJ_DRIVER_##driver_upper_case); \\
-		_SYSCALL_DRIVER_OP(ptr, driver_lower_case##_driver_api, op); \\
-	} while (0)\n\n""");
+    fp.write("""#define Z_SYSCALL_DRIVER_GEN(ptr, op, driver_lower_case, driver_upper_case) \\
+		(Z_SYSCALL_OBJ(ptr, K_OBJ_DRIVER_##driver_upper_case) || \\
+		 Z_SYSCALL_DRIVER_OP(ptr, driver_lower_case##_driver_api, op))
+                """)
 
     for subsystem in subsystems:
         subsystem = subsystem.replace("_driver_api", "")
@@ -186,6 +187,17 @@ def write_kobj_otype_output(fp):
             subsystem
         ))
 
+def write_kobj_size_output(fp):
+    fp.write("/* Non device/stack objects */\n")
+    for kobj in kobjects:
+        # device handled by default case. Stacks are not currently handled,
+        # if they eventually are it will be a special case.
+        if kobj == "device" or kobj == "_k_thread_stack_element":
+            continue
+
+        kobj_enum = "K_OBJ_%s" % kobj[2:].upper();
+
+        fp.write('case %s: return sizeof(struct %s);\n' % (kobj_enum, kobj))
 
 def parse_args():
     global args
@@ -208,6 +220,9 @@ def parse_args():
     parser.add_argument(
         "-S", "--kobj-otype-output", required=False,
         help="Output case statements for otype_to_str()")
+    parser.add_argument(
+        "-Z", "--kobj-size-output", required=False,
+        help="Output case statements for obj_size_get()")
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="Print extra debugging information")
     args = parser.parse_args()
@@ -246,6 +261,10 @@ def main():
     if args.kobj_otype_output:
         with open(args.kobj_otype_output, "w") as fp:
             write_kobj_otype_output(fp)
+
+    if args.kobj_size_output:
+        with open(args.kobj_size_output, "w") as fp:
+            write_kobj_size_output(fp)
 
 if __name__ == "__main__":
     main()

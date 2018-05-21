@@ -91,7 +91,7 @@ import textwrap
 import kconfiglib
 
 from kconfiglib import Kconfig, \
-                       Symbol, Choice, MENU, COMMENT, \
+                       Symbol, Choice, MENU, COMMENT, MenuNode, \
                        BOOL, TRISTATE, STRING, INT, HEX, UNKNOWN, \
                        AND, OR, NOT, \
                        expr_value, split_expr, \
@@ -129,7 +129,7 @@ _N_SCROLL_ARROWS = 14
 
 # Lines of help text shown at the bottom of the "main" display
 _MAIN_HELP_LINES = """
-[Space/Enter] Toggle/enter   [ESC] Leave menu    [S] Save
+[Space/Enter] Toggle/enter   [ESC] Leave menu    [S] Save        [O] Load
 [?] Symbol info              [/] Jump to symbol  [A] Toggle show-all mode
 [Q] Quit (prompts for save)  [D] Save minimal config (advanced)
 """[1:-1].split("\n")
@@ -451,6 +451,22 @@ def _menuconfig(stdscr):
                     return res
             else:
                 _leave_menu()
+
+        elif c in ("o", "O"):
+            if _conf_changed:
+                c = _key_dialog(
+                    "Load",
+                    "You have unsaved changes. Load new\n"
+                    "configuration anyway?\n"
+                    "\n"
+                    "        (Y)es  (C)ancel",
+                    "yc")
+
+                if c is None or c == "c":
+                    continue
+
+            if _load_dialog():
+                _conf_changed = False
 
         elif c in ("s", "S"):
             if _save_dialog(_kconf.write_config, _config_filename,
@@ -825,7 +841,7 @@ def _draw_main():
     menu = _cur_menu
     while menu is not _kconf.top_node:
         menu_prompts.append(menu.prompt[0])
-        menu = menu.parent
+        menu = _parent_menu(menu)
     menu_prompts.append("(top menu)")
     menu_prompts.reverse()
 
@@ -1160,8 +1176,63 @@ def _draw_input_dialog(win, title, info_text, s, i, hscroll):
 
     win.noutrefresh()
 
+def _load_dialog():
+    # Dialog for loading a new configuration
+    #
+    # Return value:
+    #   True if a new configuration was loaded, and False if the user canceled
+    #   the dialog
+
+    global _show_all
+
+    filename = ""
+    while True:
+        filename = _input_dialog("File to load", filename)
+
+        if filename is None:
+            return False
+
+        if _try_load(filename):
+            sel_node = _shown[_sel_node_i]
+
+            # Turn on show-all mode if the current node is (no longer) visible
+            if not (sel_node.prompt and expr_value(sel_node.prompt[1])):
+                _show_all = True
+
+            _update_menu()
+
+            # The message dialog indirectly updates the menu display, so _msg()
+            # must be called after the new state has been initialized
+            _msg("Success", "Loaded {}".format(filename))
+            return True
+
+def _try_load(filename):
+    # Tries to load a configuration file. Pops up an error and returns False on
+    # failure.
+    #
+    # filename:
+    #   Configuration file to load
+
+    # Hack: strerror and errno are lost after we raise the custom IOError with
+    # troubleshooting help in Kconfig.load_config(). Adding them back to the
+    # exception loses the custom message. As a workaround, try opening the file
+    # separately first and report any errors.
+    try:
+        open(filename).close()
+    except OSError as e:
+        _error("Error loading {}\n\n{} (errno: {})"
+               .format(filename, e.strerror, errno.errorcode[e.errno]))
+        return False
+
+    try:
+        _kconf.load_config(filename)
+        return True
+    except OSError as e:
+        _error("Error loading {}\n\nUnknown error".format(filename))
+        return False
+
 def _save_dialog(save_fn, default_filename, description):
-    # Pops up a dialog that prompts the user for where to save a file
+    # Dialog for saving the current configuration
     #
     # save_fn:
     #   Function to call with 'filename' to save the file
@@ -1173,8 +1244,8 @@ def _save_dialog(save_fn, default_filename, description):
     #   String describing the thing being saved
     #
     # Return value:
-    #   Returns True if the configuration was saved, and False if the user
-    #   canceled the dialog
+    #   True if the configuration was saved, and False if the user canceled the
+    #   dialog
 
     filename = default_filename
     while True:
@@ -1190,7 +1261,8 @@ def _save_dialog(save_fn, default_filename, description):
             return True
 
 def _try_save(save_fn, filename, description):
-    # Tries to save a file. Pops up an error and returns False on failure.
+    # Tries to save a configuration file. Pops up an error and returns False on
+    # failure.
     #
     # save_fn:
     #   Function to call with 'filename' to save the file
@@ -1513,20 +1585,19 @@ def _draw_jump_to_dialog(edit_box, matches_win, bot_sep_win, help_win,
 
     matches_win.erase()
 
-    if bad_re is not None:
-        # bad_re holds the error message from the re.error exception on errors
-        _safe_addstr(matches_win, 0, 0,
-                     "Bad regular expression: " + bad_re)
-
-    elif not matches:
-        _safe_addstr(matches_win, 0, 0, "No matches")
-
-    else:
+    if matches:
         for i in range(scroll,
                        min(scroll + matches_win.getmaxyx()[0], len(matches))):
 
             _safe_addstr(matches_win, i - scroll, 0, matches[i][1],
                          _LIST_SEL_STYLE if i == sel_node_i else _LIST_STYLE)
+
+    else:
+        # bad_re holds the error message from the re.error exception on errors
+        _safe_addstr(matches_win, 0, 0,
+                     "No matches"
+                     if bad_re is None else
+                     "Bad regular expression: " + bad_re)
 
     matches_win.noutrefresh()
 
@@ -1759,7 +1830,6 @@ def _info_str(node):
             _direct_dep_info(sym) +
             _defaults_info(sym) +
             _select_imply_info(sym) +
-            _loc_info(sym) +
             _kconfig_def_info(sym)
         )
 
@@ -1774,14 +1844,11 @@ def _info_str(node):
             _choice_syms_info(choice) +
             _direct_dep_info(choice) +
             _defaults_info(choice) +
-            _loc_info(choice) +
             _kconfig_def_info(choice)
         )
 
     # node.item in (MENU, COMMENT)
-    return "Defined at {}:{}\nMenu: {}\n\n{}" \
-           .format(node.filename, node.linenr, _menu_path_info(node),
-                   _kconfig_def_info(node))
+    return _kconfig_def_info(node)
 
 def _prompt_info(sc):
     # Returns a string listing the prompts of 'sc' (Symbol or Choice)
@@ -1917,24 +1984,22 @@ def _select_imply_info(sym):
 
     return s
 
-def _loc_info(sc):
-    # Returns a string with information about where 'sc' (Symbol or Choice) is
-    # defined in the Kconfig files. Also includes the menu path leading up to
-    # it.
-
-    s = "Definition location{}:\n".format("s" if len(sc.nodes) > 1 else "")
-
-    for node in sc.nodes:
-        s += "  - {}:{}\n      Menu: {}\n" \
-             .format(node.filename, node.linenr, _menu_path_info(node))
-
-    return s + "\n"
-
 def _kconfig_def_info(item):
-    # Returns a string with the definition of 'item' in Kconfig syntax
+    # Returns a string with the definition of 'item' in Kconfig syntax,
+    # together with the definition location(s)
 
-    return "Kconfig definition (with propagated dependencies):\n\n" + \
-           textwrap.indent(str(item).expandtabs(), "  ")
+    nodes = [item] if isinstance(item, MenuNode) else item.nodes
+
+    s = "Kconfig definition{}, with propagated dependencies\n" \
+        .format("s" if len(nodes) > 1 else "")
+    s += (len(s) - 1)*"=" + "\n\n"
+
+    s += "\n\n".join("At {}:{}, in menu {}:\n\n{}".format(
+                         node.filename, node.linenr, _menu_path_info(node),
+                         textwrap.indent(str(node), "  "))
+                     for node in nodes)
+
+    return s
 
 def _menu_path_info(node):
     # Returns a string describing the menu path leading up to 'node'
@@ -2010,6 +2075,12 @@ def _edit_text(c, s, i, hscroll, width):
     elif c == curses.KEY_DC:
         s = s[:i] + s[i+1:]
 
+    elif c == "\x17":  # \x17 = CTRL-W
+        # The \W removes characters like ',' one at a time
+        new_i = re.search(r"(?:\w*|\W)\s*$", s[:i]).start()
+        s = s[:new_i] + s[i:]
+        i = new_i
+
     elif c == "\x0B":  # \x0B = CTRL-K
         s = s[:i]
 
@@ -2065,6 +2136,7 @@ def _node_str(node):
         # Show the symbol/choice name in <> brackets if it has no prompt. This
         # path can only hit in show-all mode.
         s += "<{}>".format(node.item.name)
+
     else:
         if node.item == COMMENT:
             s += "*** {} ***".format(node.prompt[0])
@@ -2263,7 +2335,7 @@ def _safe_move(win, *args):
         pass
 
 def _convert_c_lc_ctype_to_utf8():
-    # See _CONVERT_C_LOCALE_TO_UTF8
+    # See _CONVERT_C_LC_CTYPE_TO_UTF8
 
     if _IS_WINDOWS:
         # Windows rarely has issues here, and the PEP 538 implementation avoids

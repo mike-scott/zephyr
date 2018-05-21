@@ -4,15 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/**
- * @addtogroup t_threads_lifecycle
- * @{
- * @defgroup t_threads_priority_set test_threads_priority_set
- * @}
- */
 #include <ztest.h>
 
-#define STACK_SIZE (256 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACK_SIZE (384 + CONFIG_TEST_EXTRA_STACKSIZE)
 K_THREAD_STACK_EXTERN(tstack);
 extern struct k_thread tdata;
 static int thread2_data;

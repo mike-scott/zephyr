@@ -305,15 +305,9 @@ int _net_app_set_local_addr(struct net_app_ctx *ctx, struct sockaddr *addr,
 #endif
 	} else if (addr->sa_family == AF_INET) {
 #if defined(CONFIG_NET_IPV4)
-		struct net_if *iface =
-			net_if_ipv4_select_src_iface(
-				&net_sin(&ctx->ipv4.remote)->sin_addr);
-
-		NET_ASSERT(iface->config.ip.ipv4);
-
-		/* For IPv4 we take the first address in the interface */
 		net_ipaddr_copy(&net_sin(addr)->sin_addr,
-			   &iface->config.ip.ipv4->unicast[0].address.in_addr);
+				net_if_ipv4_select_src_addr(NULL,
+				     &net_sin(&ctx->ipv4.remote)->sin_addr));
 #else
 		return -EPFNOSUPPORT;
 #endif
@@ -421,6 +415,8 @@ int _net_app_config_local_ctx(struct net_app_ctx *ctx,
 #if defined(CONFIG_NET_IPV6)
 			ret = setup_ipv6_ctx(ctx, sock_type, proto);
 			ctx->default_ctx = &ctx->ipv6;
+			net_sin6(&ctx->ipv6.local)->sin6_port =
+				net_sin6(addr)->sin6_port;
 #else
 			ret = -EPFNOSUPPORT;
 			goto fail;
@@ -429,6 +425,8 @@ int _net_app_config_local_ctx(struct net_app_ctx *ctx,
 #if defined(CONFIG_NET_IPV4)
 			ret = setup_ipv4_ctx(ctx, sock_type, proto);
 			ctx->default_ctx = &ctx->ipv4;
+			net_sin(&ctx->ipv4.local)->sin_port =
+				net_sin(addr)->sin_port;
 #else
 			ret = -EPFNOSUPPORT;
 			goto fail;
@@ -437,11 +435,15 @@ int _net_app_config_local_ctx(struct net_app_ctx *ctx,
 #if defined(CONFIG_NET_IPV4)
 			ret = setup_ipv4_ctx(ctx, sock_type, proto);
 			ctx->default_ctx = &ctx->ipv4;
+			net_sin(&ctx->ipv4.local)->sin_port =
+				net_sin(addr)->sin_port;
 #endif
 			/* We ignore the IPv4 error if IPv6 is enabled */
 #if defined(CONFIG_NET_IPV6)
 			ret = setup_ipv6_ctx(ctx, sock_type, proto);
 			ctx->default_ctx = &ctx->ipv6;
+			net_sin6(&ctx->ipv6.local)->sin6_port =
+				net_sin6(addr)->sin6_port;
 #endif
 		} else {
 			ret = -EINVAL;
@@ -2129,7 +2131,7 @@ reset:
 					 * Is closing the connection here the
 					 * right thing?
 					 */
-					NET_ERR("could not skip %zu bytes",
+					NET_ERR("could not skip %d bytes",
 						hdr_len);
 					net_pkt_unref(pkt);
 					ret = -EINVAL;

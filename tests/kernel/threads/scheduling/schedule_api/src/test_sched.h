@@ -10,7 +10,7 @@
 #include <zephyr.h>
 #include <ztest.h>
 
-#if defined(CONFIG_RISCV32)
+#if defined(CONFIG_RISCV32) || defined(CONFIG_X86)
 #define STACK_SIZE 512
 #else
 #define STACK_SIZE (256 + CONFIG_TEST_EXTRA_STACKSIZE)
@@ -27,6 +27,7 @@ void test_priority_preemptible(void);
 void test_yield_cooperative(void);
 void test_sleep_cooperative(void);
 void test_sleep_wakeup_preemptible(void);
+void test_pending_thread_wakeup(void);
 void test_time_slicing_preemptible(void);
 void test_time_slicing_disable_preemptible(void);
 void test_lock_preemptible(void);

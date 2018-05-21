@@ -22,8 +22,10 @@
 #include <atomic.h>
 #include <errno.h>
 #include <misc/__assert.h>
+#include <sched_priq.h>
 #include <misc/dlist.h>
 #include <misc/slist.h>
+#include <misc/sflist.h>
 #include <misc/util.h>
 #include <misc/mempool_base.h>
 #include <kernel_version.h>
@@ -32,6 +34,7 @@
 #include <syscall.h>
 #include <misc/printk.h>
 #include <arch/cpu.h>
+#include <misc/rb.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -90,7 +93,25 @@ extern "C" {
 #define K_HIGHEST_APPLICATION_THREAD_PRIO (K_HIGHEST_THREAD_PRIO)
 #define K_LOWEST_APPLICATION_THREAD_PRIO (K_LOWEST_THREAD_PRIO - 1)
 
-typedef sys_dlist_t _wait_q_t;
+#ifdef CONFIG_WAITQ_FAST
+
+typedef struct {
+	struct _priq_rb waitq;
+} _wait_q_t;
+
+extern int _priq_rb_lessthan(struct rbnode *a, struct rbnode *b);
+
+#define _WAIT_Q_INIT(wait_q) { { { .lessthan_fn = _priq_rb_lessthan } } }
+
+#else
+
+typedef struct {
+	sys_dlist_t waitq;
+} _wait_q_t;
+
+#define _WAIT_Q_INIT(wait_q) { SYS_DLIST_STATIC_INIT(&(wait_q)->waitq) }
+
+#endif
 
 #ifdef CONFIG_OBJECT_TRACING
 #define _OBJECT_TRACING_NEXT_PTR(type) struct type *__next
@@ -187,6 +208,7 @@ struct _k_object_assignment {
 
 #define K_OBJ_FLAG_INITIALIZED	BIT(0)
 #define K_OBJ_FLAG_PUBLIC	BIT(1)
+#define K_OBJ_FLAG_ALLOC	BIT(2)
 
 /**
  * Lookup a kernel object and init its metadata if it exists
@@ -223,11 +245,19 @@ static inline void _impl_k_object_access_grant(void *object,
 /**
  * @internal
  */
-static inline void _impl_k_object_access_revoke(void *object,
-						struct k_thread *thread)
+static inline void k_object_access_revoke(void *object,
+					  struct k_thread *thread)
 {
 	ARG_UNUSED(object);
 	ARG_UNUSED(thread);
+}
+
+/**
+ * @internal
+ */
+static inline void _impl_k_object_release(void *object)
+{
+	ARG_UNUSED(object);
 }
 
 static inline void k_object_access_all_grant(void *object)
@@ -258,7 +288,10 @@ __syscall void k_object_access_grant(void *object, struct k_thread *thread);
  * @param object Address of kernel object
  * @param thread Thread to remove access to the object
  */
-__syscall void k_object_access_revoke(void *object, struct k_thread *thread);
+void k_object_access_revoke(void *object, struct k_thread *thread);
+
+
+__syscall void k_object_release(void *object);
 
 /**
  * grant all present and future threads access to an object
@@ -279,14 +312,13 @@ __syscall void k_object_access_revoke(void *object, struct k_thread *thread);
  */
 void k_object_access_all_grant(void *object);
 
-#ifdef CONFIG_DYNAMIC_OBJECTS
 /**
  * Allocate a kernel object of a designated type
  *
  * This will instantiate at runtime a kernel object of the specified type,
  * returning a pointer to it. The object will be returned in an uninitialized
  * state, with the calling thread being granted permission on it. The memory
- * for the object will be allocated out of the kernel's heap.
+ * for the object will be allocated out of the calling thread's resource pool.
  *
  * Currently, allocation of thread stacks is not supported.
  *
@@ -294,18 +326,31 @@ void k_object_access_all_grant(void *object);
  * @return A pointer to the allocated kernel object, or NULL if memory wasn't
  * available
  */
-void *k_object_alloc(enum k_objects otype);
+__syscall void *k_object_alloc(enum k_objects otype);
 
+#ifdef CONFIG_DYNAMIC_OBJECTS
 /**
  * Free a kernel object previously allocated with k_object_alloc()
  *
- * This will return memory for a kernel object back to the system heap.
- * Care must be exercised that the object will not be used during or after
- * when this call is made.
+ * This will return memory for a kernel object back to resource pool it was
+ * allocated from.  Care must be exercised that the object will not be used
+ * during or after when this call is made.
  *
  * @param obj Pointer to the kernel object memory address.
  */
 void k_object_free(void *obj);
+#else
+static inline void *_impl_k_object_alloc(enum k_objects otype)
+{
+	ARG_UNUSED(otype);
+
+	return NULL;
+}
+
+static inline void k_obj_free(void *obj)
+{
+	ARG_UNUSED(obj);
+}
 #endif /* CONFIG_DYNAMIC_OBJECTS */
 
 /* Using typedef deliberately here, this is quite intended to be an opaque
@@ -376,7 +421,17 @@ struct __thread_entry {
 struct _thread_base {
 
 	/* this thread's entry in a ready/wait queue */
-	sys_dnode_t k_q_node;
+	union {
+		sys_dlist_t qnode_dlist;
+		struct rbnode qnode_rb;
+	};
+
+#ifdef CONFIG_WAITQ_FAST
+	/* wait queue on which the thread is pended (needed only for
+	 * trees, not dumb lists)
+	 */
+	_wait_q_t *pended_on;
+#endif
 
 	/* user facing 'thread options'; values defined in include/kernel.h */
 	u8_t user_options;
@@ -411,12 +466,11 @@ struct _thread_base {
 		u16_t preempt;
 	};
 
+	u32_t order_key;
+
 #ifdef CONFIG_SMP
 	/* True for the per-CPU idle threads */
 	u8_t is_idle;
-
-	/* Non-zero when actively running on a CPU */
-	u8_t active;
 
 	/* CPU index on which thread was last run */
 	u8_t cpu;
@@ -513,6 +567,7 @@ struct k_thread {
 	/* Context handle returned via _arch_switch() */
 	void *switch_handle;
 #endif
+	struct k_mem_pool *resource_pool;
 
 	/* arch-specifics: must always be at the end */
 	struct _thread_arch arch;
@@ -533,6 +588,8 @@ enum execution_context_types {
  * @ingroup kernel_apis
  * @{
  */
+typedef void (*k_thread_user_cb_t)(const struct k_thread *thread,
+				   void *user_data);
 
 /**
  * @brief Analyze the main, idle, interrupt and system workqueue call stacks
@@ -549,8 +606,29 @@ enum execution_context_types {
  * produce output.
  *
  * @return N/A
+ *
+ * @deprecated This API is deprecated.  Use k_thread_foreach().
  */
-extern void k_call_stacks_analyze(void);
+__deprecated extern void k_call_stacks_analyze(void);
+
+/**
+ * @brief Iterate over all the threads in the system.
+ *
+ * This routine iterates over all the threads in the system and
+ * calls the user_cb function for each thread.
+ *
+ * @param user_cb Pointer to the user callback function.
+ * @param user_data Pointer to user data.
+ *
+ * @note CONFIG_THREAD_MONITOR must be set for this function
+ * to be effective. Also this API uses irq_lock to protect the
+ * _kernel.threads list which means creation of new threads and
+ * terminations of existing threads are blocked until this
+ * API returns.
+ *
+ * @return N/A
+ */
+extern void k_thread_foreach(k_thread_user_cb_t user_cb, void *user_data);
 
 /** @} */
 
@@ -665,6 +743,41 @@ extern FUNC_NORETURN void k_thread_user_mode_enter(k_thread_entry_t entry,
  */
 extern void __attribute__((sentinel))
 	k_thread_access_grant(struct k_thread *thread, ...);
+
+/**
+ * @brief Assign a resource memory pool to a thread
+ *
+ * By default, threads have no resource pool assigned unless their parent
+ * thread has a resource pool, in which case it is inherited. Multiple
+ * threads may be assigned to the same memory pool.
+ *
+ * Changing a thread's resource pool will not migrate allocations from the
+ * previous pool.
+ *
+ * @param thread Target thread to assign a memory pool for resource requests,
+ *               or NULL if the thread should no longer have a memory pool.
+ * @param pool Memory pool to use for resources.
+ */
+static inline void k_thread_resource_pool_assign(struct k_thread *thread,
+						 struct k_mem_pool *pool)
+{
+	thread->resource_pool = pool;
+}
+
+#if (CONFIG_HEAP_MEM_POOL_SIZE > 0)
+/**
+ * @brief Assign the system heap as a thread's resource pool
+ *
+ * Similar to k_thread_resource_pool_assign(), but the thread will use
+ * the kernel heap to draw memory.
+ *
+ * Use with caution, as a malicious thread could perform DoS attacks on the
+ * kernel heap.
+ *
+ * @param thread Target thread to assign the system heap for resource requests
+ */
+void k_thread_system_pool_assign(struct k_thread *thread);
+#endif /* (CONFIG_HEAP_MEM_POOL_SIZE > 0) */
 
 /**
  * @brief Put the current thread to sleep.
@@ -1222,7 +1335,7 @@ struct k_timer {
 	.timeout.wait_q = NULL, \
 	.timeout.thread = NULL, \
 	.timeout.func = _timer_expiration_handler, \
-	.wait_q = SYS_DLIST_STATIC_INIT(&obj.wait_q), \
+	.wait_q = _WAIT_Q_INIT(&obj.wait_q), \
 	.expiry_fn = expiry, \
 	.stop_fn = stop, \
 	.status = 0, \
@@ -1551,7 +1664,7 @@ extern u32_t k_uptime_delta_32(s64_t *reftime);
  */
 
 struct k_queue {
-	sys_slist_t data_q;
+	sys_sflist_t data_q;
 	union {
 		_wait_q_t wait_q;
 
@@ -1564,12 +1677,14 @@ struct k_queue {
 #define _K_QUEUE_INITIALIZER(obj) \
 	{ \
 	.data_q = SYS_SLIST_STATIC_INIT(&obj.data_q), \
-	.wait_q = SYS_DLIST_STATIC_INIT(&obj.wait_q), \
+	.wait_q = _WAIT_Q_INIT(&obj.wait_q), \
 	_POLL_EVENT_OBJ_INIT(obj) \
 	_OBJECT_TRACING_INIT \
 	}
 
 #define K_QUEUE_INITIALIZER DEPRECATED_MACRO _K_QUEUE_INITIALIZER
+
+extern void *z_queue_node_peek(sys_sfnode_t *node, bool needs_free);
 
 /**
  * INTERNAL_HIDDEN @endcond
@@ -1590,7 +1705,7 @@ struct k_queue {
  *
  * @return N/A
  */
-extern void k_queue_init(struct k_queue *queue);
+__syscall void k_queue_init(struct k_queue *queue);
 
 /**
  * @brief Cancel waiting on a queue.
@@ -1604,7 +1719,7 @@ extern void k_queue_init(struct k_queue *queue);
  *
  * @return N/A
  */
-extern void k_queue_cancel_wait(struct k_queue *queue);
+__syscall void k_queue_cancel_wait(struct k_queue *queue);
 
 /**
  * @brief Append an element to the end of a queue.
@@ -1623,6 +1738,23 @@ extern void k_queue_cancel_wait(struct k_queue *queue);
 extern void k_queue_append(struct k_queue *queue, void *data);
 
 /**
+ * @brief Append an element to a queue.
+ *
+ * This routine appends a data item to @a queue. There is an implicit
+ * memory allocation from the calling thread's resource pool, which is
+ * automatically freed when the item is removed from the queue.
+ *
+ * @note Can be called by ISRs.
+ *
+ * @param queue Address of the queue.
+ * @param data Address of the data item.
+ *
+ * @retval 0 on success
+ * @retval -ENOMEM if there isn't sufficient RAM in the caller's resource pool
+ */
+__syscall int k_queue_alloc_append(struct k_queue *queue, void *data);
+
+/**
  * @brief Prepend an element to a queue.
  *
  * This routine prepends a data item to @a queue. A queue data item must be
@@ -1637,6 +1769,23 @@ extern void k_queue_append(struct k_queue *queue, void *data);
  * @return N/A
  */
 extern void k_queue_prepend(struct k_queue *queue, void *data);
+
+/**
+ * @brief Prepend an element to a queue.
+ *
+ * This routine prepends a data item to @a queue. There is an implicit
+ * memory allocation from the calling thread's resource pool, which is
+ * automatically freed when the item is removed from the queue.
+ *
+ * @note Can be called by ISRs.
+ *
+ * @param queue Address of the queue.
+ * @param data Address of the data item.
+ *
+ * @retval 0 on success
+ * @retval -ENOMEM if there isn't sufficient RAM in the caller's resource pool
+ */
+__syscall int k_queue_alloc_prepend(struct k_queue *queue, void *data);
 
 /**
  * @brief Inserts an element to a queue.
@@ -1704,7 +1853,7 @@ extern void k_queue_merge_slist(struct k_queue *queue, sys_slist_t *list);
  * @return Address of the data item if successful; NULL if returned
  * without waiting, or waiting period timed out.
  */
-extern void *k_queue_get(struct k_queue *queue, s32_t timeout);
+__syscall void *k_queue_get(struct k_queue *queue, s32_t timeout);
 
 /**
  * @brief Remove an element from a queue.
@@ -1722,7 +1871,7 @@ extern void *k_queue_get(struct k_queue *queue, s32_t timeout);
  */
 static inline bool k_queue_remove(struct k_queue *queue, void *data)
 {
-	return sys_slist_find_and_remove(&queue->data_q, (sys_snode_t *)data);
+	return sys_sflist_find_and_remove(&queue->data_q, (sys_sfnode_t *)data);
 }
 
 /**
@@ -1738,9 +1887,11 @@ static inline bool k_queue_remove(struct k_queue *queue, void *data)
  * @return Non-zero if the queue is empty.
  * @return 0 if data is available.
  */
-static inline int k_queue_is_empty(struct k_queue *queue)
+__syscall int k_queue_is_empty(struct k_queue *queue);
+
+static inline int _impl_k_queue_is_empty(struct k_queue *queue)
 {
-	return (int)sys_slist_is_empty(&queue->data_q);
+	return (int)sys_sflist_is_empty(&queue->data_q);
 }
 
 /**
@@ -1752,9 +1903,11 @@ static inline int k_queue_is_empty(struct k_queue *queue)
  *
  * @return Head element, or NULL if queue is empty.
  */
-static inline void *k_queue_peek_head(struct k_queue *queue)
+__syscall void *k_queue_peek_head(struct k_queue *queue);
+
+static inline void *_impl_k_queue_peek_head(struct k_queue *queue)
 {
-	return sys_slist_peek_head(&queue->data_q);
+	return z_queue_node_peek(sys_sflist_peek_head(&queue->data_q), false);
 }
 
 /**
@@ -1766,9 +1919,11 @@ static inline void *k_queue_peek_head(struct k_queue *queue)
  *
  * @return Tail element, or NULL if queue is empty.
  */
-static inline void *k_queue_peek_tail(struct k_queue *queue)
+__syscall void *k_queue_peek_tail(struct k_queue *queue);
+
+static inline void *_impl_k_queue_peek_tail(struct k_queue *queue)
 {
-	return sys_slist_peek_tail(&queue->data_q);
+	return z_queue_node_peek(sys_sflist_peek_tail(&queue->data_q), false);
 }
 
 /**
@@ -1856,6 +2011,24 @@ struct k_fifo {
  */
 #define k_fifo_put(fifo, data) \
 	k_queue_append((struct k_queue *) fifo, data)
+
+/**
+ * @brief Add an element to a FIFO queue.
+ *
+ * This routine adds a data item to @a fifo. There is an implicit
+ * memory allocation from the calling thread's resource pool, which is
+ * automatically freed when the item is removed.
+ *
+ * @note Can be called by ISRs.
+ *
+ * @param fifo Address of the FIFO.
+ * @param data Address of the data item.
+ *
+ * @retval 0 on success
+ * @retval -ENOMEM if there isn't sufficient RAM in the caller's resource pool
+ */
+#define k_fifo_alloc_put(fifo, data) \
+	k_queue_alloc_append((struct k_queue *) fifo, data)
 
 /**
  * @brief Atomically add a list of elements to a FIFO.
@@ -2029,6 +2202,24 @@ struct k_lifo {
 	k_queue_prepend((struct k_queue *) lifo, data)
 
 /**
+ * @brief Add an element to a LIFO queue.
+ *
+ * This routine adds a data item to @a lifo. There is an implicit
+ * memory allocation from the calling thread's resource pool, which is
+ * automatically freed when the item is removed.
+ *
+ * @note Can be called by ISRs.
+ *
+ * @param lifo Address of the LIFO.
+ * @param data Address of the data item.
+ *
+ * @retval 0 on success
+ * @retval -ENOMEM if there isn't sufficient RAM in the caller's resource pool
+ */
+#define k_lifo_alloc_put(lifo, data) \
+	k_queue_alloc_prepend((struct k_queue *) lifo, data)
+
+/**
  * @brief Get an element from a LIFO queue.
  *
  * This routine removes a data item from @a lifo in a "last in, first out"
@@ -2065,17 +2256,19 @@ struct k_lifo {
 /**
  * @cond INTERNAL_HIDDEN
  */
+#define K_STACK_FLAG_ALLOC	BIT(0)	/* Buffer was allocated */
 
 struct k_stack {
 	_wait_q_t wait_q;
 	u32_t *base, *next, *top;
 
 	_OBJECT_TRACING_NEXT_PTR(k_stack);
+	u8_t flags;
 };
 
 #define _K_STACK_INITIALIZER(obj, stack_buffer, stack_num_entries) \
 	{ \
-	.wait_q = SYS_DLIST_STATIC_INIT(&obj.wait_q), \
+	.wait_q = _WAIT_Q_INIT(&obj.wait_q),	\
 	.base = stack_buffer, \
 	.next = stack_buffer, \
 	.top = stack_buffer + stack_num_entries, \
@@ -2105,8 +2298,37 @@ struct k_stack {
  *
  * @return N/A
  */
-__syscall void k_stack_init(struct k_stack *stack,
-			    u32_t *buffer, unsigned int num_entries);
+void k_stack_init(struct k_stack *stack,
+		  u32_t *buffer, unsigned int num_entries);
+
+
+/**
+ * @brief Initialize a stack.
+ *
+ * This routine initializes a stack object, prior to its first use. Internal
+ * buffers will be allocated from the calling thread's resource pool.
+ * This memory will be released if k_stack_cleanup() is called, or
+ * userspace is enabled and the stack object loses all references to it.
+ *
+ * @param stack Address of the stack.
+ * @param num_entries Maximum number of values that can be stacked.
+ *
+ * @return -ENOMEM if memory couldn't be allocated
+ */
+
+__syscall int k_stack_alloc_init(struct k_stack *stack,
+				 unsigned int num_entries);
+
+/**
+ * @brief Release a stack's allocated buffer
+ *
+ * If a stack object was given a dynamically allocated buffer via
+ * k_stack_alloc_init(), this will free it. This function does nothing
+ * if the buffer wasn't dynamically allocated.
+ *
+ * @param stack Address of the stack.
+ */
+void k_stack_cleanup(struct k_stack *stack);
 
 /**
  * @brief Push an element onto a stack.
@@ -2484,7 +2706,7 @@ struct k_mutex {
 
 #define _K_MUTEX_INITIALIZER(obj) \
 	{ \
-	.wait_q = SYS_DLIST_STATIC_INIT(&obj.wait_q), \
+	.wait_q = _WAIT_Q_INIT(&obj.wait_q), \
 	.owner = NULL, \
 	.lock_count = 0, \
 	.owner_orig_prio = K_LOWEST_THREAD_PRIO, \
@@ -2585,7 +2807,7 @@ struct k_sem {
 
 #define _K_SEM_INITIALIZER(obj, initial_count, count_limit) \
 	{ \
-	.wait_q = SYS_DLIST_STATIC_INIT(&obj.wait_q), \
+	.wait_q = _WAIT_Q_INIT(&obj.wait_q), \
 	.count = initial_count, \
 	.limit = count_limit, \
 	_POLL_EVENT_OBJ_INIT(obj) \
@@ -2865,11 +3087,12 @@ struct k_msgq {
 	u32_t used_msgs;
 
 	_OBJECT_TRACING_NEXT_PTR(k_msgq);
+	u8_t flags;
 };
 
 #define _K_MSGQ_INITIALIZER(obj, q_buffer, q_msg_size, q_max_msgs) \
 	{ \
-	.wait_q = SYS_DLIST_STATIC_INIT(&obj.wait_q), \
+	.wait_q = _WAIT_Q_INIT(&obj.wait_q), \
 	.max_msgs = q_max_msgs, \
 	.msg_size = q_msg_size, \
 	.buffer_start = q_buffer, \
@@ -2881,6 +3104,8 @@ struct k_msgq {
 	}
 
 #define K_MSGQ_INITIALIZER DEPRECATED_MACRO _K_MSGQ_INITIALIZER
+
+#define K_MSGQ_FLAG_ALLOC	BIT(0)
 
 struct k_msgq_attrs {
 	size_t msg_size;
@@ -2918,7 +3143,7 @@ struct k_msgq_attrs {
  * @param q_align Alignment of the message queue's ring buffer.
  */
 #define K_MSGQ_DEFINE(q_name, q_msg_size, q_max_msgs, q_align)      \
-	static char __noinit __aligned(q_align)                     \
+	static char __kernel_noinit __aligned(q_align)              \
 		_k_fifo_buf_##q_name[(q_max_msgs) * (q_msg_size)];  \
 	struct k_msgq q_name                                        \
 		__in_section(_k_msgq, static, q_name) =        \
@@ -2943,8 +3168,33 @@ struct k_msgq_attrs {
  *
  * @return N/A
  */
-__syscall void k_msgq_init(struct k_msgq *q, char *buffer,
-			   size_t msg_size, u32_t max_msgs);
+void k_msgq_init(struct k_msgq *q, char *buffer, size_t msg_size,
+		 u32_t max_msgs);
+
+/**
+ * @brief Initialize a message queue.
+ *
+ * This routine initializes a message queue object, prior to its first use,
+ * allocating its internal ring buffer from the calling thread's resource
+ * pool.
+ *
+ * Memory allocated for the ring buffer can be released by calling
+ * k_msgq_cleanup(), or if userspace is enabled and the msgq object loses
+ * all of its references.
+ *
+ * @param q Address of the message queue.
+ * @param msg_size Message size (in bytes).
+ * @param max_msgs Maximum number of messages that can be queued.
+ *
+ * @return 0 on success, -ENOMEM if there was insufficient memory in the
+ *	thread's resource pool, or -EINVAL if the size parameters cause
+ *	an integer overflow.
+ */
+__syscall int k_msgq_alloc_init(struct k_msgq *q, size_t msg_size,
+				u32_t max_msgs);
+
+
+void k_msgq_cleanup(struct k_msgq *q);
 
 /**
  * @brief Send a message to a message queue.
@@ -3112,8 +3362,8 @@ struct k_mbox {
 
 #define _K_MBOX_INITIALIZER(obj) \
 	{ \
-	.tx_msg_queue = SYS_DLIST_STATIC_INIT(&obj.tx_msg_queue), \
-	.rx_msg_queue = SYS_DLIST_STATIC_INIT(&obj.rx_msg_queue), \
+	.tx_msg_queue = _WAIT_Q_INIT(&obj.tx_msg_queue), \
+	.rx_msg_queue = _WAIT_Q_INIT(&obj.rx_msg_queue), \
 	_OBJECT_TRACING_INIT \
 	}
 
@@ -3266,6 +3516,8 @@ extern int k_mbox_data_block_get(struct k_mbox_msg *rx_msg,
  * @cond INTERNAL_HIDDEN
  */
 
+#define K_PIPE_FLAG_ALLOC	BIT(0)	/* Buffer was allocated */
+
 struct k_pipe {
 	unsigned char *buffer;          /* Pipe buffer: may be NULL */
 	size_t         size;            /* Buffer size */
@@ -3279,6 +3531,7 @@ struct k_pipe {
 	} wait_q;
 
 	_OBJECT_TRACING_NEXT_PTR(k_pipe);
+	u8_t	       flags;		/* Flags */
 };
 
 #define _K_PIPE_INITIALIZER(obj, pipe_buffer, pipe_buffer_size)        \
@@ -3288,8 +3541,8 @@ struct k_pipe {
 	.bytes_used = 0,                                              \
 	.read_index = 0,                                              \
 	.write_index = 0,                                             \
-	.wait_q.writers = SYS_DLIST_STATIC_INIT(&obj.wait_q.writers), \
-	.wait_q.readers = SYS_DLIST_STATIC_INIT(&obj.wait_q.readers), \
+	.wait_q.writers = _WAIT_Q_INIT(&obj.wait_q.writers), \
+	.wait_q.readers = _WAIT_Q_INIT(&obj.wait_q.readers), \
 	_OBJECT_TRACING_INIT                            \
 	}
 
@@ -3317,11 +3570,11 @@ struct k_pipe {
  *                         or zero if no ring buffer is used.
  * @param pipe_align Alignment of the pipe's ring buffer (power of 2).
  */
-#define K_PIPE_DEFINE(name, pipe_buffer_size, pipe_align)     \
-	static unsigned char __noinit __aligned(pipe_align)   \
-		_k_pipe_buf_##name[pipe_buffer_size];         \
-	struct k_pipe name                                    \
-		__in_section(_k_pipe, static, name) =    \
+#define K_PIPE_DEFINE(name, pipe_buffer_size, pipe_align)		\
+	static unsigned char __kernel_noinit __aligned(pipe_align)	\
+		_k_pipe_buf_##name[pipe_buffer_size];			\
+	struct k_pipe name						\
+		__in_section(_k_pipe, static, name) =			\
 		_K_PIPE_INITIALIZER(name, _k_pipe_buf_##name, pipe_buffer_size)
 
 /**
@@ -3337,8 +3590,35 @@ struct k_pipe {
  *
  * @return N/A
  */
-__syscall void k_pipe_init(struct k_pipe *pipe, unsigned char *buffer,
-			   size_t size);
+void k_pipe_init(struct k_pipe *pipe, unsigned char *buffer, size_t size);
+
+/**
+ * @brief Release a pipe's allocated buffer
+ *
+ * If a pipe object was given a dynamically allocated buffer via
+ * k_pipe_alloc_init(), this will free it. This function does nothing
+ * if the buffer wasn't dynamically allocated.
+ *
+ * @param pipe Address of the pipe.
+ */
+void k_pipe_cleanup(struct k_pipe *pipe);
+
+/**
+ * @brief Initialize a pipe and allocate a buffer for it
+ *
+ * Storage for the buffer region will be allocated from the calling thread's
+ * resource pool. This memory will be released if k_pipe_cleanup() is called,
+ * or userspace is enabled and the pipe object loses all references to it.
+ *
+ * This function should only be called on uninitialized pipe objects.
+ *
+ * @param pipe Address of the pipe.
+ * @param size Size of the pipe's ring buffer (in bytes), or zero if no ring
+ *             buffer is used.
+ * @retval 0 on success
+ * @retval -ENOMEM if memory couln't be allocated
+ */
+__syscall int k_pipe_alloc_init(struct k_pipe *pipe, size_t size);
 
 /**
  * @brief Write data to a pipe.
@@ -3423,7 +3703,7 @@ struct k_mem_slab {
 #define _K_MEM_SLAB_INITIALIZER(obj, slab_buffer, slab_block_size, \
 			       slab_num_blocks) \
 	{ \
-	.wait_q = SYS_DLIST_STATIC_INIT(&obj.wait_q), \
+	.wait_q = _WAIT_Q_INIT(&obj.wait_q), \
 	.num_blocks = slab_num_blocks, \
 	.block_size = slab_block_size, \
 	.buffer = slab_buffer, \
@@ -3630,6 +3910,17 @@ extern int k_mem_pool_alloc(struct k_mem_pool *pool, struct k_mem_block *block,
 			    size_t size, s32_t timeout);
 
 /**
+ * @brief Allocate memory from a memory pool with malloc() semantics
+ *
+ * Such memory must be released using k_free().
+ *
+ * @param pool Address of the memory pool.
+ * @param size Amount of memory to allocate (in bytes).
+ * @return Address of the allocated memory if successful, otherwise NULL
+ */
+extern void *k_mem_pool_malloc(struct k_mem_pool *pool, size_t size);
+
+/**
  * @brief Free memory allocated from a memory pool.
  *
  * This routine releases a previously allocated memory block back to its
@@ -3679,7 +3970,8 @@ extern void *k_malloc(size_t size);
  * @brief Free memory allocated from heap.
  *
  * This routine provides traditional free() semantics. The memory being
- * returned must have been allocated from the heap memory pool.
+ * returned must have been allocated from the heap memory pool or
+ * k_mem_pool_malloc().
  *
  * If @a ptr is NULL, no operation is performed.
  *
@@ -3915,6 +4207,9 @@ extern void k_poll_event_init(struct k_poll_event *event, u32_t type,
  * Before being reused for another call to k_poll(), the user has to reset the
  * state field to K_POLL_STATE_NOT_READY.
  *
+ * When called from user mode, a temporary memory allocation is required from
+ * the caller's resource pool.
+ *
  * @param events An array of pointers to events to be polled for.
  * @param num_events The number of events in the array.
  * @param timeout Waiting period for an event to be ready (in milliseconds),
@@ -3923,10 +4218,12 @@ extern void k_poll_event_init(struct k_poll_event *event, u32_t type,
  * @retval 0 One or more events are ready.
  * @retval -EAGAIN Waiting period timed out.
  * @retval -EINTR Poller thread has been interrupted.
+ * @retval -ENOMEM Thread resource pool insufficient memory (user mode only)
+ * @retval -EINVAL Bad parameters (user mode only)
  */
 
-extern int k_poll(struct k_poll_event *events, int num_events,
-		  s32_t timeout);
+__syscall int k_poll(struct k_poll_event *events, int num_events,
+		     s32_t timeout);
 
 /**
  * @brief Initialize a poll signal object.
@@ -3938,7 +4235,32 @@ extern int k_poll(struct k_poll_event *events, int num_events,
  * @return N/A
  */
 
-extern void k_poll_signal_init(struct k_poll_signal *signal);
+__syscall void k_poll_signal_init(struct k_poll_signal *signal);
+
+/*
+ * @brief Reset a poll signal object's state to unsignaled.
+ *
+ * @param signal A poll signal object
+ */
+__syscall void k_poll_signal_reset(struct k_poll_signal *signal);
+
+static inline void _impl_k_poll_signal_reset(struct k_poll_signal *signal)
+{
+	signal->signaled = 0;
+}
+
+/**
+ * @brief Fetch the signaled state and resylt value of a poll signal
+ *
+ * @param signal A poll signal object
+ * @param signaled An integer buffer which will be written nonzero if the
+ *		   object was signaled
+ * @param result An integer destination buffer which will be written with the
+ *		   result value if the object was signaed, or an undefined
+ *		   value if it was not.
+ */
+__syscall void k_poll_signal_check(struct k_poll_signal *signal,
+				   unsigned int *signaled, int *result);
 
 /**
  * @brief Signal a poll signal object.
@@ -3948,9 +4270,10 @@ extern void k_poll_signal_init(struct k_poll_signal *signal);
  * made ready to run. A @a result value can be specified.
  *
  * The poll signal contains a 'signaled' field that, when set by
- * k_poll_signal(), stays set until the user sets it back to 0. It thus has to
- * be reset by the user before being passed again to k_poll() or k_poll() will
- * consider it being signaled, and will return immediately.
+ * k_poll_signal(), stays set until the user sets it back to 0 with
+ * k_poll_signal_reset(). It thus has to be reset by the user before being
+ * passed again to k_poll() or k_poll() will consider it being signaled, and
+ * will return immediately.
  *
  * @param signal A poll signal.
  * @param result The value to store in the result field of the signal.
@@ -3959,7 +4282,7 @@ extern void k_poll_signal_init(struct k_poll_signal *signal);
  * @retval -EAGAIN The polling thread's timeout is in the process of expiring.
  */
 
-extern int k_poll_signal(struct k_poll_signal *signal, int result);
+__syscall int k_poll_signal(struct k_poll_signal *signal, int result);
 
 /**
  * @internal
