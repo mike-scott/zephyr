@@ -308,9 +308,6 @@ do_firmware_transfer_reply_cb(const struct coap_packet *response,
 		/* restore main firmware block context */
 		memcpy(&firmware_block_ctx, &received_block_ctx,
 		       sizeof(firmware_block_ctx));
-
-		/* set reply->user_data to non-zero to avoid releasing */
-		reply->user_data = (void *)1;
 		return 0;
 	}
 

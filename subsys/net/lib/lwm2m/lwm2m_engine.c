@@ -1018,7 +1018,6 @@ int lwm2m_init_message(struct lwm2m_message *msg)
 			goto cleanup;
 		}
 
-		coap_reply_clear(msg->reply);
 		coap_reply_init(msg->reply, &msg->cpkt);
 		msg->reply->reply = msg->reply_cb;
 	}
@@ -3447,13 +3446,6 @@ void lwm2m_udp_receive(struct lwm2m_ctx *client_ctx, struct net_pkt *pkt,
 	}
 
 	if (reply || pending) {
-		/* skip release if reply->user_data has error condition */
-		if (reply && reply->user_data != 0) {
-			reply->user_data = 0;
-			SYS_LOG_DBG("reply %p NOT removed", reply);
-			goto cleanup;
-		}
-
 		/* free up msg resources */
 		if (msg) {
 			lwm2m_reset_message(msg, true);
