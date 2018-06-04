@@ -127,6 +127,15 @@
 			label = "UART_3";
 		};
 
+		lpuart1: serial@40008000 {
+			compatible = "st,stm32-lpuart", "st,stm32-uart";
+			reg = <0x40008000 0x400>;
+			clocks = <&rcc STM32_CLOCK_BUS_APB1_2 0x00000001>;
+			interrupts = <70 0>;
+			status = "disabled";
+			label = "LPUART_1";
+		};
+
 		i2c1: i2c@40005400 {
 			compatible = "st,stm32-i2c-v2";
 			clock-frequency = <I2C_BITRATE_STANDARD>;
@@ -169,19 +178,6 @@
 			interrupts = <36 5>;
 			status = "disabled";
 			label = "SPI_2";
-		};
-
-		usbotg_fs: otgfs@50000000 {
-			compatible = "st,stm32-otgfs";
-			reg = <0x50000000 0x40000>;
-			interrupts = <67 0>;
-			interrupt-names = "otgfs";
-			num-bidir-endpoints = <1>;
-			num-in-endpoints = <5>;
-			num-out-endpoints = <5>;
-			ram-size = <1280>;
-			status = "disabled";
-			label= "OTGFS";
 		};
 	};
 };

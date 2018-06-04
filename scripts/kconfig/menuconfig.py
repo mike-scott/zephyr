@@ -118,7 +118,8 @@ _SUBMENU_INDENT = 4
 _PG_JUMP = 6
 
 # How far the cursor needs to be from the edge of the window before it starts
-# to scroll
+# to scroll. Used for the main menu display, the information display, the
+# search display, and for text boxes.
 _SCROLL_OFFSET = 5
 
 # Minimum width of dialogs that ask for text input
@@ -129,8 +130,9 @@ _N_SCROLL_ARROWS = 14
 
 # Lines of help text shown at the bottom of the "main" display
 _MAIN_HELP_LINES = """
-[Space/Enter] Toggle/enter   [ESC] Leave menu    [S] Save        [O] Load
-[?] Symbol info              [/] Jump to symbol  [A] Toggle show-all mode
+[Space/Enter] Toggle/enter   [ESC] Leave menu    [S] Save
+[O] Load                     [?] Symbol info     [/] Jump to symbol
+[A] Toggle show-all mode     [C] Toggle show-name mode
 [Q] Quit (prompts for save)  [D] Save minimal config (advanced)
 """[1:-1].split("\n")
 
@@ -367,6 +369,9 @@ def menuconfig(kconf):
 #
 #     Invisible items are drawn in a different style to make them stand out.
 #
+#   _show_name:
+#     If True, the names of all symbol are shown in addition to the prompt.
+#
 #   _conf_changed:
 #     True if the configuration has been changed. If False, we don't bother
 #     showing the save-and-quit dialog.
@@ -379,6 +384,7 @@ def _menuconfig(stdscr):
 
     globals()["stdscr"] = stdscr
     global _conf_changed
+    global _show_name
 
     _init()
 
@@ -493,6 +499,9 @@ def _menuconfig(stdscr):
         elif c in ("a", "A"):
             _toggle_show_all()
 
+        elif c in ("c", "C"):
+            _show_name = not _show_name
+
         elif c in ("q", "Q"):
             res = quit_dialog()
             if res:
@@ -542,6 +551,8 @@ def _init():
     global _sel_node_i
     global _menu_scroll
 
+    global _show_name
+
     global _conf_changed
 
     # Looking for this in addition to KEY_BACKSPACE (which is unreliable) makes
@@ -580,10 +591,13 @@ def _init():
     _parent_screen_rows = []
 
     # Initial state
+
     _cur_menu = _kconf.top_node
     _shown = _shown_nodes(_cur_menu)
     _sel_node_i = 0
     _menu_scroll = 0
+
+    _show_name = False
 
     # Give windows their initial size
     _resize_main()
@@ -917,9 +931,14 @@ def _draw_main():
     if _menu_scroll < _max_scroll(_shown, _menu_win):
         _safe_hline(_bot_sep_win, 0, 4, curses.ACS_DARROW, _N_SCROLL_ARROWS)
 
-    # Indicate when show-all mode is enabled
+    # Indicate when show-all and/or show-name mode is enabled
+    enabled_modes = []
     if _show_all:
-        s = "Show-all mode enabled"
+        enabled_modes.append("show-all")
+    if _show_name:
+        enabled_modes.append("show-name")
+    if enabled_modes:
+        s = " and ".join(enabled_modes) + " mode enabled"
         _safe_addstr(_bot_sep_win, 0, term_width - len(s) - 2, s)
 
     _bot_sep_win.noutrefresh()
@@ -1096,8 +1115,10 @@ def _input_dialog(title, initial_text, info_text=None):
     win = _styled_win(_DIALOG_BODY_STYLE)
     win.keypad(True)
 
+    info_lines = info_text.split("\n") if info_text else []
+
     # Give the input dialog its initial size
-    _resize_input_dialog(win, title, info_text)
+    _resize_input_dialog(win, title, info_lines)
 
     _safe_curs_set(2)
 
@@ -1118,7 +1139,7 @@ def _input_dialog(title, initial_text, info_text=None):
         # works properly. This is like a stack of windows, only hardcoded for
         # now.
         _draw_main()
-        _draw_input_dialog(win, title, info_text, s, i, hscroll)
+        _draw_input_dialog(win, title, info_lines, s, i, hscroll)
         curses.doupdate()
 
 
@@ -1136,28 +1157,31 @@ def _input_dialog(title, initial_text, info_text=None):
         if c == curses.KEY_RESIZE:
             # Resize the main display too. The dialog floats above it.
             _resize_main()
-            _resize_input_dialog(win, title, info_text)
+            _resize_input_dialog(win, title, info_lines)
 
         else:
             s, i, hscroll = _edit_text(c, s, i, hscroll, edit_width())
 
-def _resize_input_dialog(win, title, info_text):
+def _resize_input_dialog(win, title, info_lines):
     # Resizes the input dialog to a size appropriate for the terminal size
 
     screen_height, screen_width = stdscr.getmaxyx()
 
-    win_height = min(5 if info_text is None else 7, screen_height)
+    win_height = 5
+    if info_lines:
+        win_height += len(info_lines) + 1
+    win_height = min(win_height, screen_height)
 
-    win_width = max(_INPUT_DIALOG_MIN_WIDTH, len(title) + 4)
-    if info_text is not None:
-        win_width = max(win_width, len(info_text) + 4)
+    win_width = max(_INPUT_DIALOG_MIN_WIDTH,
+                    len(title) + 4,
+                    *(len(line) + 4 for line in info_lines))
     win_width = min(win_width, screen_width)
 
     win.resize(win_height, win_width)
     win.mvwin((screen_height - win_height)//2,
               (screen_width - win_width)//2)
 
-def _draw_input_dialog(win, title, info_text, s, i, hscroll):
+def _draw_input_dialog(win, title, info_lines, s, i, hscroll):
     edit_width = win.getmaxyx()[1] - 4
 
     win.erase()
@@ -1169,8 +1193,8 @@ def _draw_input_dialog(win, title, info_text, s, i, hscroll):
     _safe_addstr(win, 2, 2, visible_s + " "*(edit_width - len(visible_s)),
                  _INPUT_FIELD_STYLE)
 
-    if info_text is not None:
-        _safe_addstr(win, 4, 2, info_text)
+    for linenr, line in enumerate(info_lines):
+        _safe_addstr(win, 4 + linenr, 2, line)
 
     _safe_move(win, 2, 2 + i - hscroll)
 
@@ -1187,10 +1211,12 @@ def _load_dialog():
 
     filename = ""
     while True:
-        filename = _input_dialog("File to load", filename)
+        filename = _input_dialog("File to load", filename, _load_save_info())
 
         if filename is None:
             return False
+
+        filename = os.path.expanduser(filename)
 
         if _try_load(filename):
             sel_node = _shown[_sel_node_i]
@@ -1249,12 +1275,14 @@ def _save_dialog(save_fn, default_filename, description):
 
     filename = default_filename
     while True:
-        filename = _input_dialog(
-            "Filename to save {} to".format(description),
-            filename)
+        filename = _input_dialog("Filename to save {} to".format(description),
+                                 filename,
+                                 _load_save_info())
 
         if filename is None:
             return False
+
+        filename = os.path.expanduser(filename)
 
         if _try_save(save_fn, filename, description):
             _msg("Success", "{} saved to {}".format(description, filename))
@@ -1433,27 +1461,45 @@ def _jump_to_dialog():
             prev_s = s
 
             try:
-                regex_searches = [re.compile(regex, re.IGNORECASE).search
-                                  for regex in s.split()]
+                # We could use re.IGNORECASE here instead of lower(), but this
+                # is noticeably less jerky while inputting regexes like
+                # '.*debug$' (though the '.*' is redundant there). Those
+                # probably have bad interactions with re.search(), which
+                # matches anywhere in the string.
+                #
+                # It's not horrible either way. Just a bit smoother.
+                regex_searches = [re.compile(regex).search
+                                  for regex in s.lower().split()]
 
                 # No exception thrown, so the regexes are okay
                 bad_re = None
 
-                # List of (node, node_string) tuples for the matching nodes
+                # List of matching nodes
                 matches = []
 
-                # Go through the list of (node, node_string) tuples, where
-                # 'node_string' describes 'node'
-                for node, node_string in _search_strings():
+                for node in _searched_nodes():
                     for search in regex_searches:
-                        if not search(node_string):
+                        # Does the regex match either the symbol name or the
+                        # prompt (if any)?
+                        if not (search(node.item.name.lower()) or
+                                (node.prompt and
+                                 search(node.prompt[0].lower()))):
+
+                            # Give up on the first regex that doesn't match, to
+                            # speed things up a bit when multiple regexes are
+                            # entered
                             break
+
                     else:
-                        matches.append((node, node_string))
+                        matches.append(node)
 
             except re.error as e:
                 # Bad regex. Remember the error message so we can show it.
-                bad_re = e.msg
+                bad_re = "Bad regular expression"
+                # re.error.msg was added in Python 3.5
+                if hasattr(e, "msg"):
+                    bad_re += ": " + e.msg
+
                 matches = []
 
             # Reset scroll and jump to the top of the list of matches
@@ -1469,7 +1515,7 @@ def _jump_to_dialog():
 
         if c == "\n":
             if matches:
-                _jump_to(matches[sel_node_i][0])
+                _jump_to(matches[sel_node_i])
                 _safe_curs_set(0)
                 return
 
@@ -1508,30 +1554,20 @@ def _jump_to_dialog():
 
 # Obscure Python: We never pass a value for cached_search_strings, and it keeps
 # pointing to the same list. This avoids a global.
-def _search_strings(cached_search_strings=[]):
-    # Returns a list with (node, node_string) tuples for all symbol menu nodes,
-    # sorted by symbol name.
-    #
-    # node_string is a string containing the symbol's name and prompt. It is
-    # matched against the regex(es) the user inputs during search, and doubles
-    # as the string displayed for the node in the list of matches.
+def _searched_nodes(cached_search_nodes=[]):
+    # Returns a list of menu nodes to search, sorted by symbol name
 
-    # This is a static list. Only computing it once makes the search dialog
-    # come up a bit faster after the first time it's entered.
-    if not cached_search_strings:
-        # Defined symbols sorted by name, with duplicates removed.
+    if not cached_search_nodes:
+        # Sort symbols by name and remove duplicates, then add all nodes for
+        # each symbol.
         #
         # Duplicates appear when symbols have multiple menu nodes (definition
         # locations), but they appear in menu order, which isn't what we want
         # here. We'd still need to go through sym.nodes as well.
         for sym in sorted(set(_kconf.defined_syms), key=lambda sym: sym.name):
-            for node in sym.nodes:
-                node_string = sym.name
-                if node.prompt:
-                    node_string += ' "{}"'.format(node.prompt[0])
-                cached_search_strings.append((node, node_string))
+            cached_search_nodes.extend(sym.nodes)
 
-    return cached_search_strings
+    return cached_search_nodes
 
 def _resize_jump_to_dialog(edit_box, matches_win, bot_sep_win, help_win,
                            sel_node_i, scroll):
@@ -1576,6 +1612,7 @@ def _resize_jump_to_dialog(edit_box, matches_win, bot_sep_win, help_win,
 def _draw_jump_to_dialog(edit_box, matches_win, bot_sep_win, help_win,
                          s, s_i, hscroll,
                          bad_re, matches, sel_node_i, scroll):
+
     edit_width = edit_box.getmaxyx()[1] - 2
 
 
@@ -1589,15 +1626,18 @@ def _draw_jump_to_dialog(edit_box, matches_win, bot_sep_win, help_win,
         for i in range(scroll,
                        min(scroll + matches_win.getmaxyx()[0], len(matches))):
 
-            _safe_addstr(matches_win, i - scroll, 0, matches[i][1],
+            sym = matches[i].item
+
+            sym_str = '{}(="{}")'.format(sym.name, sym.str_value)
+            if matches[i].prompt:
+                sym_str += ' "{}"'.format(matches[i].prompt[0])
+
+            _safe_addstr(matches_win, i - scroll, 0, sym_str,
                          _LIST_SEL_STYLE if i == sel_node_i else _LIST_STYLE)
 
     else:
         # bad_re holds the error message from the re.error exception on errors
-        _safe_addstr(matches_win, 0, 0,
-                     "No matches"
-                     if bad_re is None else
-                     "Bad regular expression: " + bad_re)
+        _safe_addstr(matches_win, 0, 0, bad_re or "No matches")
 
     matches_win.noutrefresh()
 
@@ -1758,20 +1798,10 @@ def _draw_info_dialog(node, lines, scroll, top_line_win, text_win,
     if scroll > 0:
         _safe_hline(top_line_win, 0, 4, curses.ACS_UARROW, _N_SCROLL_ARROWS)
 
-
-    if isinstance(node.item, Symbol):
-        title = "{}{}".format(_kconf.config_prefix, node.item.name)
-
-    elif isinstance(node.item, Choice):
-        title = node.item.name or "Choice"
-
-    elif node.item == MENU:
-        title = 'menu "{}"'.format(node.prompt[0])
-
-    else:  # node.item == COMMENT
-        title = 'comment "{}"'.format(node.prompt[0])
-
-
+    title = ("Symbol" if isinstance(node.item, Symbol) else
+             "Choice" if isinstance(node.item, Choice) else
+             "Menu"   if node.item == MENU else
+             "Comment") + " information"
     _safe_addstr(top_line_win, 0, (text_win_width - len(title))//2, title)
 
     top_line_win.noutrefresh()
@@ -1823,6 +1853,7 @@ def _info_str(node):
         sym = node.item
 
         return (
+            _name_info(sym) +
             _prompt_info(sym) +
             "Type: {}\n".format(TYPE_TO_STR[sym.type]) +
             'Value: "{}"\n\n'.format(sym.str_value) +
@@ -1837,6 +1868,7 @@ def _info_str(node):
         choice = node.item
 
         return (
+            _name_info(choice) +
             _prompt_info(choice) +
             "Type: {}\n".format(TYPE_TO_STR[choice.type]) +
             'Mode: "{}"\n\n'.format(choice.str_value) +
@@ -1849,6 +1881,12 @@ def _info_str(node):
 
     # node.item in (MENU, COMMENT)
     return _kconfig_def_info(node)
+
+def _name_info(sc):
+    # Returns a string with the name of the symbol/choice. Names are optional
+    # for choices.
+
+    return "Name: {}\n".format(sc.name) if sc.name else ""
 
 def _prompt_info(sc):
     # Returns a string listing the prompts of 'sc' (Symbol or Choice)
@@ -2006,10 +2044,10 @@ def _menu_path_info(node):
 
     path = ""
 
-    menu = node.parent
-    while menu is not _kconf.top_node:
-        path = " -> " + menu.prompt[0] + path
-        menu = menu.parent
+    node = _parent_menu(node)
+    while node is not _kconf.top_node:
+        path = " -> " + node.prompt[0] + path
+        node = _parent_menu(node)
 
     return "(top menu)" + path
 
@@ -2094,16 +2132,23 @@ def _edit_text(c, s, i, hscroll, width):
         s = s[:i] + c + s[i:]
         i += 1
 
-
-    # Adjust the horizontal scroll if the cursor would be outside the input
-    # field
-    if i < hscroll:
-        hscroll = i
-    elif i >= hscroll + width:
-        hscroll = i - width + 1
+    # Adjust the horizontal scroll so that the cursor never touches the left or
+    # right edges of the edit box, except when it's at the beginning or the end
+    # of the string
+    if i < hscroll + _SCROLL_OFFSET:
+        hscroll = max(i - _SCROLL_OFFSET, 0)
+    elif i >= hscroll + width - _SCROLL_OFFSET:
+        max_scroll = max(len(s) - width + 1, 0)
+        hscroll = min(i - width + _SCROLL_OFFSET + 1, max_scroll)
 
 
     return s, i, hscroll
+
+def _load_save_info():
+    # Returns an information string for load/save dialog boxes
+
+    return "(Relative to {})\n\nRefer to your home directory with ~" \
+           .format(os.path.join(os.getcwd(), ""))
 
 def _msg(title, text):
     # Pops up a message dialog that can be dismissed with Space/Enter/ESC
@@ -2130,14 +2175,18 @@ def _node_str(node):
         parent = parent.parent
 
     # This approach gives nice alignment for empty string symbols ("()  Foo")
-    s = "{:{}} ".format(_value_str(node), 3 + indent)
+    s = "{:{}}".format(_value_str(node), 3 + indent)
 
-    if not node.prompt:
-        # Show the symbol/choice name in <> brackets if it has no prompt. This
-        # path can only hit in show-all mode.
-        s += "<{}>".format(node.item.name)
+    # 'not node.prompt' can only be True in show-all mode
+    if not node.prompt or \
+       (_show_name and
+        (isinstance(node.item, Symbol) or
+         (isinstance(node.item, Choice) and node.item.name))):
 
-    else:
+        s += " <{}>".format(node.item.name)
+
+    if node.prompt:
+        s += " "
         if node.item == COMMENT:
             s += "*** {} ***".format(node.prompt[0])
         else:

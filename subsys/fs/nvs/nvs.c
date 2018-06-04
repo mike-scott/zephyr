@@ -71,7 +71,7 @@ int _nvs_sector_hdr_get(struct nvs_fs *fs, off_t offset,
 	return flash_read(fs->flash_device,
 			  fs->offset + (offset & ~(fs->sector_size - 1)),
 			  sector_hdr,
-			  _nvs_len_in_flash(fs, sizeof(*sector_hdr)));
+			  sizeof(*sector_hdr));
 }
 
 /* Initializing sector by writing magic and status to sector header,
@@ -98,9 +98,8 @@ int _nvs_sector_init(struct nvs_fs *fs, off_t offset)
 	}
 	sector_hdr.fd_magic = fs->magic;
 	sector_hdr.fd_id = fs->sector_id;
-	sector_hdr._pad = 0;
 	sector_hdr_len = _nvs_len_in_flash(fs, sizeof(struct _nvs_sector_hdr));
-	rc = nvs_flash_write(fs, offset, &sector_hdr, sector_hdr_len);
+	rc = nvs_flash_write(fs, offset, &sector_hdr, sizeof(sector_hdr));
 	if (rc) {
 		return rc;
 	}
@@ -121,7 +120,7 @@ int _nvs_sector_is_used(struct nvs_fs *fs, off_t offset)
 	offset &= ~(fs->sector_size - 1);
 	for (addr = 0; addr < fs->sector_size; addr += sizeof(buf)) {
 		rc = flash_read(fs->flash_device,
-				fs->offset + addr,
+				fs->offset + offset + addr,
 				&buf, sizeof(buf));
 		if (rc) {
 			return rc;
@@ -182,7 +181,7 @@ int _nvs_gc(struct nvs_fs *fs, off_t addr)
 	_nvs_addr_advance(fs, &walker.data_addr, sec_hdr_len + hdr_len);
 	while (1) {
 		rd_addr = _nvs_head_addr_in_flash(fs, &walker);
-		rc = nvs_flash_read(fs, rd_addr, &head, hdr_len);
+		rc = nvs_flash_read(fs, rd_addr, &head, sizeof(head));
 		if (rc) {
 			return rc;
 		}
@@ -197,12 +196,14 @@ int _nvs_gc(struct nvs_fs *fs, off_t addr)
 			/* entry is not found, copy needed - but find the last
 			 * entry first
 			 */
+			last_entry.len = 0;
+			last_entry.data_addr = 0;
 			walker_last = walker;
 			while (walker_last.id != NVS_ID_SECTOR_END) {
 				rd_addr = _nvs_head_addr_in_flash(
 						fs, &walker_last);
 				rc = nvs_flash_read(
-					fs, rd_addr, &head, hdr_len);
+					fs, rd_addr, &head, sizeof(head));
 				if (rc) {
 					return rc;
 				}
@@ -267,13 +268,12 @@ int nvs_get_first_entry(struct nvs_fs *fs, struct nvs_entry *entry)
 	int rc;
 	struct _nvs_data_hdr head;
 	off_t hdr_addr;
-	u16_t hdr_len, adv_len;
+	u16_t adv_len;
 
 	nvs_set_start_entry(fs, entry);
 	while (1) {
 		hdr_addr = _nvs_head_addr_in_flash(fs, entry);
-		hdr_len = _nvs_len_in_flash(fs, sizeof(struct _nvs_data_hdr));
-		rc = nvs_flash_read(fs, hdr_addr, &head, hdr_len);
+		rc = nvs_flash_read(fs, hdr_addr, &head, sizeof(head));
 		if (rc) {
 			return rc;
 		}
@@ -296,7 +296,7 @@ int nvs_get_last_entry(struct nvs_fs *fs, struct nvs_entry *entry)
 	struct nvs_entry latest;
 	struct _nvs_data_hdr head;
 	off_t hdr_addr;
-	u16_t hdr_len, adv_len;
+	u16_t adv_len;
 
 	rc = nvs_get_first_entry(fs, entry);
 	if (rc) {
@@ -307,8 +307,7 @@ int nvs_get_last_entry(struct nvs_fs *fs, struct nvs_entry *entry)
 	latest.len = entry->len;
 	while (1) {
 		hdr_addr = _nvs_head_addr_in_flash(fs, entry);
-		hdr_len = _nvs_len_in_flash(fs, sizeof(struct _nvs_data_hdr));
-		rc = nvs_flash_read(fs, hdr_addr, &head, hdr_len);
+		rc = nvs_flash_read(fs, hdr_addr, &head, sizeof(head));
 		if (rc) {
 			return rc;
 		}
@@ -333,7 +332,7 @@ int nvs_walk_entry(struct nvs_fs *fs, struct nvs_entry *entry)
 	int rc;
 	struct _nvs_data_hdr head;
 	off_t hdr_addr;
-	u16_t hdr_len, adv_len;
+	u16_t adv_len;
 
 
 	if (entry->id != NVS_ID_EMPTY) {
@@ -342,8 +341,7 @@ int nvs_walk_entry(struct nvs_fs *fs, struct nvs_entry *entry)
 	}
 	while (1) {
 		hdr_addr = _nvs_head_addr_in_flash(fs, entry);
-		hdr_len = _nvs_len_in_flash(fs, sizeof(struct _nvs_data_hdr));
-		rc = nvs_flash_read(fs, hdr_addr, &head, hdr_len);
+		rc = nvs_flash_read(fs, hdr_addr, &head, sizeof(head));
 		if (rc) {
 			return rc;
 		}
@@ -511,7 +509,7 @@ int nvs_append(struct nvs_fs *fs, struct nvs_entry *entry)
 	data_hdr.id = entry->id;
 	data_hdr.len = _nvs_len_in_flash(fs, entry->len);
 
-	rc = nvs_flash_write(fs, fs->write_location, &data_hdr, hdr_len);
+	rc = nvs_flash_write(fs, fs->write_location, &data_hdr, sizeof(data_hdr));
 	if (rc) {
 		goto err;
 	}
@@ -531,16 +529,16 @@ int nvs_append_close(struct nvs_fs *fs, const struct nvs_entry *entry)
 	int rc;
 	struct _nvs_data_slt data_slt;
 	off_t addr;
-	u16_t slt_len;
 
 	k_mutex_lock(&fs->nvs_lock, K_FOREVER);
-	/* crc16_ccitt is calculated on flash data, set correct offset */
-	addr = entry->data_addr + fs->offset;
-	data_slt.crc16 = crc16_ccitt(0xFFFF, (const u8_t *) addr, entry->len);
-	data_slt._pad = 0xFFFF;
+	rc = nvs_compute_crc(fs, entry, &data_slt.crc16);
+	if (rc) {
+		goto err;
+	}
 	addr = _nvs_slt_addr_in_flash(fs, entry);
-	slt_len = _nvs_len_in_flash(fs, sizeof(struct _nvs_data_slt));
-	rc = nvs_flash_write(fs, addr, &data_slt, slt_len);
+	rc = nvs_flash_write(fs, addr, &data_slt, sizeof(data_slt));
+
+err:
 	k_mutex_unlock(&fs->nvs_lock);
 	return rc;
 }
@@ -551,14 +549,14 @@ int nvs_check_crc(struct nvs_fs *fs, struct nvs_entry *entry)
 	int rc;
 	struct _nvs_data_slt data_slt;
 	off_t addr;
-	u16_t crc16, slt_len;
+	u16_t crc16;
 
-	/* crc16_ccitt is calculated on flash data, set correct offset */
-	addr = entry->data_addr + fs->offset;
-	crc16 = crc16_ccitt(0xFFFF, (const u8_t *) addr, entry->len);
+	rc = nvs_compute_crc(fs, entry, &crc16);
+	if (rc) {
+		return -EIO;
+	}
 	addr = _nvs_slt_addr_in_flash(fs, entry);
-	slt_len = _nvs_len_in_flash(fs, sizeof(struct _nvs_data_slt));
-	rc = nvs_flash_read(fs, addr, &data_slt, slt_len);
+	rc = nvs_flash_read(fs, addr, &data_slt, sizeof(data_slt));
 	if (rc || (crc16 != data_slt.crc16)) {
 		return -EIO;
 	}
@@ -587,7 +585,7 @@ int nvs_rotate(struct nvs_fs *fs)
 	head.len = fs->sector_size
 		   - (fs->write_location & (fs->sector_size - 1))
 		   - slt_len - hdr_len + sec_hdr_len;
-	rc = nvs_flash_write(fs, fs->write_location, &head, hdr_len);
+	rc = nvs_flash_write(fs, fs->write_location, &head, sizeof(head));
 	if (rc) {
 		goto out;
 	}
@@ -627,6 +625,24 @@ int nvs_rotate(struct nvs_fs *fs)
 out:
 	k_mutex_unlock(&fs->nvs_lock);
 	return rc;
+}
+
+int nvs_compute_crc(struct nvs_fs *fs, const struct nvs_entry *entry,
+		    u16_t *crc16)
+{
+	int rc;
+
+	*crc16 = 0xFFFF;
+	for (int i = 0; i < entry->len; i += fs->write_block_size) {
+		u8_t buf[fs->write_block_size];
+
+		rc = nvs_flash_read(fs, entry->data_addr + i, buf, sizeof(buf));
+		if (rc) {
+			return -EIO;
+		}
+		*crc16 = crc16_ccitt(*crc16, buf, sizeof(buf));
+	}
+	return 0;
 }
 
 int nvs_clear(struct nvs_fs *fs)
@@ -680,10 +696,28 @@ int nvs_flash_write(struct nvs_fs *fs, off_t offset, const void *data,
 		/* flash protection set error */
 		return rc;
 	}
-	rc = flash_write(fs->flash_device, fs->offset + offset, data, len);
-	if (rc) {
-		/* flash write error */
-		return rc;
+	/* write and entire number of blocks */
+	if (len >= fs->write_block_size) {
+		size_t blen = len & ~(fs->write_block_size - 1);
+		rc = flash_write(fs->flash_device, fs->offset + offset, data, blen);
+		if (rc) {
+			/* flash write error */
+			return rc;
+		}
+		len -= blen;
+		offset += len;
+		data += len;
+	}
+	/* write the remaining data padding up to write_blocks_zize with 0xff */
+	if (len) {
+		u8_t buf[fs->write_block_size];
+		memcpy(buf, data, len);
+		memset(buf + len, 0xff, fs->write_block_size - len);
+		rc = flash_write(fs->flash_device, fs->offset + offset, buf, fs->write_block_size);
+		if (rc) {
+			/* flash write error */
+			return rc;
+		}
 	}
 	(void) flash_write_protection_set(fs->flash_device, 1);
 	/* don't mind about this error */

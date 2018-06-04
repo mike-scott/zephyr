@@ -2179,6 +2179,16 @@ class Kconfig(object):
                                    "set".format(node.item.name, env_var),
                                    self._filename, self._linenr)
 
+                    if env_var != node.item.name:
+                        self._warn("Kconfiglib expands environment variables "
+                                   "in strings directly, meaning you do not "
+                                   "need 'option env=...' \"bounce\" symbols. "
+                                   "For compatibility with the C tools, "
+                                   "rename {} to {} (so that the symbol name "
+                                   "matches the environment variable name)."
+                                   .format(node.item.name, env_var),
+                                   self._filename, self._linenr)
+
                 elif self._check_token(_T_DEFCONFIG_LIST):
                     if not self.defconfig_list:
                         self.defconfig_list = node.item
@@ -2301,10 +2311,11 @@ class Kconfig(object):
         # than the first line
 
         help_lines = []
-        # Small optimization
+        # Small optimizations
         add_help_line = help_lines.append
+        indentation = _indentation
 
-        while line and (line.isspace() or _indentation(line) >= indent):
+        while line and (line.isspace() or indentation(line) >= indent):
             # De-indent 'line' by 'indent' spaces and rstrip() it to remove any
             # newlines (which gets rid of other trailing whitespace too, but
             # that's fine).
@@ -4743,7 +4754,18 @@ def _check_sym_sanity(sym):
                     .format(TYPE_TO_STR[sym.orig_type], _name_and_loc(sym),
                             expr_str(default)))
 
-            if sym.orig_type in (INT, HEX) and \
+            if sym.orig_type == STRING:
+                if not default.is_constant and not default.nodes and \
+                   default.name != default.name.upper():
+                    # 'default foo' on a string symbol could be either a symbol
+                    # reference or someone leaving out the quotes. Guess that
+                    # the quotes were left out if 'foo' isn't all-uppercase
+                    # (and no symbol named 'foo' exists).
+                    sym.kconfig._warn("style: quotes recommended around "
+                                      "default value for string symbol "
+                                      + _name_and_loc(sym))
+
+            elif sym.orig_type in (INT, HEX) and \
                not _int_hex_ok(default, sym.orig_type):
 
                 sym.kconfig._warn("the {0} symbol {1} has a non-{0} default {2}"

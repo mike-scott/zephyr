@@ -663,7 +663,7 @@ class SizeCalculator:
                    "ccm_data"]
     # These get copied into RAM only on non-XIP
     ro_sections = ["text", "ctors", "init_array", "reset", "object_access",
-                   "rodata", "devconfig", "net_l2", "vector"]
+                   "rodata", "devconfig", "net_l2", "vector", "_bt_settings_area"]
 
     def __init__(self, filename, extra_sections):
         """Constructor
@@ -886,7 +886,6 @@ class MakeGenerator:
             os.makedirs(base_outdir)
         self.logfile = os.path.join(base_outdir, "make.log")
         self.makefile = os.path.join(base_outdir, "Makefile")
-        self.asserts = options.enable_asserts
         self.deprecations = options.error_on_deprecations
 
     def _get_rule_header(self, name):
@@ -900,11 +899,7 @@ class MakeGenerator:
         """
         args = " ".join(["-D{}".format(a) for a in args])
         ldflags = ""
-
-        if self.asserts:
-            cflags = "-DCONFIG_ASSERT=1 -D__ASSERT_ON=2"
-        else:
-            cflags = ""
+        cflags = ""
 
         if self.deprecations:
             cflags = cflags + "  -Wno-deprecated-declarations"
@@ -913,7 +908,7 @@ class MakeGenerator:
 
         if options.ninja:
             generator = "Ninja"
-            generator_cmd = "ninja"
+            generator_cmd = "ninja -j1"
             verb = "-v" if VERBOSE else ""
         else:
             generator = "Unix Makefiles"
@@ -1154,8 +1149,16 @@ class MakeGenerator:
             tf.write("all: %s\n" % (" ".join(self.goals.keys())))
             tf.flush()
 
+            # Normally spawn 2x as many processes as CPUs.  Ninja,
+            # though, seems to have significant parallelism internally
+            # and results in rather high loads, so use 1.5x there to
+            # match what we see with GNU make.
+            loadmul = 2
+            if options.ninja:
+                    loadmul = 1.5
+
             cmd = ["make", "-k", "-j",
-                   str(CPU_COUNTS * 2), "-f", tf.name, "all"]
+                   str(int(CPU_COUNTS * loadmul)), "-f", tf.name, "all"]
             p = subprocess.Popen(cmd, stderr=subprocess.PIPE,
                                  stdout=devnull)
 
@@ -1992,7 +1995,6 @@ class TestSuite:
                         continue
 
                     defconfig = {
-                            "ASSERT": 1 if options.enable_asserts else 0,
                             "ARCH": arch.name,
                             "PLATFORM": plat.name
                             }
@@ -2463,11 +2465,11 @@ def parse_arguments():
 
     parser.add_argument(
         "--device-testing", action="store_true",
-        help="Test on device directly. You need to specify the serial"
-			 "using --device-serial option")
+        help="Test on device directly. Specify the serial device to "
+             "use with the --device-serial option.")
     parser.add_argument(
         "--device-serial",
-		help="Serial device the board can be accessed through")
+		help="Serial device for accessing the board (e.g., /dev/ttyACM0)")
     parser.add_argument(
             "--show-footprint", action="store_true",
             help="Show footprint statistics and deltas since last release."
@@ -2514,11 +2516,10 @@ def parse_arguments():
         "as 'slow' in testcase.yaml. Normally these are only built.")
     parser.add_argument("-R", "--enable-asserts", action="store_true",
                         default=True,
-                        help="Build all test cases with assertions enabled. "
-                        "Default to assertions being enabled.")
+                        help="deprecated, left for compatibility")
     parser.add_argument("--disable-asserts", action="store_false",
                         dest="enable_asserts",
-                        help="Build all test cases with assertions disabled.")
+                        help="deprecated, left for compatibility")
     parser.add_argument("-Q", "--error-on-deprecations", action="store_false",
                         help="Error on deprecation warnings.")
 

@@ -15,7 +15,6 @@ zephyr_library_sources(
   excstub.S
   intstub.S
   irq_manage.c
-  msr.c
   swap.S
   sys_fatal_error_handler.c
   thread.c
@@ -24,6 +23,7 @@ zephyr_library_sources(
 zephyr_library_sources_if_kconfig(                irq_offload.c)
 zephyr_library_sources_if_kconfig(                x86_mmu.c)
 zephyr_library_sources_if_kconfig(                reboot_rst_cnt.c)
+zephyr_library_sources_ifdef(CONFIG_DISABLE_SSBD  spec_ctrl.c)
 zephyr_library_sources_ifdef(CONFIG_FP_SHARING    float.c)
 zephyr_library_sources_ifdef(CONFIG_X86_USERSPACE userspace.S)
 

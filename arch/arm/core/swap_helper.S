@@ -305,7 +305,7 @@ SECTION_FUNC(TEXT, __svc)
 
    /*
     * grab service call number:
-    * 0: context switch
+    * 0: Unused
     * 1: irq_offload (if configured)
     * 2: kernel panic or oops (software generated fatal exception)
     * 3: System call
@@ -326,9 +326,7 @@ SECTION_FUNC(TEXT, __svc)
     tst r2, #0x1
     bne _oops
 
-    cmp r1, #0
 #endif
-    beq _context_switch
 
     cmp r1, #2
     beq _oops
@@ -341,24 +339,6 @@ SECTION_FUNC(TEXT, __svc)
     /* exception return is done in _IntExit() */
     b _IntExit
 #endif
-
-_context_switch:
-
-    /*
-     * Unlock interrupts:
-     * - in a SVC call, so protected against context switches
-     * - allow PendSV, since it's running at prio 0xff
-     */
-    eors.n r0, r0
-    msr BASEPRI, r0
-
-     /* set PENDSV bit, pending the PendSV exception */
-    ldr r1, =_SCS_ICSR
-    ldr r2, =_SCS_ICSR_PENDSV
-    str r2, [r1, #0]
-
-    /* handler mode exit, to PendSV */
-    bx lr
 
 _oops:
     push {lr}
@@ -385,10 +365,10 @@ _oops:
      * r4 - arg5
      * r5 - arg6
      * r6 - call_id
-     * r7 - saved link register
+     * r8 - saved link register
      */
 _do_syscall:
-    ldr r7, [r0, #24]   /* grab address of PC from stack frame */
+    ldr r8, [r0, #24]   /* grab address of PC from stack frame */
     ldr r1, =_arm_do_syscall
     str r1, [r0, #24]   /* overwrite the LR to point to _arm_do_syscall */
 

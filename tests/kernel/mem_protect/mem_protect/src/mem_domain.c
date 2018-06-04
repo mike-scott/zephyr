@@ -197,7 +197,7 @@ static void user_thread_entry_ro(void *p1, void *p2, void *p3)
 	mem_domain_buf1[0] = 10;
 
 	zassert_unreachable("The user thread is allowed to access a read only"
-			" partition of a memory domain\n");
+			" partition of a memory domain");
 }
 
 void test_mem_domain_partitions_user_ro(void)
@@ -313,8 +313,10 @@ void mem_domain_for_user_tc3(void *max_partitions, void *p2, void *p3)
  */
 void test_mem_domain_add_partitions_invalid(void *p1, void *p2, void *p3)
 {
-
-	u8_t max_partitions = (u8_t)_arch_mem_domain_max_partitions_get();
+	/* Subtract one since the domain is initialized with one partition
+	 * already present.
+	 */
+	u8_t max_partitions = (u8_t)_arch_mem_domain_max_partitions_get() - 1;
 	u8_t index;
 
 	mem_domain_init();
@@ -522,6 +524,6 @@ void test_mem_domain_destroy(void)
 				&mem_domain1, "The thread has reference to"
 				" memory domain which is already destroyed");
 	} else {
-		zassert_unreachable("k_mem_domain_add_thread() failed\n");
+		zassert_unreachable("k_mem_domain_add_thread() failed");
 	}
 }

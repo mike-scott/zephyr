@@ -41,7 +41,6 @@ struct nvs_entry {
 struct _nvs_sector_hdr {
 	u32_t fd_magic;
 	u16_t fd_id;
-	u16_t _pad;
 };
 
 struct _nvs_data_hdr {
@@ -51,7 +50,6 @@ struct _nvs_data_hdr {
 
 struct _nvs_data_slt {
 	u16_t crc16;
-	u16_t _pad;
 };
 
 
@@ -63,6 +61,8 @@ int nvs_get_first_entry(struct nvs_fs *fs, struct nvs_entry *entry);
 int nvs_get_last_entry(struct nvs_fs *fs, struct nvs_entry *entry);
 int nvs_check_crc(struct nvs_fs *fs, struct nvs_entry *entry);
 int nvs_rotate(struct nvs_fs *fs);
+int nvs_compute_crc(struct nvs_fs *fs, const struct nvs_entry *entry,
+		    u16_t *crc16);
 int nvs_flash_read(struct nvs_fs *fs, off_t offset, void *data, size_t len);
 int nvs_flash_write(struct nvs_fs *fs, off_t offset, const void *data,
 	size_t len);

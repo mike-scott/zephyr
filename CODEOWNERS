@@ -3,15 +3,13 @@
 # Do not use wildcard on all source yet
 # *                                        @galak @nashif
 
-# Get all docs reviewed
-*.rst                                    @dbkinder
 .known-issues/*                          @inakypg @nashif
 arch/arc/                                @vonhust @ruuddw
 arch/arm/                                @MaureenHelm @galak
 arch/arm/soc/arm/mps2/*                  @fvincenzo
 arch/arm/soc/atmel_sam/sam4s             @fallrisk
 arch/arm/soc/nxp*/                       @MaureenHelm
-arch/arm/soc/st_stm32/*                  @erwango
+arch/arm/soc/st_stm32/                   @erwango
 arch/arm/soc/st_stm32/stm32f4/*          @rsalveti @idlethread
 arch/arm/soc/ti_simplelink/cc32xx        @GAnthony
 arch/arm/soc/ti_simplelink/msp432p4xx    @Mani-Sadhasivam
@@ -199,3 +197,6 @@ tests/net/lib/mqtt_packet/               @jukkar @tbursztyka
 tests/net/lib/coap/                      @rveerama1
 tests/net/socket/                        @jukkar @tbursztyka @pfalcon
 tests/subsys/fs/                         @nashif @ramakrishnapallala
+
+# Get all docs reviewed
+*.rst                                    @dbkinder

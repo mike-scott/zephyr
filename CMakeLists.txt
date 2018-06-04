@@ -237,7 +237,6 @@ else() # GCC assumed
   endif()
 endif()
 
-zephyr_cc_option_ifdef(CONFIG_DEBUG_SECTION_MISMATCH -fno-inline-functions-called-once)
 zephyr_cc_option_ifdef(CONFIG_STACK_USAGE            -fstack-usage)
 
 zephyr_system_include_directories(${NOSTDINC})
@@ -1120,11 +1119,11 @@ add_subdirectory(cmake/flash)
 add_subdirectory(cmake/usage)
 add_subdirectory(cmake/reports)
 
-if(CONFIG_ASSERT)
+if(CONFIG_ASSERT AND (NOT CONFIG_FORCE_NO_ASSERT))
   message(WARNING "
       ------------------------------------------------------------
       --- WARNING:  __ASSERT() statements are globally ENABLED ---
-      --- The kernel will run more slowly and uses more memory ---
+      --- The kernel will run more slowly and use more memory  ---
       ------------------------------------------------------------"
 )
 endif()
