@@ -174,15 +174,6 @@ void _new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 		thread->arch.priv_stack_size = 0;
 	}
 #endif
-
-#ifdef CONFIG_THREAD_MONITOR
-	/*
-	 * In debug mode thread->entry give direct access to the thread entry
-	 * and the corresponding parameters.
-	 */
-	thread->entry = (struct __thread_entry *)(pInitCtx);
-#endif
-
 	/*
 	 * intlock_key is constructed based on ARCv2 ISA Programmer's
 	 * Reference Manual CLRI instruction description:
@@ -195,8 +186,6 @@ void _new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 		(u32_t)pInitCtx - ___callee_saved_stack_t_SIZEOF;
 
 	/* initial values in all other regs/k_thread entries are irrelevant */
-
-	thread_monitor_init(thread);
 }
 
 
@@ -205,7 +194,6 @@ void _new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 FUNC_NORETURN void _arch_user_mode_enter(k_thread_entry_t user_entry,
 	void *p1, void *p2, void *p3)
 {
-	_current->base.user_options |= K_USER;
 
 	/*
 	 * adjust the thread stack layout

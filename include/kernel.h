@@ -546,7 +546,7 @@ struct k_thread {
 
 #if defined(CONFIG_THREAD_MONITOR)
 	/** thread entry and parameters description */
-	struct __thread_entry *entry;
+	struct __thread_entry entry;
 
 	/** next item in list of all threads */
 	struct k_thread *next_thread;
@@ -2584,8 +2584,7 @@ extern struct k_work_q k_sys_work_q;
  */
 static inline void k_work_init(struct k_work *work, k_work_handler_t handler)
 {
-	atomic_clear_bit(work->flags, K_WORK_STATE_PENDING);
-	work->handler = handler;
+	*work = (struct k_work)_K_WORK_INITIALIZER(handler);
 	_k_object_init(work);
 }
 
