@@ -660,7 +660,7 @@ class SizeCalculator:
                    "net_if", "net_if_dev", "net_stack", "net_l2_data",
                    "_k_queue_area", "_net_buf_pool_area", "app_datas",
                    "kobject_data", "mmu_tables", "app_pad", "priv_stacks",
-                   "ccm_data"]
+                   "ccm_data", "usb_descriptor", "usb_data"]
     # These get copied into RAM only on non-XIP
     ro_sections = ["text", "ctors", "init_array", "reset", "object_access",
                    "rodata", "devconfig", "net_l2", "vector", "_bt_settings_area"]
@@ -2606,6 +2606,14 @@ def chatty_test_cb(instances, goals, goal):
     if VERBOSE < 2 and not goal.finished:
         return
 
+    total_tests = len(goals)
+    total_tests_width = len(str(total_tests))
+    total_done = 0
+
+    for k, g in goals.items():
+        if g.finished:
+            total_done += 1
+
     if goal.failed:
         status = COLOR_RED + "FAILED" + COLOR_NORMAL + ": " + goal.reason
     elif goal.finished:
@@ -2613,7 +2621,9 @@ def chatty_test_cb(instances, goals, goal):
     else:
         status = goal.make_state
 
-    info("{:<25} {:<50} {}".format(i.platform.name, i.test.name, status))
+    info("{:>{}}/{} {:<25} {:<50} {}".format(
+        total_done, total_tests_width, total_tests, i.platform.name,
+        i.test.name, status))
     if goal.failed:
         log_info(goal.get_error_log())
 

@@ -16,9 +16,6 @@
 
 #define ARM_MPU_DEV ((volatile struct arm_mpu *) ARM_MPU_BASE)
 
-/* ARM MPU Enabled state */
-static u8_t arm_mpu_enabled;
-
 /**
  * The attributes referenced in this function are described at:
  * https://goo.gl/hMry3r
@@ -86,11 +83,20 @@ static inline u32_t _get_region_attr_by_type(u32_t type, u32_t size)
 
 static inline u8_t _get_num_regions(void)
 {
+#if defined(CONFIG_CPU_CORTEX_M0PLUS) || \
+	defined(CONFIG_CPU_CORTEX_M3) || \
+	defined(CONFIG_CPU_CORTEX_M4)
+	/* Cortex-M0+, Cortex-M3, and Cortex-M4 MCUs may
+	 * have a fixed number of 8 MPU regions.
+	 */
+	return 8;
+#else
 	u32_t type = ARM_MPU_DEV->type;
 
 	type = (type & 0xFF00) >> 8;
 
 	return (u8_t)type;
+#endif
 }
 
 /* This internal function performs MPU region initialization.
@@ -239,12 +245,10 @@ static inline int _is_user_accessible_region(u32_t r_index, int write)
  */
 void arm_core_mpu_enable(void)
 {
-	if (arm_mpu_enabled == 0) {
-		/* Enable MPU */
-		ARM_MPU_DEV->ctrl = ARM_MPU_ENABLE | ARM_MPU_PRIVDEFENA;
-
-		arm_mpu_enabled = 1;
-	}
+	/* Enable MPU and use the default memory map as a
+	 * background region for privileged software access.
+	 */
+	ARM_MPU_DEV->ctrl = ARM_MPU_ENABLE | ARM_MPU_PRIVDEFENA;
 }
 
 /**
@@ -252,12 +256,8 @@ void arm_core_mpu_enable(void)
  */
 void arm_core_mpu_disable(void)
 {
-	if (arm_mpu_enabled == 1) {
-		/* Disable MPU */
-		ARM_MPU_DEV->ctrl = 0;
-
-		arm_mpu_enabled = 0;
-	}
+	/* Disable MPU */
+	ARM_MPU_DEV->ctrl = 0;
 }
 
 /**
@@ -472,10 +472,10 @@ static void _arm_mpu_config(void)
 			     mpu_config.mpu_regions[r_index].attr);
 	}
 
-	/* Enable MPU */
+	/* Enable MPU and use the default memory map as a
+	 * background region for privileged software access.
+	 */
 	ARM_MPU_DEV->ctrl = ARM_MPU_ENABLE | ARM_MPU_PRIVDEFENA;
-
-	arm_mpu_enabled = 1;
 
 	/* Make sure that all the registers are set before proceeding */
 	__DSB();
@@ -488,6 +488,13 @@ static int arm_mpu_init(struct device *arg)
 
 	_arm_mpu_config();
 
+	/* Sanity check for number of regions in Cortex-M0+, M3, and M4. */
+#if defined(CONFIG_CPU_CORTEX_M0PLUS) || \
+	defined(CONFIG_CPU_CORTEX_M3) || \
+	defined(CONFIG_CPU_CORTEX_M4)
+	__ASSERT((ARM_MPU_DEV->type & 0xFF00) >> 8 == 8,
+		"Invalid number of MPU regions\n");
+#endif
 	return 0;
 }
 
