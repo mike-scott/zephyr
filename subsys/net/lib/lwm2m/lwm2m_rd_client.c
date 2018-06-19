@@ -62,7 +62,7 @@
 
 #define LWM2M_RD_CLIENT_URI "rd"
 
-#define SECONDS_TO_UPDATE_EARLY	6
+#define SECONDS_TO_UPDATE_EARLY	2
 #define STATE_MACHINE_UPDATE_INTERVAL K_MSEC(500)
 
 /* Leave room for 32 hexadeciaml digits (UUID) + NULL */
