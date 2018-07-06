@@ -303,6 +303,18 @@ status_t UART_Init(UART_Type *base, const uart_config_t *config, uint32_t srcClo
     /* Flush FIFO */
     base->CFIFO |= (UART_CFIFO_TXFLUSH_MASK | UART_CFIFO_RXFLUSH_MASK);
 #endif
+#if defined(FSL_FEATURE_UART_HAS_MODEM_SUPPORT) && FSL_FEATURE_UART_HAS_MODEM_SUPPORT
+    if (config->enableRxRTS)
+    {
+        /* Enable receiver RTS(request-to-send) function. */
+        base->MODEM |= UART_MODEM_RXRTSE_MASK;
+    }
+    if (config->enableTxCTS)
+    {
+        /* Enable transmiter CTS(clear-to-send) function. */
+        base->MODEM |= UART_MODEM_TXCTSE_MASK;
+    }
+#endif
 
     /* Enable TX/RX base on configure structure. */
     temp = base->C2;
@@ -356,6 +368,10 @@ void UART_GetDefaultConfig(uart_config_t *config)
 #if defined(FSL_FEATURE_UART_HAS_FIFO) && FSL_FEATURE_UART_HAS_FIFO
     config->txFifoWatermark = 0;
     config->rxFifoWatermark = 1;
+#endif
+#if defined(FSL_FEATURE_UART_HAS_MODEM_SUPPORT) && FSL_FEATURE_UART_HAS_MODEM_SUPPORT
+    config->enableRxRTS = false;
+    config->enableTxCTS = false;
 #endif
     config->enableTx = false;
     config->enableRx = false;
