@@ -86,14 +86,10 @@ config MAIN_THREAD_PRIORITY
 	  of the main() function. main() can then change its priority if desired.
 
 config COOP_ENABLED
-	bool
-	default y
-	default n if (NUM_COOP_PRIORITIES = 0)
+	def_bool (NUM_COOP_PRIORITIES != 0)
 
 config PREEMPT_ENABLED
-	bool
-	default y
-	default n if (NUM_PREEMPT_PRIORITIES = 0)
+	def_bool (NUM_PREEMPT_PRIORITIES != 0)
 
 config PRIORITY_CEILING
 	int
@@ -125,7 +121,6 @@ config NUM_METAIRQ_PRIORITIES
 config SCHED_DEADLINE
 	bool
 	prompt "Enable earliest-deadline-first scheduling"
-	default n
 	help
 	  This enables a simple "earliest deadline first" scheduling
 	  mode where threads can set "deadline" deltas measured in
@@ -170,7 +165,6 @@ config ISR_STACK_SIZE
 config THREAD_STACK_INFO
 	bool
 	prompt "Thread stack info"
-	default n
 	help
 	  This option allows each thread to store the thread stack info into
 	  the k_thread data structure.
@@ -178,7 +172,6 @@ config THREAD_STACK_INFO
 config  THREAD_CUSTOM_DATA
 	bool
 	prompt "Thread custom data"
-	default n
 	help
 	  This option allows each thread to store 32 bits of custom data,
 	  which can be accessed using the k_thread_custom_data_xxx() APIs.
@@ -196,31 +189,23 @@ config ERRNO
 config APPLICATION_MEMORY
 	bool
 	prompt "Split kernel and application memory"
-	default n
 	help
 	  For all read-write memory sections (namely bss, noinit, data),
 	  separate them into application and kernel areas. The application area
 	  will have the project-level application objects and any libraries
 	  including the C library in it.
 
-config WAITQ_FAST
-	bool
-	prompt "Use scalable wait_q implementation"
-	default n
+choice SCHED_ALGORITHM
+	prompt "Scheduler priority queue algorithm"
+	default SCHED_DUMB
 	help
-	  When selected, the wait_q abstraction used in IPC primitives
-	  to pend threads for wakeup later will be implemented with a
-	  balanced tree instead of a linear list.  Choose this if you
-	  expect to have many threads waiting on individual
-	  primitives, or if you have already included the red/black
-	  tree code in the build for some other purpose (in which case
-	  this results in less code size increase than the default
-	  implementation).
+	  The kernel can be built with with several choices for the
+	  ready queue implementation, offering different choices between
+	  code size, constant factor runtime overhead and performance
+	  scaling when many threads are added.
 
 config SCHED_DUMB
-	bool
-	prompt "Use a simple linked list scheduler"
-	default y
+	bool "Simple linked-list ready queue"
 	help
 	  When selected, the scheduler ready queue will be implemented
 	  as a simple unordered list, with very fast constant time
@@ -231,12 +216,76 @@ config SCHED_DUMB
 	  (that are not otherwise using the red/black tree) this
 	  results in a savings of ~2k of code size.
 
+config SCHED_SCALABLE
+	bool "Red/black tree ready queue"
+	help
+	  When selected, the scheduler ready queue will be implemented
+	  as a red/black tree.  This has rather slower constant-time
+	  insertion and removal overhead, and on most platforms (that
+	  are not otherwise using the rbtree somehwere) requires an
+	  extra ~2kb of code.  But the resulting behavior will scale
+	  cleanly and quickly into the many thousands of threads.  Use
+	  this on platforms where you may have many threads (very
+	  roughly: more than 20 or so) marked as runnable at a given
+	  time.  Most applications don't want this.
+
+config SCHED_MULTIQ
+	bool "Traditional multi-queue ready queue"
+	depends on !SCHED_DEADLINE
+	help
+	  When selected, the scheduler ready queue will be implemented
+	  as the classic/textbook array of lists, one per priority
+	  (max 32 priorities).  This corresponds to the scheduler
+	  algorithm used in Zephyr versions prior to 1.12.  It incurs
+	  only a tiny code size overhead vs. the "dumb" scheduler and
+	  runs in O(1) time in almost all circumstances with very low
+	  constant factor.  But it requires a fairly large RAM budget
+	  to store those list heads, and the limited features make it
+	  incompatible with features like deadline scheduling that
+	  need to sort threads more finely, and SMP affinity which
+	  need to traverse the list of threads.  Typical applications
+	  with small numbers of runnable threads probably want the
+	  DUMB scheduler.
+
+endchoice # SCHED_ALGORITHM
+
+choice WAITQ_ALGORITHM
+	prompt "Wait queue priority algorithm"
+	default WAITQ_DUMB
+	help
+	  The wait_q abstraction used in IPC primitives to pend
+	  threads for later wakeup shares the same backend data
+	  structure choices as the scheduler, and can use the same
+	  options.
+
+config WAITQ_SCALABLE
+	bool
+	prompt "Use scalable wait_q implementation"
+	help
+	  When selected, the wait_q will be implemented with a
+	  balanced tree.  Choose this if you expect to have many
+	  threads waiting on individual primitives.  There is a ~2kb
+	  code size increase over WAITQ_DUMB (which may be shared with
+	  SCHED_SCALABLE) if the rbtree is not used elsewhere in the
+	  application, and pend/unpend operations on "small" queues
+	  will be somewhat slower (though this is not generally a
+	  performance path).
+
+config WAITQ_DUMB
+	bool
+	prompt "Simple linked-list wait_q"
+	help
+	  When selected, the wait_q will be implemented with a
+	  doubly-linked list.  Choose this if you expect to have only
+	  a few threads blocked on any single IPC primitive.
+
+endchoice # WAITQ_ALGORITHM
+
 menu "Kernel Debugging and Metrics"
 
 config INIT_STACKS
 	bool
 	prompt "Initialize stack areas"
-	default n
 	help
 	  This option instructs the kernel to initialize stack areas with a
 	  known value (0xaa) before they are first used, so that the high
@@ -246,7 +295,6 @@ config INIT_STACKS
 config KERNEL_DEBUG
 	bool
 	prompt "Kernel debugging"
-	default n
 	select INIT_STACKS
 	help
 	  Enable kernel debugging.
@@ -281,7 +329,6 @@ config BOOT_DELAY
 
 config BUILD_TIMESTAMP
 	bool
-	default n
 	prompt "Build Timestamp"
 	help
 	  Record a timestamp from the build and add it to the boot banner.
@@ -291,7 +338,6 @@ config BUILD_TIMESTAMP
 config INT_LATENCY_BENCHMARK
 	bool
 	prompt "Interrupt latency metrics [EXPERIMENTAL]"
-	default n
 	depends on ARCH="x86"
 	help
 	  This option enables the tracking of interrupt latency metrics;
@@ -303,7 +349,6 @@ config INT_LATENCY_BENCHMARK
 config EXECUTION_BENCHMARKING
 	bool
 	prompt "Timing metrics"
-	default n
 	help
 	  This option enables the tracking of various times inside the kernel
 	  the exact set of metrics being tracked is board-dependent.
@@ -313,7 +358,6 @@ config EXECUTION_BENCHMARKING
 config THREAD_MONITOR
 	bool
 	prompt "Thread monitoring [EXPERIMENTAL]"
-	default n
 	help
 	  This option instructs the kernel to maintain a list of all threads
 	  (excluding those that have not yet started or have already
@@ -403,7 +447,6 @@ config TIMESLICE_PRIORITY
 config POLL
 	bool
 	prompt "Async I/O Framework"
-	default n
 	help
 	  Asynchronous notification framework. Enable the k_poll() and
 	  k_poll_signal() APIs.  The former can wait on multiple events
@@ -451,7 +494,6 @@ endmenu
 config ARCH_HAS_CUSTOM_SWAP_TO_MAIN
 	bool
 	# hidden
-	default n
 	help
 	  It's possible that an architecture port cannot use _Swap() to swap to
 	  the _main() thread, but instead must do something custom. It must
@@ -460,7 +502,6 @@ config ARCH_HAS_CUSTOM_SWAP_TO_MAIN
 config ARCH_HAS_CUSTOM_BUSY_WAIT
 	bool
 	# hidden
-	default n
 	help
 	  It's possible that an architecture port cannot or does not want to use
 	  the provided k_busy_wait(), but instead must do something custom. It must
@@ -500,10 +541,8 @@ config SYS_CLOCK_HW_CYCLES_PER_SEC
 	  and the user should generally avoid modifying it via the menu configuration.
 
 config SYS_CLOCK_EXISTS
-	bool
+	def_bool (SYS_CLOCK_TICKS_PER_SEC != 0)
 	# omit prompt to signify a "hidden" option
-	default y
-	default n if (SYS_CLOCK_TICKS_PER_SEC = 0)
 	help
 	  This option specifies that the kernel lacks timer support.
 
@@ -573,7 +612,6 @@ config RETPOLINE
 config STACK_CANARIES
 	bool
 	prompt "Compiler stack canaries"
-	default n
 	help
 	  This option enables compiler stack canaries support kernel functions.
 
@@ -636,7 +674,6 @@ menu "SMP Options"
 config USE_SWITCH
 	bool
 	prompt "Use new-style _arch_switch instead of __swap"
-	default n
 	help
 	  The _arch_switch() API is a lower level context switching
 	  primitive than the original __swap mechanism.  It is required
@@ -648,7 +685,6 @@ config USE_SWITCH
 config SMP
 	bool
 	prompt "Enable symmetric multithreading support"
-	default n
 	help
 	  When true, kernel will be built with SMP support, allowing
 	  more than one CPU to schedule Zephyr tasks at a time.
