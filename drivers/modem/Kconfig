@@ -38,8 +38,6 @@ config MODEM_WCN14A2A
 	bool "Enable Wistron LTE-M modem driver"
 	select MODEM_RECEIVER
 	select NET_OFFLOAD
-	select UART_MCUX_2 if BOARD_FRDM_K64F
-	select UART_MCUX_2_FLOW_CONTROL if BOARD_FRDM_K64F
 	default n
 	help
 	  Choose this setting to enable Wistron WCN14A2A LTE-M modem driver.
