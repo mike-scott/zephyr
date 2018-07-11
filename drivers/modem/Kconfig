@@ -34,14 +34,6 @@ config MODEM_RECEIVER_MAX_CONTEXTS
 	  Maximum number of Modem receiver contexts to handle.  For most
 	  purposes this should stay at 1.
 
-config MODEM_SHELL
-	bool "Enable modem shell utilities"
-	default n
-	select CONSOLE_SHELL
-	help
-	  Activate shell module that provides modem utilities like
-	  sending a command to the modem UART.
-
 config MODEM_WCN14A2A
 	bool "Enable Wistron LTE-M modem driver"
 	select MODEM_RECEIVER
