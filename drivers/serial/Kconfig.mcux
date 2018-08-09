@@ -20,77 +20,29 @@ menuconfig UART_MCUX_0
 	help
 	  Enable UART 0.
 
-config UART_MCUX_0_FLOW_CONTROL
-	bool "Enable HW Flow Control for UART 0"
-	default n
-	depends on UART_MCUX_0
-	help
-	  Enable HW Flow Control for UART 0. If selected, two addition pins
-	  (RTS and CTS) need to be configured.
-
 menuconfig UART_MCUX_1
 	bool "UART 1"
 	help
 	  Enable UART 1.
-
-config UART_MCUX_1_FLOW_CONTROL
-	bool "Enable HW Flow Control for UART 1"
-	default n
-	depends on UART_MCUX_1
-	help
-	  Enable HW Flow Control for UART 1. If selected, two addition pins
-	  (RTS and CTS) need to be configured.
 
 menuconfig UART_MCUX_2
 	bool "UART 2"
 	help
 	  Enable UART 2.
 
-config UART_MCUX_2_FLOW_CONTROL
-	bool "Enable HW Flow Control for UART 2"
-	default n
-	depends on UART_MCUX_2
-	help
-	  Enable HW Flow Control for UART 2. If selected, two addition pins
-	  (RTS and CTS) need to be configured.
-
 menuconfig UART_MCUX_3
 	bool "UART 3"
 	help
 	  Enable UART 3.
-
-config UART_MCUX_3_FLOW_CONTROL
-	bool "Enable HW Flow Control for UART 3"
-	default n
-	depends on UART_MCUX_3
-	help
-	  Enable HW Flow Control for UART 3. If selected, two addition pins
-	  (RTS and CTS) need to be configured.
 
 menuconfig UART_MCUX_4
 	bool "UART 4"
 	help
 	  Enable UART 4.
 
-config UART_MCUX_4_FLOW_CONTROL
-	bool "Enable HW Flow Control for UART 4"
-	default n
-	depends on UART_MCUX_4
-	help
-	  Enable HW Flow Control for UART 4. If selected, two addition pins
-	  (RTS and CTS) need to be configured.
-
 menuconfig UART_MCUX_5
 	bool "UART 5"
 	help
 	  Enable UART 5.
-
-config UART_MCUX_5_FLOW_CONTROL
-	bool "Enable HW Flow Control for UART 5"
-	default n
-	depends on UART_MCUX_5
-	help
-	  Enable HW Flow Control for UART 5. If selected, two addition pins
-	  (RTS and CTS) need to be configured.
 
 endif # UART_MCUX
