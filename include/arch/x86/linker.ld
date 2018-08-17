@@ -67,7 +67,7 @@ ENTRY(CONFIG_KERNEL_ENTRY)
 SECTIONS
 	{
 	GROUP_START(ROMABLE_REGION)
-#ifdef CONFIG_JAILHOUSE
+#ifdef CONFIG_REALMODE
 	/* 16-bit sections */
 	. = PHYS_RAM_ADDR;
 
@@ -80,7 +80,7 @@ SECTIONS
 	. = ALIGN(8);
 
 	_image_rom_start = PHYS_LOAD_ADDR;
-#ifndef CONFIG_JAILHOUSE
+#ifndef CONFIG_REALMODE
 	_image_text_start = PHYS_LOAD_ADDR;
 #else
 	_image_text_start = .;
@@ -209,16 +209,8 @@ SECTIONS
 
 	SECTION_PROLOGUE(_BSS_SECTION_NAME, (NOLOAD OPTIONAL),)
 	{
-	/*
-	 * Without Jailhouse, we get the page alignment here for free by
-	 * definition of the beginning of the "RAMable" region on the board
-	 * configurations. With Jailhouse, everything falls in RAM and we
-	 * try to glue sections in sequence, thus we have to realign here so
-	 * that gen_mmu.py does not complain.
-	 */
-#ifdef CONFIG_JAILHOUSE
 	MMU_PAGE_ALIGN
-#endif
+
 	/*
 	 * For performance, BSS section is forced to be both 4 byte aligned and
 	 * a multiple of 4 bytes.

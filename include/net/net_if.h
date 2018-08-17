@@ -32,6 +32,9 @@
 #if defined(CONFIG_NET_DHCPV4)
 #include <net/dhcpv4.h>
 #endif
+#if defined(CONFIG_NET_IPV4_AUTO)
+#include <net/ipv4_autoconf.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -65,10 +68,12 @@ struct net_if_addr {
 #endif
 
 	/** Is the IP address valid forever */
-	bool is_infinite;
+	u8_t is_infinite : 1;
 
 	/** Is this IP address used or not */
-	bool is_used;
+	u8_t is_used : 1;
+
+	u8_t _unused : 6;
 };
 
 /**
@@ -106,10 +111,12 @@ struct net_if_ipv6_prefix {
 	u8_t len;
 
 	/** Is the IP prefix valid forever */
-	bool is_infinite;
+	u8_t is_infinite : 1;
 
 	/** Is this prefix used or not */
-	bool is_used;
+	u8_t is_used : 1;
+
+	u8_t _unused : 6;
 };
 #endif /* CONFIG_NET_IPV6 */
 
@@ -129,13 +136,15 @@ struct net_if_router {
 	struct net_if *iface;
 
 	/** Is this router used or not */
-	bool is_used;
+	u8_t is_used : 1;
 
 	/** Is default router */
-	bool is_default;
+	u8_t is_default : 1;
 
 	/** Is the router valid forever */
-	bool is_infinite;
+	u8_t is_infinite : 1;
+
+	u8_t _unused : 5;
 };
 
 /*
@@ -236,6 +245,15 @@ struct net_if_ipv4 {
 
 #if defined(CONFIG_NET_DHCPV4)
 struct net_if_dhcpv4 {
+	/** Used for timer lists */
+	sys_snode_t node;
+
+	/** Timer start */
+	s64_t timer_start;
+
+	/** Time for INIT, DISCOVER, REQUESTING, RENEWAL */
+	u32_t request_time;
+
 	u32_t xid;
 
 	/** IP address Lease time */
@@ -253,16 +271,6 @@ struct net_if_dhcpv4 {
 	/** Requested IP addr */
 	struct in_addr requested_ip;
 
-	/** Timer for DHCPv4 Client requests (DISCOVER, REQUEST or RENEWAL)
-	 */
-	struct k_delayed_work timer;
-
-	/** T1 (Renewal) timer */
-	struct k_delayed_work t1_timer;
-
-	/** T2 (Rebinding) timer */
-	struct k_delayed_work t2_timer;
-
 	/**
 	 *  DHCPv4 client state in the process of network
 	 *  address allocation.
@@ -273,6 +281,41 @@ struct net_if_dhcpv4 {
 	u8_t attempts;
 };
 #endif /* CONFIG_NET_DHCPV4 */
+
+#if defined(CONFIG_NET_IPV4_AUTO)
+struct net_if_ipv4_autoconf {
+	/** Used for timer lists */
+	sys_snode_t node;
+
+	/** Backpointer to correct network interface */
+	struct net_if *iface;
+
+	/** Timer start */
+	s64_t timer_start;
+
+	/** Time for INIT, DISCOVER, REQUESTING, RENEWAL */
+	u32_t timer_timeout;
+
+	/** Current IP addr */
+	struct in_addr current_ip;
+
+	/** Requested IP addr */
+	struct in_addr requested_ip;
+
+	/** IPV4 Autoconf state in the process of network address allocation.
+	 */
+	enum net_ipv4_autoconf_state state;
+
+	/** Number of sent probe requests */
+	u8_t probe_cnt;
+
+	/** Number of sent announcements */
+	u8_t announce_cnt;
+
+	/** Incoming conflict count */
+	u8_t conflict_cnt;
+};
+#endif /* CONFIG_NET_IPV4_AUTO */
 
 /* We always need to have at least one IP config */
 #define NET_IF_MAX_CONFIGS 1
@@ -300,6 +343,10 @@ struct net_if_config {
 #if defined(CONFIG_NET_DHCPV4)
 	struct net_if_dhcpv4 dhcpv4;
 #endif /* CONFIG_NET_DHCPV4 */
+
+#if defined(CONFIG_NET_IPV4_AUTO)
+	struct net_if_ipv4_autoconf ipv4auto;
+#endif /* CONFIG_NET_IPV4_AUTO */
 };
 
 /**
@@ -714,33 +761,8 @@ struct net_if_addr *net_if_ipv6_addr_lookup(const struct in6_addr *addr,
  *
  * @return Pointer to interface address, NULL if not found.
  */
-static inline
 struct net_if_addr *net_if_ipv6_addr_lookup_by_iface(struct net_if *iface,
-						     struct in6_addr *addr)
-{
-	struct net_if_ipv6 *ipv6 = iface->config.ip.ipv6;
-	int i;
-
-	if (!ipv6) {
-		return NULL;
-	}
-
-	for (i = 0; i < NET_IF_MAX_IPV6_ADDR; i++) {
-		if (!ipv6->unicast[i].is_used ||
-		    ipv6->unicast[i].address.family != AF_INET6) {
-			continue;
-		}
-
-		if (net_is_ipv6_prefix(
-			    addr->s6_addr,
-			    ipv6->unicast[i].address.in6_addr.s6_addr,
-			    128)) {
-			return &ipv6->unicast[i];
-		}
-	}
-
-	return NULL;
-}
+						     struct in6_addr *addr);
 
 /**
  * @brief Add a IPv6 address to an interface
@@ -1179,6 +1201,17 @@ const struct in6_addr *net_if_ipv6_select_src_addr(struct net_if *iface,
 						   struct in6_addr *dst);
 
 /**
+ * @brief Get a network interface that should be used when sending
+ * IPv6 network data to destination.
+ *
+ * @param dst IPv6 destination address
+ *
+ * @return Pointer to network interface to use, NULL if no suitable interface
+ * could be found.
+ */
+struct net_if *net_if_ipv6_select_src_iface(struct in6_addr *dst);
+
+/**
  * @brief Get a IPv6 link local address in a given state.
  *
  * @param iface Interface to use. Must be a valid pointer to an interface.
@@ -1224,6 +1257,7 @@ void net_if_ipv6_dad_failed(struct net_if *iface, const struct in6_addr *addr);
 struct in6_addr *net_if_ipv6_get_global_addr(struct net_if **iface);
 #else
 #define net_if_ipv6_select_src_addr(...)
+#define net_if_ipv6_select_src_iface(...) NULL
 #endif /* CONFIG_NET_IPV6 */
 
 #if defined(CONFIG_NET_IPV4)
@@ -1449,8 +1483,21 @@ static inline void net_if_ipv4_set_gw(struct net_if *iface,
 
 	net_ipaddr_copy(&iface->config.ip.ipv4->gw, gw);
 }
-
+#else
+#define net_if_ipv4_select_src_iface(...) NULL
 #endif /* CONFIG_NET_IPV4 */
+
+/**
+ * @brief Get a network interface that should be used when sending
+ * IPv6 or IPv4 network data to destination.
+ *
+ * @param dst IPv6 or IPv4 destination address
+ *
+ * @return Pointer to network interface to use. Note that the function
+ * will return the default network interface if the best network interface
+ * is not found.
+ */
+struct net_if *net_if_select_src_iface(const struct sockaddr *dst);
 
 /**
  * @typedef net_if_link_callback_t
