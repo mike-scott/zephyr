@@ -38,17 +38,21 @@ static const CMU_LFXOInit_TypeDef lfxoInit = CMU_LFXOINIT_DEFAULT;
 static ALWAYS_INLINE void clkInit(void)
 {
 #ifdef CONFIG_CMU_HFCLK_HFXO
-	CMU_HFXOInit(&hfxoInit);
-	CMU_OscillatorEnable(cmuOsc_HFXO, true, true);
-	CMU_ClockSelectSet(cmuClock_HF, cmuSelect_HFXO);
-	CMU_OscillatorEnable(cmuOsc_HFRCO, false, false);
+	if (CMU_ClockSelectGet(cmuClock_HF) != cmuSelect_HFXO) {
+		CMU_HFXOInit(&hfxoInit);
+		CMU_OscillatorEnable(cmuOsc_HFXO, true, true);
+		CMU_ClockSelectSet(cmuClock_HF, cmuSelect_HFXO);
+	}
 	SystemHFXOClockSet(CONFIG_CMU_HFXO_FREQ);
-#elif (defined CONFIG_CMU_HFCLK_LFXO)
-	CMU_LFXOInit(&lfxoInit);
-	CMU_OscillatorEnable(cmuOsc_LFXO, true, true);
-	CMU_ClockSelectSet(cmuClock_HF, cmuSelect_LFXO);
 	CMU_OscillatorEnable(cmuOsc_HFRCO, false, false);
+#elif (defined CONFIG_CMU_HFCLK_LFXO)
+	if (CMU_ClockSelectGet(cmuClock_HF) != cmuSelect_LFXO) {
+		CMU_LFXOInit(&lfxoInit);
+		CMU_OscillatorEnable(cmuOsc_LFXO, true, true);
+		CMU_ClockSelectSet(cmuClock_HF, cmuSelect_LFXO);
+	}
 	SystemLFXOClockSet(CONFIG_CMU_LFXO_FREQ);
+	CMU_OscillatorEnable(cmuOsc_HFRCO, false, false);
 #elif (defined CONFIG_CMU_HFCLK_HFRCO)
 	/*
 	 * This is the default clock, the controller starts with, so nothing to
@@ -78,7 +82,7 @@ static int silabs_efr32fg1p_init(struct device *arg)
 {
 	ARG_UNUSED(arg);
 
-	int oldLevel; /* old interrupt lock level */
+	unsigned int oldLevel; /* old interrupt lock level */
 
 	/* disable interrupts */
 	oldLevel = irq_lock();
