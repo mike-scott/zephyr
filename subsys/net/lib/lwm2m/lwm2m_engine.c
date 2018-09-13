@@ -3636,9 +3636,6 @@ static void retransmit_request(struct k_work *work)
 		return;
 	}
 
-	/* ref pkt to avoid being freed after net_app_send_pkt() */
-	net_pkt_ref(pending->pkt);
-
 	LOG_DBG("Resending message: %p", msg);
 	msg->send_attempts++;
 	/*
@@ -3671,8 +3668,6 @@ static void retransmit_request(struct k_work *work)
 		return;
 	}
 
-	/* unref to balance ref we made for sendto() */
-	net_pkt_unref(pending->pkt);
 	k_delayed_work_submit(&client_ctx->retransmit_work, pending->timeout);
 }
 
