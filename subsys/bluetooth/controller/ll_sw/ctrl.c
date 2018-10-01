@@ -1839,7 +1839,7 @@ static inline u8_t isr_rx_conn_pkt_ack(struct pdu_data *pdu_data_tx,
 		    (_radio.conn_curr->llcp_length.state ==
 		     LLCP_LENGTH_STATE_ACK_WAIT)){
 			/* pause data packet tx */
-			_radio.conn_curr->pause_tx = 1;
+			_radio.conn_curr->llcp_length.pause_tx = 1;
 
 			/* wait for response */
 			_radio.conn_curr->llcp_length.state =
@@ -2017,10 +2017,8 @@ isr_rx_conn_pkt_ctrl_rej_dle(struct radio_pdu_node_rx *node_rx,
 
 		/* Procedure complete */
 		conn->llcp_length.ack = conn->llcp_length.req;
+		conn->llcp_length.pause_tx = 0;
 		conn->procedure_expire = 0;
-
-		/* Resume data packet tx */
-		conn->pause_tx = 0;
 
 		/* prepare length rsp structure */
 		pdu_data_rx->len = offsetof(struct pdu_data_llctrl,
@@ -2295,10 +2293,8 @@ static inline u8_t isr_rx_conn_pkt_ctrl_dle(struct pdu_data *pdu_data_rx,
 			/* Procedure complete */
 			_radio.conn_curr->llcp_length.ack =
 				_radio.conn_curr->llcp_length.req;
+			_radio.conn_curr->llcp_length.pause_tx = 0;
 			_radio.conn_curr->procedure_expire = 0;
-
-			/* resume data packet tx */
-			_radio.conn_curr->pause_tx = 0;
 
 			/* No change in effective octets or time */
 			if (eff_tx_octets == _radio.conn_curr->max_tx_octets &&
@@ -3057,9 +3053,7 @@ isr_rx_conn_pkt_ctrl(struct radio_pdu_node_rx *node_rx, u8_t *rx_enqueue)
 			/* Procedure complete */
 			_radio.conn_curr->llcp_length.ack =
 				_radio.conn_curr->llcp_length.req;
-
-			/* resume data packet tx */
-			_radio.conn_curr->pause_tx = 0;
+			_radio.conn_curr->llcp_length.pause_tx = 0;
 
 			/* propagate the data length procedure to
 			 * host
@@ -3911,12 +3905,12 @@ static inline u32_t isr_close_adv(void)
 		if ((_radio.state == STATE_CLOSE) &&
 		    (!_radio.advertiser.is_hdcd)) {
 			u32_t ticker_status;
-			u8_t random_delay;
+			u16_t random_delay;
 
 			entropy_nrf_get_entropy_isr(_radio.entropy,
-						    &random_delay,
+						    (void *)&random_delay,
 						    sizeof(random_delay));
-			random_delay %= 10;
+			random_delay %= 10000;
 			random_delay += 1;
 
 			/* Call to ticker_update can fail under the race
@@ -3929,8 +3923,7 @@ static inline u32_t isr_close_adv(void)
 				ticker_update(RADIO_TICKER_INSTANCE_ID_RADIO,
 					RADIO_TICKER_USER_ID_WORKER,
 					RADIO_TICKER_ID_ADV,
-					HAL_TICKER_US_TO_TICKS(random_delay *
-							       1000),
+					HAL_TICKER_US_TO_TICKS(random_delay),
 					0, 0, 0, 0, 0, ticker_update_adv_assert,
 					(void *)__LINE__);
 			LL_ASSERT((ticker_status == TICKER_STATUS_SUCCESS) ||
@@ -6222,7 +6215,8 @@ static void mayfly_adv_stop(void *param)
 	/* prepare connection complete structure */
 	pdu_data_rx = (void *)node_rx->pdu_data;
 	radio_le_conn_cmplt = (void *)pdu_data_rx->lldata;
-	memset(radio_le_conn_cmplt, 0x00, sizeof(struct radio_le_conn_cmplt));
+	(void)memset(radio_le_conn_cmplt, 0x00,
+		     sizeof(struct radio_le_conn_cmplt));
 	radio_le_conn_cmplt->status = BT_HCI_ERR_ADV_TIMEOUT;
 
 	/* enqueue connection complete structure into queue */
@@ -7176,8 +7170,9 @@ static inline void event_fex_prep(struct connection *conn)
 			!conn->role ?
 			PDU_DATA_LLCTRL_TYPE_FEATURE_REQ :
 			PDU_DATA_LLCTRL_TYPE_SLAVE_FEATURE_REQ;
-		memset(&pdu_ctrl_tx->llctrl.feature_req.features[0], 0x00,
-		       sizeof(pdu_ctrl_tx->llctrl.feature_req.features));
+		(void)memset(&pdu_ctrl_tx->llctrl.feature_req.features[0],
+			     0x00,
+			     sizeof(pdu_ctrl_tx->llctrl.feature_req.features));
 		pdu_ctrl_tx->llctrl.feature_req.features[0] =
 			conn->llcp_features & 0xFF;
 		pdu_ctrl_tx->llctrl.feature_req.features[1] =
@@ -7655,10 +7650,8 @@ static inline void event_len_prep(struct connection *conn)
 
 		/* Procedure complete */
 		conn->llcp_length.ack = conn->llcp_length.req;
+		conn->llcp_length.pause_tx = 0;
 		conn->procedure_expire = 0;
-
-		/* resume data packet tx */
-		_radio.conn_curr->pause_tx = 0;
 
 		/* Use the new rx octets/time in the connection */
 		conn->max_rx_octets = conn->llcp_length.rx_octets;
@@ -8642,7 +8635,11 @@ static void prepare_pdu_data_tx(struct connection *conn,
 	    /* no ctrl or data packet */
 	    !conn->pkt_tx_head ||
 	    /* data tx paused, only control packets allowed */
-	    (conn->pause_tx && (conn->pkt_tx_head != conn->pkt_tx_ctrl))) {
+	    ((conn->pause_tx ||
+#if defined(CONFIG_BT_CTLR_DATA_LENGTH)
+	      conn->llcp_length.pause_tx ||
+#endif /* CONFIG_BT_CTLR_DATA_LENGTH */
+	      0) && (conn->pkt_tx_head != conn->pkt_tx_ctrl))) {
 			_pdu_data_tx = empty_tx_enqueue(conn);
 	} else {
 		u16_t max_tx_octets;
@@ -9557,8 +9554,8 @@ static u8_t feature_rsp_send(struct connection *conn,
 	pdu_ctrl_tx->len = offsetof(struct pdu_data_llctrl, feature_rsp) +
 		sizeof(struct pdu_data_llctrl_feature_rsp);
 	pdu_ctrl_tx->llctrl.opcode = PDU_DATA_LLCTRL_TYPE_FEATURE_RSP;
-	memset(&pdu_ctrl_tx->llctrl.feature_rsp.features[0], 0x00,
-		sizeof(pdu_ctrl_tx->llctrl.feature_rsp.features));
+	(void)memset(&pdu_ctrl_tx->llctrl.feature_rsp.features[0], 0x00,
+		     sizeof(pdu_ctrl_tx->llctrl.feature_rsp.features));
 	pdu_ctrl_tx->llctrl.feature_req.features[0] =
 		conn->llcp_features & 0xFF;
 	pdu_ctrl_tx->llctrl.feature_req.features[1] =
@@ -10162,6 +10159,7 @@ u32_t radio_adv_enable(u16_t interval, u8_t chan_map, u8_t filter_policy,
 #if defined(CONFIG_BT_CTLR_DATA_LENGTH)
 		conn->llcp_length.req = 0;
 		conn->llcp_length.ack = 0;
+		conn->llcp_length.pause_tx = 0;
 #endif /* CONFIG_BT_CTLR_DATA_LENGTH */
 
 #if defined(CONFIG_BT_CTLR_PHY)
@@ -10644,6 +10642,7 @@ u32_t radio_connect_enable(u8_t adv_addr_type, u8_t *adv_addr, u16_t interval,
 #if defined(CONFIG_BT_CTLR_DATA_LENGTH)
 	conn->llcp_length.req = 0;
 	conn->llcp_length.ack = 0;
+	conn->llcp_length.pause_tx = 0;
 #endif /* CONFIG_BT_CTLR_DATA_LENGTH */
 
 #if defined(CONFIG_BT_CTLR_PHY)

@@ -5,6 +5,8 @@ set(ZEPHYR_BASE $ENV{ZEPHYR_BASE})
 
 message(STATUS "Zephyr base: ${ZEPHYR_BASE}")
 
+include(${ZEPHYR_BASE}/cmake/version.cmake)
+
 find_package(PythonInterp 3.4)
 set(DOXYGEN_SKIP_DOT True)
 find_package(Doxygen REQUIRED)
@@ -115,9 +117,10 @@ add_custom_target(
   COMMAND ${CMAKE_COMMAND} -E env
   PYTHONPATH="${ZEPHYR_BASE}/scripts/kconfig${SEP}$ENV{PYTHONPATH}"
   srctree=${ZEPHYR_BASE}
-  ENV_VAR_BOARD_DIR=boards/*/*/
-  ENV_VAR_ARCH=*
-  KERNELVERSION=${PROJECT_VERSION}
+  KERNELVERSION=${KERNELVERSION}
+  BOARD_DIR=boards/*/*/
+  ARCH=*
+  SOC_DIR=soc/
   SRCARCH=x86
   ${PYTHON_EXECUTABLE} scripts/genrest.py Kconfig ${RST_OUT}/doc/reference/kconfig/
   WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
@@ -145,8 +148,8 @@ add_custom_target(
 #
 # LaTEX section
 #
-add_custom_target(
-  latex
+add_custom_command(
+  OUTPUT ${SPHINX_OUTPUT_DIR_LATEX}/zephyr.tex
   COMMAND ${CMAKE_COMMAND} -E env
   ZEPHYR_BUILD=${CMAKE_CURRENT_BINARY_DIR}
   ${SPHINXBUILD} -w ${SPHINX_LOG} -N -t ${DOC_TAG} -b latex -t svgconvert ${ALLSPHINXOPTS} ${RST_OUT}/doc ${SPHINX_OUTPUT_DIR_LATEX}
@@ -156,6 +159,11 @@ add_custom_target(
   COMMAND ${PYTHON_EXECUTABLE} ${FIX_TEX_SCRIPT} ${SPHINX_OUTPUT_DIR_LATEX}/zephyr.tex
   WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
   ${SPHINX_USES_TERMINAL}
+)
+
+add_custom_target(
+  latex
+  DEPENDS ${SPHINX_OUTPUT_DIR_LATEX}/zephyr.tex
 )
 
 #
@@ -187,7 +195,6 @@ endif()
 add_custom_target(
   pdf
   DEPENDS ${SPHINX_OUTPUT_DIR_PDF}/zephyr.pdf
-  ${SPHINX_USES_TERMINAL}
 )
 
 endif()
@@ -213,6 +220,7 @@ if(NOT ${LATEXMK} STREQUAL LATEXMK-NOTFOUND)
 
 add_custom_target(
   pdfdocs
+  DEPENDS latexdocs pdf
 )
 add_dependencies(pdfdocs pdf)
 
