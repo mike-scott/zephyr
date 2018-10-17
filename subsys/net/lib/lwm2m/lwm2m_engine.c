@@ -3639,20 +3639,6 @@ static void retransmit_request(struct k_work *work)
 		return;
 	}
 
-	if (!coap_pending_cycle(pending)) {
-		/* pending request has expired */
-		if (msg->message_timeout_cb) {
-			msg->message_timeout_cb(msg);
-		}
-
-		/*
-		 * coap_pending_clear() is called in lwm2m_reset_message()
-		 * which balances the ref we made in coap_pending_cycle()
-		 */
-		lwm2m_reset_message(msg, true);
-		return;
-	}
-
 	SYS_LOG_DBG("Resending message: %p", msg);
 	msg->send_attempts++;
 	/*
@@ -3669,6 +3655,20 @@ static void retransmit_request(struct k_work *work)
 		SYS_LOG_ERR("Error sending lwm2m message: %d", r);
 		/* don't error here, retry until timeout */
 		net_pkt_unref(msg->cpkt.pkt);
+	}
+
+	if (!coap_pending_cycle(pending)) {
+		/* pending request has expired */
+		if (msg->message_timeout_cb) {
+			msg->message_timeout_cb(msg);
+		}
+
+		/*
+		 * coap_pending_clear() is called in lwm2m_reset_message()
+		 * which balances the ref we made in coap_pending_cycle()
+		 */
+		lwm2m_reset_message(msg, true);
+		return;
 	}
 
 	k_delayed_work_submit(&client_ctx->retransmit_work, pending->timeout);
