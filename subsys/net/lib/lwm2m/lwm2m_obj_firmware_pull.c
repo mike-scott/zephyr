@@ -390,14 +390,16 @@ error:
 
 static void do_transmit_timeout_cb(struct lwm2m_message *msg)
 {
+	u8_t token[8];
+	u8_t tkl;
 	int ret;
 
 	if (firmware_retry < PACKET_TRANSFER_RETRY_MAX) {
 		/* retry block */
 		SYS_LOG_WRN("TIMEOUT - Sending a retry packet!");
+		tkl = coap_header_get_token(&msg->cpkt, token);
 
-		ret = transfer_request(&firmware_block_ctx,
-				       msg->token, msg->tkl,
+		ret = transfer_request(&firmware_block_ctx, token, tkl,
 				       do_firmware_transfer_reply_cb);
 		if (ret < 0) {
 			/* abort retries / transfer */
