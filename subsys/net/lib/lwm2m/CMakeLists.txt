@@ -41,5 +41,8 @@ zephyr_library_sources_ifdef(CONFIG_LWM2M_IPSO_LIGHT_CONTROL
 zephyr_library_sources_ifdef(CONFIG_LWM2M_IPSO_TIMER
     ipso_timer.c
     )
+zephyr_library_sources_ifdef(CONFIG_LWM2M_IPSO_DISPLAY
+    ipso_display.c
+    )
 
 zephyr_library_link_libraries_ifdef(CONFIG_MBEDTLS mbedTLS)
