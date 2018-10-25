@@ -26,6 +26,7 @@
 
 #define IPSO_OBJECT_TEMP_SENSOR_ID			3303
 #define IPSO_OBJECT_LIGHT_CONTROL_ID			3311
+#define IPSO_OBJECT_DISPLAY_ID				3341
 
 /**
  * @brief LwM2M context structure
