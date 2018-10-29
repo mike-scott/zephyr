@@ -8,3 +8,5 @@ toolchain:
 supported:
   - netif:eth
   - adc
+  - gpio
+  - spi

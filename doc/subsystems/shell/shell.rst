@@ -56,13 +56,10 @@ Use the following macros for adding shell commands:
   have different name.
 * :c:macro:`SHELL_CMD` - Initialize a command.
 * :c:macro:`SHELL_CREATE_STATIC_SUBCMD_SET` - Create a static subcommands
-  array. Static subcommands must be added in alphabetical order to ensure
-  correct smart completion.
+  array.
 * :c:macro:`SHELL_SUBCMD_SET_END` - shall be placed as last in
   :c:macro:`SHELL_CREATE_STATIC_SUBCMD_SET` macro.
 * :c:macro:`SHELL_CREATE_DYNAMIC_CMD` - Create a dynamic subcommands array.
-  Dynamic subcommands must be returned in alphabetical order to ensure correct
-  smart completion.
 
 Commands can be created in any file in the system that includes
 :file:`include/shell/shell.h`. All created commands are available for all
@@ -86,7 +83,6 @@ subcommands.
 	 */
 	SHELL_CREATE_STATIC_SUBCMD_SET(sub_demo)
 	{
-		/* Alphabetically sorted. */
 		SHELL_CMD(params, NULL, "Print params command.",
 						       cmd_demo_params),
 		SHELL_CMD(ping,   NULL, "Ping command.", cmd_demo_ping),
@@ -130,9 +126,6 @@ Newly added commands can be prompted or autocompleted with the :kbd:`Tab` key.
 				    struct shell_static_entry *entry)
 	{
 		if (idx < dynamic_cmd_cnt) {
-			/* m_dynamic_cmd_buffer must be sorted alphabetically
-			 * to ensure correct Shell autocompletion
-			 */
 			entry->syntax = dynamic_cmd_buffer[idx];
 			entry->handler  = NULL;
 			entry->subcmd = NULL;
@@ -182,20 +175,22 @@ Simple command handler implementation:
 
 .. code-block:: c
 
-	static void cmd_handler(const struct shell *shell, size_t argc,
+	static int cmd_handler(const struct shell *shell, size_t argc,
 				char **argv)
 	{
 		ARG_UNUSED(argc);
 		ARG_UNUSED(argv);
 
 		shell_fprintf(shell, SHELL_NORMAL,
-			      "Print simple text.\r\n");
+			      "Print simple text.\n");
 
 		shell_fprintf(shell, SHELL_WARNING,
-			      "Print warning text.\r\n");
+			      "Print warning text.\n");
 
 		shell_fprintf(shell, SHELL_ERROR,
-			      "Print error text.\r\n");
+			      "Print error text.\n");
+
+		return 0;
 	}
 
 .. warning::
@@ -222,8 +217,8 @@ checks for valid arguments count.
 
 .. code-block:: c
 
-	static void cmd_dummy_1(const struct shell *shell, size_t argc,
-				char **argv)
+	static int cmd_dummy_1(const struct shell *shell, size_t argc,
+			       char **argv)
 	{
 		ARG_UNUSED(argv);
 
@@ -234,28 +229,30 @@ checks for valid arguments count.
 		 * Each of these actions can be deactivated in Kconfig.
 		 */
 		if (!shell_cmd_precheck(shell, (argc <= 2), NULL, 0) {
-			return;
+			return 0;
 		}
 
 		shell_fprintf(shell, SHELL_NORMAL,
 			      "Command called with no -h or --help option."
-			      "\r\n");
+			      "\n");
+		return 0;
 	}
 
-	static void cmd_dummy_2(const struct shell *shell, size_t argc,
-				char **argv)
+	static int cmd_dummy_2(const struct shell *shell, size_t argc,
+			       char **argv)
 	{
 		ARG_UNUSED(argc);
 		ARG_UNUSED(argv);
 
 		if (hell_help_requested(shell) {
 			shell_help_print(shell, NULL, 0);
-			return;
+		} else {
+			shell_fprintf(shell, SHELL_NORMAL,
+			      "Command called with no -h or --help option."
+			      "\n");
 		}
 
-		shell_fprintf(shell, SHELL_NORMAL,
-			      "Command called with no -h or --help option."
-			      "\r\n");
+		return 0;
 	}
 
 Command options
@@ -271,8 +268,8 @@ in command handler.
 
 .. code-block:: c
 
-	static void cmd_with_options(const struct shell *shell, size_t argc,
-				     char **argv)
+	static int cmd_with_options(const struct shell *shell, size_t argc,
+			            char **argv)
 	{
 		/* Dummy options showing options usage */
 		static const struct shell_getopt_option opt[] = {
@@ -293,25 +290,26 @@ in command handler.
 		 */
 		if (!shell_cmd_precheck(shell, (argc <= 2), opt,
 					  sizeof(opt)/sizeof(opt[1]))) {
-			return;
+			return 0;
 		}
 
 		/* checking if command was called with test option */
 		if (!strcmp(argv[1], "-t") || !strcmp(argv[1], "--test")) {
 		    shell_fprintf(shell, SHELL_NORMAL, "Command called with -t"
-				  " or --test option.\r\n");
-		    return;
+				  " or --test option.\n");
+		    return 0;
 		}
 
 		/* checking if command was called with dummy option */
 		if (!strcmp(argv[1], "-d") || !strcmp(argv[1], "--dummy")) {
 		    shell_fprintf(shell, SHELL_NORMAL, "Command called with -d"
-				  " or --dummy option.\r\n");
-		    return;
+				  " or --dummy option.\n");
+		    return 0;
 		}
 
 		shell_fprintf(shell, SHELL_WARNING,
-			      "Command called with no valid option.\r\n");
+			      "Command called with no valid option.\n");
+		return 0;
 	}
 
 Parent commands
@@ -327,8 +325,8 @@ commands or the parent commands, depending on how you index ``argv``.
 
 .. code-block:: c
 
-	static void cmd_handler(const struct shell *shell, size_t argc,
-					char **argv)
+	static int cmd_handler(const struct shell *shell, size_t argc,
+			       char **argv)
 	{
 		ARG_UNUSED(argc);
 
@@ -336,18 +334,19 @@ commands or the parent commands, depending on how you index ``argv``.
 		 * can be found using argv[-1].
 		 */
 		shell_fprintf(shell, SHELL_NORMAL,
-			      "This command has a parent command: %s\r\n",
+			      "This command has a parent command: %s\n",
 			      argv[-1]);
 
 		/* Print this command syntax */
 		shell_fprintf(shell, SHELL_NORMAL,
-			      "This command syntax is: %s\r\n",
+			      "This command syntax is: %s\n",
 			      argv[0]);
 
 		/* Print first argument */
 		shell_fprintf(shell, SHELL_NORMAL,
-			      "This command has an argument: %s\r\n",
 			      argv[1]);
+
+		return 0;
 	}
 
 Built-in commands
@@ -417,44 +416,39 @@ The shell module supports the following meta keys:
 Usage
 *****
 
-Use the :c:macro:`SHELL_DEFINE` macro to create an instance of the shell.
-Pass the expected newline character to this macro: either ``\r`` or ``\n``,
-otherwise the shell will not respond correctly to the :kbd:`Enter` key.
+To create a new shell instance user needs to activate requested
+backend using `menuconfig`.
 
 The following code shows a simple use case of this library:
 
 .. code-block:: c
 
-	/* Defining shell backend */
-	SHELL_UART_DEFINE(shell_transport_uart);
-
-	/* Creating shell instance */
-	SHELL_DEFINE(uart_shell, "uart:~$ ", &shell_transport_uart, '\r', 10);
-
 	void main(void)
 	{
-		(void)shell_init(&uart_shell, NULL, true, true, LOG_LEVEL_INF);
+
 	}
 
-	static void cmd_demo_ping(const struct shell *shell, size_t argc,
-				  char **argv)
+	static int cmd_demo_ping(const struct shell *shell, size_t argc,
+				 char **argv)
 	{
 		ARG_UNUSED(argc);
 		ARG_UNUSED(argv);
 
-		shell_fprintf(shell, SHELL_NORMAL, "pong\r\n");
+		shell_fprintf(shell, SHELL_NORMAL, "pong\n");
+		return 0;
 	}
 
-	static void cmd_demo_params(const struct shell *shell, size_t argc,
-				    char **argv)
+	static int cmd_demo_params(const struct shell *shell, size_t argc,
+				   char **argv)
 	{
 		int cnt;
 
-		shell_fprintf(shell, SHELL_NORMAL, "argc = %d\r\n", argc);
+		shell_fprintf(shell, SHELL_NORMAL, "argc = %d\n", argc);
 		for (cnt = 0; cnt < argc; cnt++) {
 			shell_fprintf(shell, SHELL_NORMAL,
-					"  argv[%d] = %s\r\n", cnt, argv[cnt]);
+					"  argv[%d] = %s\n", cnt, argv[cnt]);
 		}
+		return 0;
 	}
 
 	/* Creating subcommands (level 1 command) array for command "demo".
@@ -462,7 +456,6 @@ The following code shows a simple use case of this library:
 	 */
 	SHELL_CREATE_STATIC_SUBCMD_SET(sub_demo)
 	{
-		/* Alphabetically sorted. */
 		SHELL_CMD(params, NULL, "Print params command.",
 						       cmd_demo_params),
 		SHELL_CMD(ping,   NULL, "Ping command.", cmd_demo_ping),

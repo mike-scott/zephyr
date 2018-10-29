@@ -97,14 +97,10 @@ int _is_thread_essential(void)
 #if !defined(CONFIG_ARCH_HAS_CUSTOM_BUSY_WAIT)
 void k_busy_wait(u32_t usec_to_wait)
 {
-#if defined(CONFIG_TICKLESS_KERNEL) && \
-	    !defined(CONFIG_BUSY_WAIT_USES_ALTERNATE_CLOCK)
-int saved_always_on = k_enable_sys_clock_always_on();
-#endif
 	/* use 64-bit math to prevent overflow when multiplying */
 	u32_t cycles_to_wait = (u32_t)(
 		(u64_t)usec_to_wait *
-		(u64_t)sys_clock_hw_cycles_per_sec /
+		(u64_t)sys_clock_hw_cycles_per_sec() /
 		(u64_t)USEC_PER_SEC
 	);
 	u32_t start_cycles = k_cycle_get_32();
@@ -117,10 +113,6 @@ int saved_always_on = k_enable_sys_clock_always_on();
 			break;
 		}
 	}
-#if defined(CONFIG_TICKLESS_KERNEL) && \
-	    !defined(CONFIG_BUSY_WAIT_USES_ALTERNATE_CLOCK)
-	_sys_clock_always_on = saved_always_on;
-#endif
 }
 #endif
 
@@ -283,7 +275,7 @@ static void schedule_new_thread(struct k_thread *thread, s32_t delay)
 		s32_t ticks = _TICK_ALIGN + _ms_to_ticks(delay);
 		int key = irq_lock();
 
-		_add_thread_timeout(thread, NULL, ticks);
+		_add_thread_timeout(thread, ticks);
 		irq_unlock(key);
 	}
 #else
@@ -463,9 +455,9 @@ Z_SYSCALL_HANDLER(k_thread_create,
 	 * size and not allocated in addition to the stack size
 	 */
 	guard_size = (u32_t)K_THREAD_STACK_BUFFER(stack) - (u32_t)stack;
-	Z_OOPS(Z_SYSCALL_VERIFY_MSG(__builtin_uadd_overflow(guard_size,
+	Z_OOPS(Z_SYSCALL_VERIFY_MSG(!__builtin_uadd_overflow(guard_size,
 							     stack_size,
-							     &total_size) == 0,
+							     &total_size),
 				    "stack size overflow (%u+%u)", stack_size,
 				    guard_size));
 #else
@@ -513,32 +505,6 @@ Z_SYSCALL_HANDLER(k_thread_create,
 }
 #endif /* CONFIG_USERSPACE */
 #endif /* CONFIG_MULTITHREADING */
-
-/* LCOV_EXCL_START */
-int _impl_k_thread_cancel(k_tid_t tid)
-{
-	struct k_thread *thread = tid;
-
-	unsigned int key = irq_lock();
-
-	if (_has_thread_started(thread) ||
-	    !_is_thread_timeout_active(thread)) {
-		irq_unlock(key);
-		return -EINVAL;
-	}
-
-	(void)_abort_thread_timeout(thread);
-	_thread_monitor_exit(thread);
-
-	irq_unlock(key);
-
-	return 0;
-}
-
-#ifdef CONFIG_USERSPACE
-Z_SYSCALL_HANDLER1_SIMPLE(k_thread_cancel, K_OBJ_THREAD, struct k_thread *);
-#endif
-/* LCOV_EXCL_STOP */
 
 void _k_thread_single_suspend(struct k_thread *thread)
 {

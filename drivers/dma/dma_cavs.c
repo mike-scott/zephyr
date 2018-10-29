@@ -16,9 +16,9 @@
 
 #include "dma_cavs.h"
 
-#define SYS_LOG_DOMAIN "dev/dma_cavs"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_DMA_LEVEL
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_DMA_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(dma_cavs)
 
 #define BYTE				(1)
 #define WORD				(2)
@@ -67,7 +67,7 @@ static void dw_dma_isr(void *arg)
 
 	status_intr = dw_read(dev_cfg->base, DW_INTR_STATUS);
 	if (!status_intr) {
-		SYS_LOG_ERR("status_intr = %d", status_intr);
+		LOG_ERR("status_intr = %d", status_intr);
 	}
 
 	/* get the source of our IRQ. */
@@ -77,7 +77,7 @@ static void dw_dma_isr(void *arg)
 	/* TODO: handle errors, just clear them atm */
 	status_err = dw_read(dev_cfg->base, DW_STATUS_ERR);
 	if (status_err) {
-		SYS_LOG_ERR("status_err = %d\n", status_err);
+		LOG_ERR("status_err = %d\n", status_err);
 		dw_write(dev_cfg->base, DW_CLEAR_ERR, status_err);
 	}
 
@@ -97,7 +97,7 @@ static void dw_dma_isr(void *arg)
 			 * freed in the user callback function once
 			 * all the blocks are transferred.
 			 */
-			chan_data->dma_blkcallback(dev, channel, 0);
+			chan_data->dma_blkcallback(chan_data->blkcallback_arg, channel, 0);
 		}
 	}
 
@@ -108,7 +108,7 @@ static void dw_dma_isr(void *arg)
 		k_free(chan_data->lli);
 		chan_data->lli = NULL;
 		if (chan_data->dma_tfrcallback) {
-			chan_data->dma_tfrcallback(dev, channel, 0);
+			chan_data->dma_tfrcallback(chan_data->tfrcallback_arg, channel, 0);
 		}
 	}
 }
@@ -135,7 +135,7 @@ static int dw_dma_config(struct device *dev, u32_t channel,
 
 	if (cfg->source_data_size != BYTE && cfg->source_data_size != WORD &&
 	    cfg->source_data_size != DWORD) {
-		SYS_LOG_ERR("Invalid 'source_data_size' value");
+		LOG_ERR("Invalid 'source_data_size' value");
 		return -EINVAL;
 	}
 
@@ -148,11 +148,11 @@ static int dw_dma_config(struct device *dev, u32_t channel,
 
 	/* data_size = (2 ^ tr_width) */
 	tr_width = find_msb_set(cfg->source_data_size) - 1;
-	SYS_LOG_DBG("tr_width=%d", tr_width);
+	LOG_DBG("tr_width=%d", tr_width);
 
 	/* burst_size = (2 ^ msize) */
 	m_size = find_msb_set(cfg->source_burst_length) - 1;
-	SYS_LOG_DBG("m_size=%d", m_size);
+	LOG_DBG("m_size=%d", m_size);
 
 	cfg_blocks = cfg->head_block;
 
@@ -160,7 +160,7 @@ static int dw_dma_config(struct device *dev, u32_t channel,
 	chan_data->lli = (struct dw_lli2 *)k_malloc(sizeof(struct dw_lli2)
 							* (cfg->block_count));
 	if (chan_data->lli == NULL) {
-		SYS_LOG_ERR("not enough memory\n");
+		LOG_ERR("not enough memory\n");
 		return -ENOMEM;
 	}
 
@@ -211,7 +211,7 @@ static int dw_dma_config(struct device *dev, u32_t channel,
 			break;
 
 		default:
-			SYS_LOG_ERR("channel_direction %d is not supported",
+			LOG_ERR("channel_direction %d is not supported",
 				    cfg->channel_direction);
 			return -EINVAL;
 		}
@@ -262,8 +262,10 @@ static int dw_dma_config(struct device *dev, u32_t channel,
 	 */
 	if (cfg->complete_callback_en) {
 		chan_data->dma_blkcallback = cfg->dma_callback;
+		chan_data->blkcallback_arg = cfg->callback_arg;
 	} else {
 		chan_data->dma_tfrcallback = cfg->dma_callback;
+		chan_data->tfrcallback_arg = cfg->callback_arg;
 	}
 
 	return 0;
@@ -362,7 +364,7 @@ static void dw_dma_setup(struct device *dev)
 			goto found;
 		}
 	}
-	SYS_LOG_ERR("DW_DMA_CFG is non-zero\n");
+	LOG_ERR("DW_DMA_CFG is non-zero\n");
 	return;
 
 found:
@@ -400,7 +402,7 @@ static int dw_dma0_initialize(struct device *dev)
 	/* Enable module's IRQ */
 	irq_enable(dev_cfg->irq_id);
 
-	SYS_LOG_INF("Device %s initialized", DEV_NAME(dev));
+	LOG_INF("Device %s initialized", DEV_NAME(dev));
 
 	return 0;
 }

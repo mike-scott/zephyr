@@ -7,9 +7,9 @@
 /**
  * @file
  *
- * @brief Sample app to illustrate dma transfer on Intel_S1000.
+ * @brief Sample app to illustrate dma transfer on Intel S1000 CRB.
  *
- * Intel_S1000 - Xtensa
+ * Intel S1000 CRB - Xtensa
  * --------------------
  *
  * The dma_cavs driver is being used.
@@ -67,7 +67,7 @@ static char rx_data2[RX_BUFF_SIZE] = { 0 };
 static char rx_data3[RX_BUFF_SIZE] = { 0 };
 static char rx_data4[RX_BUFF_SIZE] = { 0 };
 
-static void test_done(struct device *dev, u32_t id, int error_code)
+static void test_done(void *arg, u32_t id, int error_code)
 {
 	if (error_code == 0) {
 		printk("DMA transfer done\n");

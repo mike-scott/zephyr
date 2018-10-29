@@ -109,6 +109,17 @@ folder, here are the commands to generate the html content locally:
    # To generate PDF output, run ninja on the generated build system:
    ninja pdfdocs
 
+.. warning::
+
+   The documentation build system creates copies in the build
+   directory of every .rst file used to generate the documentation,
+   along with dependencies referenced by those .rst files.
+
+   This means that Sphinx warnings and errors refer to the **copies**,
+   and **not the version-controlled original files in Zephyr**. Be
+   careful to make sure you don't accidentally edit the copy of the
+   file in an error message, as these changes will not be saved.
+
 Depending on your development system, it will take up to 15 minutes to
 collect and generate the HTML content.  When done, you can view the HTML
 output with your browser started at ``doc/_build/html/index.html`` and
@@ -116,6 +127,10 @@ the PDF file is available at ``doc/_build/pdf/zephyr.pdf``.
 
 If you want to build the documentation from scratch just delete the contents
 of the build folder and run ``cmake`` and then ``ninja`` again.
+
+.. note::
+
+   If you add or remove a file from the documentation, you need to re-run CMake.
 
 On Unix platforms a convenience :file:`Makefile` at the root folder
 of the Zephyr repository can be used to build the documentation directly from

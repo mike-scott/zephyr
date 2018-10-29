@@ -13,28 +13,17 @@ extern "C" {
 #include "sys/types.h"
 #include "sys/stat.h"
 
-#ifdef CONFIG_POSIX_FS
+#ifdef CONFIG_POSIX_API
 #include <fs.h>
 
-typedef struct fs_dir_t DIR;
 typedef unsigned int mode_t;
-
-struct dirent {
-	unsigned int d_ino;
-	char d_name[PATH_MAX + 1];
-};
 
 /* File related operations */
 extern int open(const char *name, int flags);
 extern int close(int file);
-extern ssize_t write(int file, char *buffer, unsigned int count);
-extern ssize_t read(int file, char *buffer, unsigned int count);
-extern int lseek(int file, int offset, int whence);
-
-/* Directory related operations */
-extern DIR *opendir(const char *dirname);
-extern int closedir(DIR *dirp);
-extern struct dirent *readdir(DIR *dirp);
+extern ssize_t write(int file, const void *buffer, size_t count);
+extern ssize_t read(int file, void *buffer, size_t count);
+extern off_t lseek(int file, off_t offset, int whence);
 
 /* File System related operations */
 extern int rename(const char *old, const char *newp);

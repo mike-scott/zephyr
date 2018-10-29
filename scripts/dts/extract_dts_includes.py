@@ -62,14 +62,14 @@ class Bindings(yaml.Loader):
         yaml_list = {}
         file_load_list = set()
         for file in cls._files:
-            for line in open(file, 'r'):
+            for line in open(file, 'r', encoding='utf-8'):
                 if re.search('^\s+constraint:*', line):
                     c = line.split(':')[1].strip()
                     c = c.strip('"')
                     if c in s:
                         if file not in file_load_list:
                             file_load_list.add(file)
-                            with open(file, 'r') as yf:
+                            with open(file, 'r', encoding='utf-8') as yf:
                                 cls._included = []
                                 yaml_list[c] = yaml.load(yf, cls)
         return yaml_list
@@ -122,7 +122,7 @@ class Bindings(yaml.Loader):
                       format(filename), filepaths)
                 raise yaml.constructor.ConstructorError
             filepaths = files
-        with open(filepaths[0], 'r') as f:
+        with open(filepaths[0], 'r', encoding='utf-8') as f:
             return yaml.load(f, Bindings)
 
 
@@ -323,9 +323,7 @@ def extract_property(node_compat, yaml, node_address, prop, prop_val, names,
     if 'parent' in yaml[node_compat]:
         if 'bus' in yaml[node_compat]['parent']:
             # get parent label
-            parent_address = ''
-            for comp in node_address.split('/')[1:-1]:
-                parent_address += '/' + comp
+            parent_address = get_parent_address(node_address)
 
             #check parent has matching child bus value
             try:
@@ -474,7 +472,6 @@ def yaml_traverse_inherited(node):
     """ Recursive overload procedure inside ``node``
     ``inherits`` section is searched for and used as node base when found.
     Base values are then overloaded by node values
-    Additionally, 'id' key of 'inherited' dict is converted to 'node_type'
     and some consistency checks are done.
     :param node:
     :return: node
@@ -486,14 +483,16 @@ def yaml_traverse_inherited(node):
         # If 'title' is missing, make fault finding more easy.
         # Give a hint what node we are looking at.
         print("extract_dts_includes.py: node without 'title' -", node)
-    for prop in ('title', 'id', 'version', 'description'):
+    for prop in ('title', 'version', 'description'):
         if prop not in node:
             node[prop] = "<unknown {}>".format(prop)
             print("extract_dts_includes.py: '{}' property missing".format(prop),
                   "in '{}' binding. Using '{}'.".format(node['title'], node[prop]))
 
-    if 'node_type' not in node:
-        node['node_type'] = [node['id'],]
+    # warn if we have an 'id' field
+    if 'id' in node:
+        print("extract_dts_includes.py: WARNING: id field set",
+              "in '{}', should be removed.".format(node['title']))
 
     if 'inherits' in node:
         if isinstance(node['inherits'], list):
@@ -504,21 +503,9 @@ def yaml_traverse_inherited(node):
         for inherits in inherits_list:
             if 'inherits' in inherits:
                 inherits = yaml_traverse_inherited(inherits)
-            if 'node_type' in inherits:
-                node['node_type'].extend(inherits['node_type'])
-            else:
-                if 'id' not in inherits:
-                    inherits['id'] = "<unknown id>"
-                    title = inherits.get('title', "<unknown title>")
-                    print("extract_dts_includes.py: 'id' property missing in",
-                          "'{}' binding. Using '{}'.".format(title,
-                                                             inherits['id']))
-                node['node_type'].append(inherits['id'])
-            # id, node_type, title, description, version of inherited node
+            # title, description, version of inherited node
             # are overwritten by intention. Remove to prevent dct_merge to
             # complain about duplicates.
-            inherits.pop('id')
-            inherits.pop('node_type', None)
             inherits.pop('title', None)
             inherits.pop('version', None)
             inherits.pop('description', None)
@@ -628,7 +615,7 @@ def output_include_lines(fd, fixups):
                 fd.write(
                     "/* Following definitions fixup the generated include */\n")
                 try:
-                    with open(fixup, "r") as fixup_fd:
+                    with open(fixup, "r", encoding="utf-8") as fixup_fd:
                         for line in fixup_fd.readlines():
                             fd.write(line)
                         fd.write("\n")
@@ -646,7 +633,7 @@ def generate_include_file(inc_file, fixups):
 
 
 def load_and_parse_dts(dts_file):
-    with open(dts_file, "r") as fd:
+    with open(dts_file, "r", encoding="utf-8") as fd:
         dts = parse_file(fd)
 
     return dts

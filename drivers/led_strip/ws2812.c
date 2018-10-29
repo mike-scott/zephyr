@@ -8,8 +8,9 @@
 
 #include <string.h>
 
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_LED_STRIP_LEVEL
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_LED_STRIP_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(ws2812);
 
 #include <zephyr.h>
 #include <device.h>
@@ -47,9 +48,16 @@
  */
 #define RESET_NFRAMES ((size_t)ceiling_fraction(3 * SPI_FREQ, 4000000) + 1)
 
+#if CONFIG_WS2812_HAS_WHITE_CHANNEL
+#define PX_BUF_PER_PX 32
+#else
+#define PX_BUF_PER_PX 24
+#endif
+
 struct ws2812_data {
 	struct device *spi;
 	struct spi_config config;
+	u8_t px_buf[PX_BUF_PER_PX * CONFIG_WS2812_STRIP_MAX_PIXELS];
 };
 
 /*
@@ -68,16 +76,15 @@ static inline void ws2812_serialize_color(u8_t buf[8], u8_t color)
 /*
  * Convert a pixel into SPI frames, returning the number of bytes used.
  */
-static size_t ws2812_serialize_pixel(u8_t px[32], struct led_rgb *pixel)
+static void ws2812_serialize_pixel(u8_t px[PX_BUF_PER_PX],
+				   struct led_rgb *pixel)
 {
 	ws2812_serialize_color(px + RED_OFFSET, pixel->r);
 	ws2812_serialize_color(px + GRN_OFFSET, pixel->g);
 	ws2812_serialize_color(px + BLU_OFFSET, pixel->b);
 	if (IS_ENABLED(CONFIG_WS2812_HAS_WHITE_CHANNEL)) {
 		ws2812_serialize_color(px + WHT_OFFSET, 0); /* unused */
-		return 32;
 	}
-	return 24;
 }
 
 /*
@@ -105,9 +112,10 @@ static int ws2812_strip_update_rgb(struct device *dev, struct led_rgb *pixels,
 {
 	struct ws2812_data *drv_data = dev->driver_data;
 	struct spi_config *config = &drv_data->config;
-	u8_t px_buf[32]; /* 32 are needed when a white channel is present. */
+	u8_t *px_buf = drv_data->px_buf;
 	struct spi_buf buf = {
 		.buf = px_buf,
+		.len = PX_BUF_PER_PX * num_pixels,
 	};
 	const struct spi_buf_set tx = {
 		.buffers = &buf,
@@ -116,19 +124,18 @@ static int ws2812_strip_update_rgb(struct device *dev, struct led_rgb *pixels,
 	size_t i;
 	int rc;
 
+	if (num_pixels > CONFIG_WS2812_STRIP_MAX_PIXELS) {
+		return -ENOMEM;
+	}
+
 	for (i = 0; i < num_pixels; i++) {
-		buf.len = ws2812_serialize_pixel(px_buf, &pixels[i]);
-		rc = spi_write(drv_data->spi, config, &tx);
-		if (rc) {
-			/*
-			 * Latch anything we've shifted out first, to
-			 * call visual attention to the problematic
-			 * pixel.
-			 */
-			(void)ws2812_reset_strip(drv_data);
-			SYS_LOG_ERR("can't set pixel %u: %d", i, rc);
-			return rc;
-		}
+		ws2812_serialize_pixel(&px_buf[PX_BUF_PER_PX * i], &pixels[i]);
+	}
+
+	rc = spi_write(drv_data->spi, config, &tx);
+	if (rc) {
+		(void)ws2812_reset_strip(drv_data);
+		return rc;
 	}
 
 	return ws2812_reset_strip(drv_data);
@@ -161,7 +168,7 @@ static int ws2812_strip_update_channels(struct device *dev, u8_t *channels,
 			 * pixel.
 			 */
 			(void)ws2812_reset_strip(drv_data);
-			SYS_LOG_ERR("can't set channel %u: %d", i, rc);
+			LOG_ERR("can't set channel %u: %d", i, rc);
 			return rc;
 		}
 	}
@@ -176,7 +183,7 @@ static int ws2812_strip_init(struct device *dev)
 
 	data->spi = device_get_binding(CONFIG_WS2812_STRIP_SPI_DEV_NAME);
 	if (!data->spi) {
-		SYS_LOG_ERR("SPI device %s not found",
+		LOG_ERR("SPI device %s not found",
 			    CONFIG_WS2812_STRIP_SPI_DEV_NAME);
 		return -ENODEV;
 	}

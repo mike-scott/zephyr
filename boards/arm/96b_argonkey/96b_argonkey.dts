@@ -19,11 +19,11 @@
 
 	leds {
 		compatible = "gpio-leds";
-		green_led_0: led@0 {
+		green_led_0: led_0 {
 			gpios = <&gpioc 13 GPIO_INT_ACTIVE_HIGH>;
 			label = "USR0 LED";
 		};
-		green_led_1: led@1 {
+		green_led_1: led_1 {
 			gpios = <&gpiob 2 GPIO_INT_ACTIVE_HIGH>;
 			label = "USR1 LED";
 		};
@@ -51,6 +51,10 @@
 	status = "ok";
 };
 
+&spi1 {
+	status = "ok";
+};
+
 &spi2 {
 	status = "ok";
 
@@ -62,6 +66,10 @@
 		irq-gpios = <&gpiob 1 0>;
 		label = "LSM6DSL_SPI";
 	};
+};
+
+&i2s5 {
+	status = "ok";
 };
 
 &i2c1 {

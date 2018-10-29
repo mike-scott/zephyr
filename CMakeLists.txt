@@ -765,6 +765,7 @@ if(CONFIG_GEN_ISR_TABLES)
     --output-source isr_tables.c
     --kernel $<TARGET_FILE:zephyr_prebuilt>
     --intlist isrList.bin
+    $<$<BOOL:${CONFIG_BIG_ENDIAN}>:--big-endian>
     $<$<BOOL:${CMAKE_VERBOSE_MAKEFILE}>:--debug>
     ${GEN_ISR_TABLE_EXTRA_ARG}
     DEPENDS zephyr_prebuilt
@@ -1164,6 +1165,10 @@ else()
   # Use the prebuilt elf as the final elf since we don't have a
   # generation stage.
 endif()
+
+# Export the variable to the application's scope to allow the
+# application to know what the name of the final elf target is.
+set(logical_target_for_zephyr_elf ${logical_target_for_zephyr_elf} PARENT_SCOPE)
 
 # To avoid having the same logical target name for the zephyr lib and
 # the zephyr elf, we set the kernel_elf file name to zephyr.elf.

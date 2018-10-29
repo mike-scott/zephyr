@@ -351,9 +351,9 @@ bool z_syscall_verify_msg(bool expr, const char *fmt, ...)
 #define Z_SYSCALL_MEMORY_ARRAY(ptr, nmemb, size, write) \
 	({ \
 		u32_t product; \
-		Z_SYSCALL_VERIFY_MSG(__builtin_umul_overflow((u32_t)(nmemb), \
+		Z_SYSCALL_VERIFY_MSG(!__builtin_umul_overflow((u32_t)(nmemb), \
 							      (u32_t)(size), \
-							      &product) == 0,\
+							      &product), \
 				     "%ux%u array is too large", \
 				     (u32_t)(nmemb), (u32_t)(size)) ||  \
 			Z_SYSCALL_MEMORY(ptr, product, write); \
@@ -437,7 +437,7 @@ static inline int _obj_validation_check(struct _k_object *ko,
 /**
  * @brief Runtime check kernel object pointer for non-init functions
  *
- * Calls _k_object_validate and triggers a kernel oops if the check files.
+ * Calls _k_object_validate and triggers a kernel oops if the check fails.
  * For use in system call handlers which are not init functions; a fatal
  * error will occur if the object is not initialized.
  *

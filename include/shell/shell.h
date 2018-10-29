@@ -74,8 +74,8 @@ struct shell;
 /**
  * @brief Shell command handler prototype.
  */
-typedef void (*shell_cmd_handler)(const struct shell *shell,
-				  size_t argc, char **argv);
+typedef int (*shell_cmd_handler)(const struct shell *shell,
+				 size_t argc, char **argv);
 
 /*
  * @brief Shell static command descriptor.
@@ -165,7 +165,6 @@ enum shell_receive_state {
 	SHELL_RECEIVE_ESC_SEQ,
 	SHELL_RECEIVE_TILDE_EXP
 };
-
 
 /**
  * @internal @brief Internal shell state.
@@ -347,6 +346,14 @@ struct shell_ctx {
 extern const struct log_backend_api log_backend_shell_api;
 
 /**
+ * @brief Flags for setting shell output newline sequence.
+ */
+enum shell_flag {
+	SHELL_FLAG_CRLF_DEFAULT	= (1<<0),	/* Do not map CR or LF */
+	SHELL_FLAG_OLF_CRLF	= (1<<1)	/* Map LF to CRLF on output */
+};
+
+/**
  * @brief Shell instance internals.
  */
 struct shell {
@@ -357,6 +364,8 @@ struct shell {
 
 	struct shell_history *history;
 
+	const enum shell_flag shell_flag;
+
 	const struct shell_fprintf *fprintf_ctx;
 
 	struct shell_stats *stats;
@@ -364,9 +373,6 @@ struct shell {
 	const struct shell_log_backend *log_backend;
 
 	LOG_INSTANCE_PTR_DECLARE(log);
-
-	/*!< New line character, only allowed values: \\n and \\r.*/
-	const char newline_char;
 
 	struct k_thread *thread;
 	k_thread_stack_t *stack;
@@ -378,12 +384,11 @@ struct shell {
  * @param[in] _name             Instance name.
  * @param[in] _prompt           Shell prompt string.
  * @param[in] transport_iface   Pointer to the transport interface.
- * @param[in] newline_ch        New line character - only allowed values are
- *				'\\n' or '\\r'.
  * @param[in] log_queue_size    Logger processing queue size.
+ * @param[in] _shell_flag	Shell output newline sequence.
  */
 #define SHELL_DEFINE(_name, _prompt, transport_iface,			     \
-		  newline_ch, log_queue_size)				     \
+		     log_queue_size, _shell_flag)			     \
 	static const struct shell _name;				     \
 	static struct shell_ctx UTIL_CAT(_name, _ctx);			     \
 	static char _name##prompt[CONFIG_SHELL_PROMPT_LENGTH + 1] = _prompt; \
@@ -391,7 +396,7 @@ struct shell {
 	SHELL_LOG_BACKEND_DEFINE(_name, _name##_out_buffer,		     \
 					 CONFIG_SHELL_PRINTF_BUFF_SIZE);     \
 	SHELL_HISTORY_DEFINE(_name, 128, 8);/*todo*/			     \
-	SHELL_FPRINTF_DEFINE(_name## _fprintf, &_name, _name##_out_buffer,   \
+	SHELL_FPRINTF_DEFINE(_name##_fprintf, &_name, _name##_out_buffer,    \
 			     CONFIG_SHELL_PRINTF_BUFF_SIZE,		     \
 			     true, shell_print_stream);			     \
 	LOG_INSTANCE_REGISTER(shell, _name, CONFIG_SHELL_LOG_LEVEL);	     \
@@ -403,11 +408,11 @@ struct shell {
 		.iface = transport_iface,				     \
 		.ctx = &UTIL_CAT(_name, _ctx),				     \
 		.history = SHELL_HISTORY_PTR(_name),			     \
+		.shell_flag = _shell_flag,				     \
 		.fprintf_ctx = &_name##_fprintf,			     \
 		.stats = SHELL_STATS_PTR(_name),			     \
 		.log_backend = SHELL_LOG_BACKEND_PTR(_name),		     \
 		LOG_INSTANCE_PTR_INIT(log, shell, _name)		     \
-		.newline_char = newline_ch,				     \
 		.thread = &_name##_thread,				     \
 		.stack = _name##_stack					     \
 	}
@@ -584,6 +589,20 @@ bool shell_cmd_precheck(const struct shell *shell,
  */
 void shell_print_stream(const void *user_ctx, const char *data,
 			size_t data_len);
+
+/** @brief Execute command.
+ *
+ * Pass command line to shell to execute.
+ *
+ * Note: This by no means makes any of the commands a stable interface, so
+ * this function should only be used for debugging/diagnostic.
+ *
+ * @param[in] shell	Pointer to the shell instance.
+ * @param[in] cmd	Command to be executed.
+ *
+ * @returns Result of the execution
+ */
+int shell_execute_cmd(const struct shell *shell, const char *cmd);
 
 /**
  * @}

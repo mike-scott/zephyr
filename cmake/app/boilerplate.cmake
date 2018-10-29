@@ -63,7 +63,7 @@ set_property(GLOBAL PROPERTY GENERATED_KERNEL_OBJECT_FILES "")
 define_property(GLOBAL PROPERTY GENERATED_KERNEL_SOURCE_FILES
   BRIEF_DOCS "Source files that are generated after Zephyr has been linked once."
   FULL_DOCS "\
-Object files that are generated after Zephyr has been linked once.\
+Source files that are generated after Zephyr has been linked once.\
 May include isr_tables.c etc."
   )
 set_property(GLOBAL PROPERTY GENERATED_KERNEL_SOURCE_FILES "")
@@ -350,20 +350,3 @@ foreach(boilerplate_lib ${ZEPHYR_INTERFACE_LIBS_PROPERTY})
     ${boilerplate_lib}
     )
 endforeach()
-
-
-if(NOT EXISTS ${ZEPHYR_BASE}/hide-defaults-note)
-    message(STATUS "\n\
-*******************************\n\
-*** NOTE TO KCONFIG AUTHORS ***\n\
-*******************************\n\
-\n\
-The behavior of Kconfig 'default' properties in Zephyr has changed. The \n\
-earliest default with a satisfied condition is now used, instead of the \n\
-last one. This is standard Kconfig behavior.\n\
-\n\
-See http://docs.zephyrproject.org/latest/porting/board_porting.html#old-zephyr-kconfig-behavior-for-defaults.\n\
-\n\
-To get rid of this note, create a file called 'hide-defaults-note' in the \n\
-Zephyr root directory. An empty file is fine.")
-endif()

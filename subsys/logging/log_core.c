@@ -17,9 +17,24 @@
 #define CONFIG_LOG_PRINTK_MAX_STRING_LENGTH 1
 #endif
 
+#define LOG_STRBUF_STR_SIZE \
+	(CONFIG_LOG_STRDUP_MAX_STRING + 1) /* additional byte for termination */
+
+#define LOG_STRBUF_BUF_SIZE \
+	ROUND_UP(LOG_STRBUF_STR_SIZE + 1, sizeof(u32_t))
+
+#define LOG_STRDUP_POOL_BUFFER_SIZE \
+	(LOG_STRBUF_BUF_SIZE * CONFIG_LOG_STRDUP_BUF_COUNT)
+
+static const char *log_strdup_fail_msg = "log_strdup pool empty!";
+struct k_mem_slab log_strdup_pool;
+static u8_t __noinit __aligned(sizeof(u32_t))
+		log_strdup_pool_buf[LOG_STRDUP_POOL_BUFFER_SIZE];
+
 static struct log_list_t list;
 static atomic_t initialized;
 static bool panic_mode;
+static bool backend_attached;
 static atomic_t buffered_cnt;
 static k_tid_t proc_tid;
 
@@ -242,6 +257,10 @@ void log_init(void)
 		return;
 	}
 
+	k_mem_slab_init(&log_strdup_pool, log_strdup_pool_buf,
+			LOG_STRBUF_BUF_SIZE,
+			CONFIG_LOG_STRDUP_BUF_COUNT);
+
 	/* Set default timestamp. */
 	timestamp_func = timestamp_get;
 	log_output_timestamp_freq_set(CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC);
@@ -253,12 +272,15 @@ void log_init(void)
 		log_backend_id_set(backend,
 				   i + LOG_FILTER_FIRST_BACKEND_SLOT_IDX);
 
-		backend_filter_init(backend);
-		if (backend->api->init) {
-			backend->api->init();
-		}
+		if (backend->autostart) {
+			backend_filter_init(backend);
+			if (backend->api->init) {
+				backend->api->init();
+			}
 
-		log_backend_activate(backend, NULL);
+			log_backend_activate(backend, NULL);
+			backend_attached = true;
+		}
 	}
 }
 
@@ -355,6 +377,9 @@ bool log_process(bool bypass)
 {
 	struct log_msg *msg;
 
+	if (!backend_attached) {
+		return false;
+	}
 	unsigned int key = irq_lock();
 
 	msg = log_list_head_get(&list);
@@ -457,6 +482,7 @@ void log_backend_enable(struct log_backend const *const backend,
 {
 	backend_filter_set(backend, level);
 	log_backend_activate(backend, ctx);
+	backend_attached = true;
 }
 
 void log_backend_disable(struct log_backend const *const backend)
@@ -479,6 +505,55 @@ u32_t log_filter_get(struct log_backend const *const backend,
 					   log_backend_id_get(backend));
 	} else {
 		return log_compiled_level_get(src_id);
+	}
+}
+
+char *log_strdup(const char *str)
+{
+	u32_t *dupl;
+	char *sdupl;
+	int err;
+
+	err = k_mem_slab_alloc(&log_strdup_pool, (void **)&dupl, K_NO_WAIT);
+	if (err) {
+		/* failed to allocate */
+		return (char *)log_strdup_fail_msg;
+	}
+
+	/* Set 'allocated' flag. */
+	*dupl = 1;
+	dupl++;
+	sdupl = (char *)dupl;
+
+	strncpy(sdupl, str, CONFIG_LOG_STRDUP_MAX_STRING - 1);
+	sdupl[LOG_STRBUF_STR_SIZE - 1] = '\0';
+	sdupl[LOG_STRBUF_STR_SIZE - 2] = '~';
+
+	return sdupl;
+}
+
+bool log_is_strdup(void *buf)
+{
+	/* Lowest possible address is located at the second word of the first
+	 * buffer in the pool. First word is dedicated for 'allocated' flag.
+	 *
+	 * Highest possible address is the second word of the last buffer in the
+	 * pool.
+	 */
+	static const void *start = log_strdup_pool_buf + sizeof(u32_t);
+	static const void *end = &log_strdup_pool_buf[LOG_STRDUP_POOL_BUFFER_SIZE
+					       - LOG_STRBUF_BUF_SIZE
+					       + sizeof(u32_t)];
+	return (buf >= start) && (buf <= end);
+}
+
+void log_free(void *str)
+{
+	u32_t *buf = (u32_t *)str;
+
+	buf--;
+	if (atomic_dec((atomic_t *)buf) == 1) {
+		k_mem_slab_free(&log_strdup_pool, (void **)&buf);
 	}
 }
 

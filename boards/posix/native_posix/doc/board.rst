@@ -38,6 +38,8 @@ It has only been tested on Linux, but should also be compatible with macOS.
    This port will **not** work in Windows Subsystem for Linux (WSL) because WSL
    does not support native 32-bit binaries.
 
+.. _native_important_limitations:
+
 Important limitations
 *********************
 
@@ -165,34 +167,6 @@ You can run it with the ``--help`` command line switch to get a list of
 available options::
 
    $ zephyr/zephyr.exe --help
-
-     [-h] [--h] [--help] [-?]  :Display this help
-     [-rt]                     :Slow down the execution to the host real time
-     [-no-rt]                  :Do NOT slow down the execution to real time, but
-                                advance Zephyr's time as fast as possible and
-                                decoupled from the host time
-     [-rt-drift=<drift>]       :Drift of the simulated clock relative to the
-                                real host time.
-                                Normally this would be set to a value of a few
-                                ppm (e.g. 50e-6)
-                                This option has no effect in non-real time mode
-     [-rt-ratio=<ratio>]       :Relative speed of the simulated time vs real
-                                time, for example, set to 2 to have simulated
-                                time pass at double the speed of real time.
-                                Note that both rt-drift & rt-ratio adjust the
-                                same clock speed, and therefore it does not make
-                                sense to use them simultaneously.
-                                This option has no effect in non-real time mode
-     [-rtc-offset=<offset>]    :At boot, offset the RTC by this number of
-                                seconds.
-     [-rtc-reset]              :Start the simulated real time clock at 0.
-                                Otherwise, it is started at the value of the
-                                host's RTC.
-     [-stop_at=<time>]         :In simulated seconds, when to stop automatically
-     [-seed=<r_seed>]          :Seed for the entropy device
-     [-testargs <arg>...]      :Any argument that follows will be ignored
-                                by the top level, and made
-                                available for possible tests
 
 Note that the Zephyr kernel does not actually exit once the application is
 finished. It simply goes into the idle loop forever.
@@ -454,15 +428,10 @@ Peripherals
 
 The following peripherals are currently provided with this board:
 
-**Console driver**:
-  A console driver is provided which by default is configured to:
-
-  - Redirect any :c:func:`printk` write to the native host application's
-    ``stdout``.
-
-  - Feed any input from the native application ``stdin`` to a possible
-    running legacy shell. For more information refer to the section
-    `Legacy shell support`_.
+**Interrupt controller**:
+  A simple yet generic interrupt controller is provided. It can nest interrupts
+  and provides interrupt priorities. Interrupts can be individually masked or
+  unmasked. SW interrupts are also supported.
 
 **Clock, timer and system tick model**
   This model provides the system tick timer. By default
@@ -473,6 +442,20 @@ The following peripherals are currently provided with this board:
 
   Please refer to the section `About time in native_posix`_ for more
   information.
+
+**UART**
+  An optional UART driver can be compiled with native_posix.
+  For more information refer to the section `UART`_.
+
+**Console driver**:
+  A console driver is provided which by default is configured to:
+
+  - Redirect any :c:func:`printk` write to the native host application's
+    ``stdout``.
+
+  - If the legacy shell is compiled with your application, redirect the
+    native application's ``stdin`` to the legacy shell for any input.
+    For more information refer to the section `Legacy shell support`_.
 
 **Real time clock**
   The real time clock model provides a model of a constantly powered clock.
@@ -513,11 +496,6 @@ The following peripherals are currently provided with this board:
   ``--seed=<random_seed>`` where the value specified is a 32-bit integer
   such as 97229 (decimal),  0x17BCD (hex), or 0275715 (octal).
 
-**Interrupt controller**:
-  A simple yet generic interrupt controller is provided. It can nest interrupts
-  and provides interrupt priorities. Interrupts can be individually masked or
-  unmasked. SW interrupts are also supported.
-
 **Ethernet driver**:
   A simple TAP based ethernet driver is provided. The driver will create
   a **zeth** network interface to the host system. One can communicate with
@@ -541,10 +519,6 @@ The following peripherals are currently provided with this board:
   must be powered down and support Bluetooth Low Energy (i.e. support the
   Bluetooth specification version 4.0 or greater).
 
-**UART**
-  An optional UART driver can be compiled with native_posix.
-  For more information refer to the section `UART`_.
-
 
 UART
 *****
@@ -555,12 +529,21 @@ output to the executable's ``stdin`` and ``stdout``.
 This is chosen by selecting either
 :option:`CONFIG_NATIVE_UART_0_ON_OWN_PTY` or
 :option:`CONFIG_NATIVE_UART_0_ON_STDINOUT`
-Note that for interactive use, the first option should be chosen. The
-second option is only intended for automated testing or feeding/piping other
-processes output to the UART.
+For interactive use with the :ref:`Shell`, choose the first (OWN_PTY) option.
+The second (STDINOUT) option can be used with the shell for automated
+testing, such as when piping other processes' output to control it.
+This is because the shell subsystem expects access to a raw terminal,
+which (by default) a normal Linux terminal is not.
 
 When :option:`CONFIG_NATIVE_UART_0_ON_OWN_PTY` is chosen, the name of the
 newly created UART pseudo-terminal will be displayed in the console.
+If you want to interact with it manually, you should attach a terminal emulator
+to it. This can be done, for example with the command::
+
+   $ xterm -e screen /dev/<ttyn> &
+
+where ``/dev/<ttyn>`` should be replaced with the actual TTY device.
+
 You may also chose to automatically attach a terminal emulator to it by
 passing the command line option ``-attach_uart`` to the executable.
 The command used for attaching to the new shell can be set with the command line
@@ -573,9 +556,9 @@ installed in the system.
 Legacy shell support
 ********************
 
-When the legacy :ref:`Shell` subsystem is compiled with your application,
+When the legacy shell subsystem is compiled with your application,
 the native standard input (``stdin``) will be redirected to the shell.
-You may use the shell interactively through the console,
+You may use this shell interactively through the console,
 by piping another process output to it, or by feeding it a file.
 
 When using it interactively you may want to select the option
