@@ -355,17 +355,7 @@ function(generate_inc_file_for_target
   # targets
 
   # But first create a unique name for the custom target
-  string(
-    RANDOM
-    LENGTH 8
-    random_chars
-    )
-
-  get_filename_component(basename ${generated_file} NAME)
-  string(REPLACE "." "_" basename ${basename})
-  string(REPLACE "@" "_" basename ${basename})
-
-  set(generated_target_name "gen_${basename}_${random_chars}")
+  generate_unique_target_name_from_filename(${generated_file} generated_target_name)
 
   add_custom_target(${generated_target_name} DEPENDS ${generated_file})
   generate_inc_file_for_gen_target(${target} ${source_file} ${generated_file} ${generated_target_name} ${ARGN})
@@ -628,37 +618,53 @@ endfunction()
 # caching comes in addition to the caching that CMake does in the
 # build folder's CMakeCache.txt)
 function(zephyr_check_compiler_flag lang option check)
-  # Locate the cache
+  # Locate the cache directory
   set_ifndef(
-    ZEPHYR_TOOLCHAIN_CAPABILITY_CACHE
-    ${USER_CACHE_DIR}/ToolchainCapabilityDatabase.cmake
+    ZEPHYR_TOOLCHAIN_CAPABILITY_CACHE_DIR
+    ${USER_CACHE_DIR}/ToolchainCapabilityDatabase
     )
+  if(DEFINED ZEPHYR_TOOLCHAIN_CAPABILITY_CACHE)
+    assert(0
+      "The deprecated ZEPHYR_TOOLCHAIN_CAPABILITY_CACHE is now a directory"
+      "and is named ZEPHYR_TOOLCHAIN_CAPABILITY_CACHE_DIR"
+      )
+    # Remove this deprecation warning in version 1.14.
+  endif()
 
-  # Read the cache
-  include(${ZEPHYR_TOOLCHAIN_CAPABILITY_CACHE} OPTIONAL)
+  # The toolchain capability database/cache is maintained as a
+  # directory of files. The filenames in the directory are keys, and
+  # the file contents are the values in this key-value store.
 
   # We need to create a unique key wrt. testing the toolchain
-  # capability. This key must be a valid C identifier that includes
-  # everything that can affect the toolchain test.
+  # capability. This key must include everything that can affect the
+  # toolchain test.
+  #
+  # Also, to fit the key into a filename we calculate the MD5 sum of
+  # the key.
 
   # The 'cacheformat' must be bumped if a bug in the caching mechanism
   # is detected and all old keys must be invalidated.
-  set(cacheformat 2)
+  set(cacheformat 3)
 
   set(key_string "")
-  set(key_string "${key_string}ZEPHYR_TOOLCHAIN_CAPABILITY_CACHE_")
-  set(key_string "${key_string}cacheformat_")
   set(key_string "${key_string}${cacheformat}_")
   set(key_string "${key_string}${TOOLCHAIN_SIGNATURE}_")
   set(key_string "${key_string}${lang}_")
   set(key_string "${key_string}${option}_")
   set(key_string "${key_string}${CMAKE_REQUIRED_FLAGS}_")
 
-  string(MAKE_C_IDENTIFIER ${key_string} key)
+  string(MD5 key ${key_string})
 
   # Check the cache
-  if(DEFINED ${key})
-    set(${check} ${${key}} PARENT_SCOPE)
+  set(key_path ${ZEPHYR_TOOLCHAIN_CAPABILITY_CACHE_DIR}/${key})
+  if(EXISTS ${key_path})
+    file(READ
+    ${key_path}   # File to be read
+    key_value     # Output variable
+    LIMIT 1       # Read at most 1 byte ('0' or '1')
+    )
+
+    set(${check} ${key_value} PARENT_SCOPE)
     return()
   endif()
 
@@ -668,11 +674,22 @@ function(zephyr_check_compiler_flag lang option check)
   set(${check} ${inner_check} PARENT_SCOPE)
 
   # Populate the cache
-  file(
-    APPEND
-    ${ZEPHYR_TOOLCHAIN_CAPABILITY_CACHE}
-    "set(${key} ${inner_check})\n"
-    )
+  if(NOT (EXISTS ${key_path}))
+    file(
+      WRITE
+      ${key_path}
+      ${inner_check}
+      )
+
+    # Populate a metadata file (only intended for trouble shooting)
+    # with information about the hash, the toolchain capability
+    # result, and the toolchain test.
+    file(
+      APPEND
+      ${ZEPHYR_TOOLCHAIN_CAPABILITY_CACHE_DIR}/log.txt
+      "${inner_check} ${key} ${key_string}\n"
+      )
+  endif()
 endfunction()
 
 ########################################################
@@ -1174,4 +1191,17 @@ function(find_appropriate_cache_directory dir)
   endif()
 
   set(${dir} ${local_dir} PARENT_SCOPE)
+endfunction()
+
+function(generate_unique_target_name_from_filename
+	filename
+	target_name
+	)
+  get_filename_component(basename ${filename} NAME)
+  string(REPLACE "." "_" x ${basename})
+  string(REPLACE "@" "_" x ${x})
+
+  string(RANDOM LENGTH 8 random_chars)
+
+  set(${target_name} gen_${x}_${random_chars} PARENT_SCOPE)
 endfunction()

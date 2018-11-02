@@ -288,6 +288,7 @@ struct shell_flags {
 	u32_t processing  :1; /*!< Shell is executing process function.*/
 	u32_t tx_rdy      :1;
 	u32_t mode_delete :1; /*!< Operation mode of backspace key */
+	u32_t history_exit:1; /*!< Request to exit history mode */
 };
 
 BUILD_ASSERT_MSG((sizeof(struct shell_flags) == sizeof(u32_t)),
@@ -572,12 +573,14 @@ int shell_prompt_change(const struct shell *shell, char *prompt);
  * @param[in] opt	  Pointer to the optional option array.
  * @param[in] opt_len	  Option array size.
  *
- * @return True if check passed, false otherwise or help was requested.
+ * @return 0		  if check passed
+ * @return 1		  if help was requested
+ * @return -EINVAL	  if wrong argument count
  */
-bool shell_cmd_precheck(const struct shell *shell,
-			bool arg_cnt_ok,
-			const struct shell_getopt_option *opt,
-			size_t opt_len);
+int shell_cmd_precheck(const struct shell *shell,
+		       bool arg_cnt_ok,
+		       const struct shell_getopt_option *opt,
+		       size_t opt_len);
 
 /**
  * @internal @brief This function shall not be used directly, it is required by
@@ -597,7 +600,9 @@ void shell_print_stream(const void *user_ctx, const char *data,
  * Note: This by no means makes any of the commands a stable interface, so
  * this function should only be used for debugging/diagnostic.
  *
- * @param[in] shell	Pointer to the shell instance.
+ * @param[in] shell	Pointer to the shell instance. It can be NULL when
+ *			the :option:`CONFIG_SHELL_BACKEND_DUMMY` option is
+ *			enabled.
  * @param[in] cmd	Command to be executed.
  *
  * @returns Result of the execution

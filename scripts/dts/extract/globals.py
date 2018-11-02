@@ -75,6 +75,21 @@ def get_aliases(root):
         if reduced[k].get('alt_name', None) is not None:
             aliases[k].append(reduced[k]['alt_name'])
 
+def get_node_compats(node_address):
+    compat = None
+
+    try:
+        if 'props' in reduced[node_address].keys():
+            compat = reduced[node_address]['props'].get('compatible')
+
+        if not isinstance(compat, list):
+            compat = [compat, ]
+
+    except:
+        pass
+
+    return compat
+
 def get_compat(node_address):
     compat = None
 
@@ -124,8 +139,8 @@ def get_phandles(root, name, handles):
 def insert_defs(node_address, new_defs, new_aliases):
 
     for key in new_defs.keys():
-        if key.startswith('CONFIG_DT_COMPAT_'):
-            node_address = 'Compatibles'
+        if key.startswith('DT_COMPAT_'):
+            node_address = 'compatibles'
 
     if node_address in defs:
         if 'aliases' in defs[node_address]:
@@ -165,7 +180,8 @@ def get_reduced(nodes, path):
                 get_reduced(v, path + k)
 
 
-def get_node_label(node_compat, node_address):
+def get_node_label(node_address):
+    node_compat = get_compat(node_address)
     def_label = convert_string_to_label(node_compat)
     if '@' in node_address:
         # See if we have number we can convert

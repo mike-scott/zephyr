@@ -43,7 +43,8 @@ static u32_t timestamp_div;
 typedef int (*out_func_t)(int c, void *ctx);
 
 extern int _prf(int (*func)(), void *dest, char *format, va_list vargs);
-extern void _vprintk(out_func_t out, void *log_output, const char *fmt, va_list ap);
+extern void _vprintk(out_func_t out, void *log_output,
+		     const char *fmt, va_list ap);
 
 static int out_func(int c, void *ctx)
 {
@@ -177,96 +178,109 @@ static int ids_print(struct log_msg *msg,
 		total += print_formatted(log_output, "<%s> ", severity[level]);
 	}
 
-	total += print_formatted(log_output, "%s: ",
+	total += print_formatted(log_output,
+				IS_ENABLED(CONFIG_LOG_FUNCTION_NAME) ?
+				"%s." : "%s: ",
 				log_source_name_get(domain_id, source_id));
 
 	return total;
 }
 
-static void newline_print(const struct log_output *ctx)
+static void newline_print(const struct log_output *ctx, u32_t flags)
 {
-	print_formatted(ctx, "\r\n");
+
+	if (flags & LOG_OUTPUT_FLAG_CRLF_NONE) {
+		return;
+	}
+
+	if (flags & LOG_OUTPUT_FLAG_CRLF_LFONLY) {
+		print_formatted(ctx, "\n");
+	} else {
+		print_formatted(ctx, "\r\n");
+	}
 }
 
 static void std_print(struct log_msg *msg,
 		      const struct log_output *log_output)
 {
 	const char *str = log_msg_str_get(msg);
+	u32_t nargs = log_msg_nargs_get(msg);
+	u32_t *args = alloca(sizeof(u32_t)*nargs);
+	int i;
+
+	for (i = 0; i < nargs; i++) {
+		args[i] = log_msg_arg_get(msg, i);
+	}
 
 	switch (log_msg_nargs_get(msg)) {
 	case 0:
 		print_formatted(log_output, str);
 		break;
 	case 1:
-		print_formatted(log_output, str, log_msg_arg_get(msg, 0));
+		print_formatted(log_output, str, args[0]);
 		break;
 	case 2:
-		print_formatted(log_output, str,
-		      log_msg_arg_get(msg, 0),
-		      log_msg_arg_get(msg, 1));
+		print_formatted(log_output, str, args[0], args[1]);
 		break;
 	case 3:
-		print_formatted(log_output, str,
-		      log_msg_arg_get(msg, 0),
-		      log_msg_arg_get(msg, 1),
-		      log_msg_arg_get(msg, 2));
+		print_formatted(log_output, str, args[0], args[1], args[2]);
 		break;
 	case 4:
-		print_formatted(log_output, str,
-		      log_msg_arg_get(msg, 0),
-		      log_msg_arg_get(msg, 1),
-		      log_msg_arg_get(msg, 2),
-		      log_msg_arg_get(msg, 3));
+		print_formatted(log_output, str, args[0], args[1], args[2],
+				args[3]);
 		break;
 	case 5:
-		print_formatted(log_output, str,
-		      log_msg_arg_get(msg, 0),
-		      log_msg_arg_get(msg, 1),
-		      log_msg_arg_get(msg, 2),
-		      log_msg_arg_get(msg, 3),
-		      log_msg_arg_get(msg, 4));
+		print_formatted(log_output, str, args[0], args[1], args[2],
+				args[3], args[4]);
 		break;
 	case 6:
-		print_formatted(log_output, str,
-		      log_msg_arg_get(msg, 0),
-		      log_msg_arg_get(msg, 1),
-		      log_msg_arg_get(msg, 2),
-		      log_msg_arg_get(msg, 3),
-		      log_msg_arg_get(msg, 4),
-		      log_msg_arg_get(msg, 5));
+		print_formatted(log_output, str, args[0], args[1], args[2],
+				args[3], args[4], args[5]);
 		break;
 	case 7:
-		print_formatted(log_output, str,
-		      log_msg_arg_get(msg, 0),
-		      log_msg_arg_get(msg, 1),
-		      log_msg_arg_get(msg, 2),
-		      log_msg_arg_get(msg, 3),
-		      log_msg_arg_get(msg, 4),
-		      log_msg_arg_get(msg, 5),
-		      log_msg_arg_get(msg, 6));
+		print_formatted(log_output, str, args[0], args[1], args[2],
+				args[3], args[4], args[5], args[6]);
 		break;
 	case 8:
-		print_formatted(log_output, str,
-		      log_msg_arg_get(msg, 0),
-		      log_msg_arg_get(msg, 1),
-		      log_msg_arg_get(msg, 2),
-		      log_msg_arg_get(msg, 3),
-		      log_msg_arg_get(msg, 4),
-		      log_msg_arg_get(msg, 5),
-		      log_msg_arg_get(msg, 6),
-		      log_msg_arg_get(msg, 7));
+		print_formatted(log_output, str, args[0], args[1], args[2],
+				args[3], args[4], args[5], args[6], args[7]);
 		break;
 	case 9:
-		print_formatted(log_output, str,
-		      log_msg_arg_get(msg, 0),
-		      log_msg_arg_get(msg, 1),
-		      log_msg_arg_get(msg, 2),
-		      log_msg_arg_get(msg, 3),
-		      log_msg_arg_get(msg, 4),
-		      log_msg_arg_get(msg, 5),
-		      log_msg_arg_get(msg, 6),
-		      log_msg_arg_get(msg, 7),
-		      log_msg_arg_get(msg, 8));
+		print_formatted(log_output, str, args[0], args[1], args[2],
+				args[3], args[4], args[5], args[6],  args[7],
+				args[8]);
+		break;
+	case 10:
+		print_formatted(log_output, str, args[0], args[1], args[2],
+				args[3], args[4], args[5], args[6],  args[7],
+				args[8], args[9]);
+		break;
+	case 11:
+		print_formatted(log_output, str, args[0], args[1], args[2],
+				args[3], args[4], args[5], args[6],  args[7],
+				args[8], args[9], args[10]);
+		break;
+	case 12:
+		print_formatted(log_output, str, args[0], args[1], args[2],
+				args[3], args[4], args[5], args[6],  args[7],
+				args[8], args[9], args[10], args[11]);
+		break;
+	case 13:
+		print_formatted(log_output, str, args[0], args[1], args[2],
+				args[3], args[4], args[5], args[6],  args[7],
+				args[8], args[9], args[10], args[11], args[12]);
+		break;
+	case 14:
+		print_formatted(log_output, str, args[0], args[1], args[2],
+				args[3], args[4], args[5], args[6],  args[7],
+				args[8], args[9], args[10], args[11], args[12],
+				args[13]);
+		break;
+	case 15:
+		print_formatted(log_output, str, args[0], args[1], args[2],
+				args[3], args[4], args[5], args[6],  args[7],
+				args[8], args[9], args[10], args[11], args[12],
+				args[13], args[14]);
 		break;
 	default:
 		/* Unsupported number of arguments. */
@@ -277,7 +291,7 @@ static void std_print(struct log_msg *msg,
 static u32_t hexdump_line_print(struct log_msg *msg,
 				const struct log_output *log_output,
 				int prefix_offset,
-				u32_t offset)
+				u32_t offset, u32_t flags)
 {
 	u8_t buf[HEXDUMP_BYTES_IN_LINE];
 	size_t length = sizeof(buf);
@@ -285,7 +299,7 @@ static u32_t hexdump_line_print(struct log_msg *msg,
 	log_msg_hexdump_data_get(msg, buf, &length, offset);
 
 	if (length > 0) {
-		newline_print(log_output);
+		newline_print(log_output, flags);
 
 		for (int i = 0; i < prefix_offset; i++) {
 			print_formatted(log_output, " ");
@@ -318,7 +332,7 @@ static u32_t hexdump_line_print(struct log_msg *msg,
 
 static void hexdump_print(struct log_msg *msg,
 			  const struct log_output *log_output,
-			  int prefix_offset)
+			  int prefix_offset, u32_t flags)
 {
 	u32_t offset = 0;
 	u32_t length;
@@ -327,7 +341,7 @@ static void hexdump_print(struct log_msg *msg,
 
 	do {
 		length = hexdump_line_print(msg, log_output, prefix_offset,
-					    offset);
+					    offset, flags);
 
 		if (length < HEXDUMP_BYTES_IN_LINE) {
 			break;
@@ -390,7 +404,7 @@ static void postfix_print(struct log_msg *msg,
 	if (!log_msg_is_raw_string(msg)) {
 		color_postfix(msg, log_output,
 			      (flags & LOG_OUTPUT_FLAG_COLORS));
-		newline_print(log_output);
+		newline_print(log_output, flags);
 	}
 }
 
@@ -405,7 +419,7 @@ void log_output_msg_process(const struct log_output *log_output,
 	} else if (log_msg_is_raw_string(msg)) {
 		raw_string_print(msg, log_output);
 	} else {
-		hexdump_print(msg, log_output, prefix_offset);
+		hexdump_print(msg, log_output, prefix_offset, flags);
 	}
 
 	postfix_print(msg, log_output, flags);

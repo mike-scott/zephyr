@@ -312,24 +312,38 @@ static void _power_clock_isr(void *arg)
 		 */
 		NRF_CLOCK->INTENCLR = CLOCK_INTENCLR_HFCLKSTARTED_Msk;
 
+#if defined(CONFIG_SOC_SERIES_NRF52X)
+		/* NOTE: Errata [192] CLOCK: LFRC frequency offset after
+		 * calibration.
+		 * Calibration start, workaround.
+		 */
+		*(volatile u32_t *)0x40000C34 = 0x00000002;
+#endif /* CONFIG_SOC_SERIES_NRF52X */
+
 		/* Start Calibration */
 		NRF_CLOCK->TASKS_CAL = 1;
 	}
 
 	if (lf) {
 		NRF_CLOCK->EVENTS_LFCLKSTARTED = 0;
-
-		__ASSERT_NO_MSG(0);
 	}
 
 	if (done) {
 		int err;
 
+#if defined(CONFIG_SOC_SERIES_NRF52X)
+		/* NOTE: Errata [192] CLOCK: LFRC frequency offset after
+		 * calibration.
+		 * Calibration done, workaround.
+		 */
+		*(volatile u32_t *)0x40000C34 = 0x00000000;
+#endif /* CONFIG_SOC_SERIES_NRF52X */
+
 		NRF_CLOCK->EVENTS_DONE = 0;
 
 		/* Calibration done, stop 16M Xtal. */
 		err = _m16src_stop(dev, NULL);
-		__ASSERT_NO_MSG(!err);
+		__ASSERT_NO_MSG(!err || err == -EBUSY);
 
 		/* Start timer for next calibration. */
 		NRF_CLOCK->TASKS_CTSTART = 1;

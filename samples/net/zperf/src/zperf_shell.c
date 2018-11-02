@@ -307,12 +307,12 @@ static int cmd_udp_download(const struct shell *shell, size_t argc,
 
 		do_init(shell);
 
-		if (argc < 2 || shell_help_requested(shell)) {
+		if (shell_help_requested(shell)) {
 			shell_help_print(shell, NULL, 0);
 			return -ENOEXEC;
 		}
 
-		if (argc > 1) {
+		if (argc >= 2) {
 			port = strtoul(argv[start + 1], NULL, 10);
 		} else {
 			port = DEF_PORT;
@@ -849,13 +849,13 @@ static int shell_cmd_upload2(const struct shell *shell, size_t argc,
 	}
 
 	if (family == AF_INET6) {
-		if (net_is_ipv6_addr_unspecified(&in6_addr_my.sin6_addr)) {
+		if (net_ipv6_is_addr_unspecified(&in6_addr_my.sin6_addr)) {
 			shell_fprintf(shell, SHELL_WARNING,
 				      "Invalid local IPv6 address.\n");
 			return -ENOEXEC;
 		}
 
-		if (net_is_ipv6_addr_unspecified(&in6_addr_dst.sin6_addr)) {
+		if (net_ipv6_is_addr_unspecified(&in6_addr_dst.sin6_addr)) {
 			shell_fprintf(shell, SHELL_WARNING,
 				      "Invalid destination IPv6 address.\n");
 			return -ENOEXEC;
@@ -865,13 +865,13 @@ static int shell_cmd_upload2(const struct shell *shell, size_t argc,
 			      "Connecting to %s\n",
 			      net_sprint_ipv6_addr(&in6_addr_dst.sin6_addr));
 	} else {
-		if (net_is_ipv4_addr_unspecified(&in4_addr_my.sin_addr)) {
+		if (net_ipv4_is_addr_unspecified(&in4_addr_my.sin_addr)) {
 			shell_fprintf(shell, SHELL_WARNING,
 				      "Invalid local IPv4 address.\n");
 			return -ENOEXEC;
 		}
 
-		if (net_is_ipv4_addr_unspecified(&in4_addr_dst.sin_addr)) {
+		if (net_ipv4_is_addr_unspecified(&in4_addr_dst.sin_addr)) {
 			shell_fprintf(shell, SHELL_WARNING,
 				      "Invalid destination IPv4 address.\n");
 			return -ENOEXEC;
@@ -975,12 +975,12 @@ static int cmd_tcp_download(const struct shell *shell, size_t argc,
 
 		do_init(shell);
 
-		if (argc < 2 || shell_help_requested(shell)) {
+		if (shell_help_requested(shell)) {
 			shell_help_print(shell, NULL, 0);
 			return -ENOEXEC;
 		}
 
-		if (argc > 1) {
+		if (argc >= 2) {
 			port = strtoul(argv[1], NULL, 10);
 		} else {
 			port = DEF_PORT;
@@ -1108,7 +1108,7 @@ SHELL_CREATE_STATIC_SUBCMD_SET(zperf_cmd_tcp)
 		  ,
 		  cmd_tcp_upload2),
 	SHELL_CMD(download, NULL,
-		  "<port>\n"
+		  "[<port>]\n"
 		  "Example: tcp download 5001\n",
 		  cmd_tcp_download),
 	SHELL_SUBCMD_SET_END
@@ -1148,7 +1148,7 @@ SHELL_CREATE_STATIC_SUBCMD_SET(zperf_cmd_udp)
 		  ,
 		  cmd_udp_upload2),
 	SHELL_CMD(download, NULL,
-		  "<port>\n"
+		  "[<port>]\n"
 		  "Example: udp download 5001\n",
 		  cmd_udp_download),
 	SHELL_SUBCMD_SET_END

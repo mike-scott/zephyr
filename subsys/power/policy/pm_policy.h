@@ -25,6 +25,11 @@ extern  void sys_pm_create_device_list(void);
 extern int sys_pm_suspend_devices(void);
 
 /**
+ * @brief Function to force suspend the devices in PM device list
+ */
+extern int sys_pm_force_suspend_devices(void);
+
+/**
  * @brief Function to resume the devices in PM device list
  */
 extern void sys_pm_resume_devices(void);
@@ -49,6 +54,13 @@ extern void sys_pm_notify_lps_entry(enum power_states state);
  * for low power exit.
  */
 extern void sys_pm_notify_lps_exit(enum power_states state);
+
+/**
+ * @brief Dump Low Power states related debug info
+ *
+ * Dump Low Power states debug info like LPS entry count and residencies.
+ */
+extern void sys_pm_dump_debug_info(void);
 
 #ifdef __cplusplus
 }
