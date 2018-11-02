@@ -196,6 +196,7 @@ char *lwm2m_sprint_ip_addr(const struct sockaddr *addr)
 	return NULL;
 }
 
+#if LOG_LEVEL >= LOG_LEVEL_DBG
 static u8_t to_hex_digit(u8_t digit)
 {
 	if (digit >= 10) {
@@ -229,6 +230,7 @@ static char *sprint_token(const u8_t *token, u8_t tkl)
 
 	return buf;
 }
+#endif
 
 /* block-wise transfer functions */
 
