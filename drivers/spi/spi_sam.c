@@ -14,7 +14,6 @@ LOG_MODULE_REGISTER(spi_sam);
 #include <device.h>
 #include <spi.h>
 #include <soc.h>
-#include <board.h>
 
 #define SAM_SPI_CHIP_SELECT_COUNT			4
 
@@ -442,18 +441,46 @@ static const struct spi_driver_api spi_sam_driver_api = {
 	.release = spi_sam_release,
 };
 
-#ifndef PINS_SPI0_CS
-#define PINS_SPI0_CS { {0, (Pio *)0, 0, 0}, }
+#ifndef PIN_SPI0_CS0
+#define PIN_SPI0_CS0 {0, (Pio *)0, 0, 0}
 #endif
 
-#ifndef PINS_SPI1_CS
-#define PINS_SPI1_CS { {0, (Pio *)0, 0, 0}, }
+#ifndef PIN_SPI0_CS1
+#define PIN_SPI0_CS1 {0, (Pio *)0, 0, 0}
 #endif
+
+#ifndef PIN_SPI0_CS2
+#define PIN_SPI0_CS2 {0, (Pio *)0, 0, 0}
+#endif
+
+#ifndef PIN_SPI0_CS3
+#define PIN_SPI0_CS3 {0, (Pio *)0, 0, 0}
+#endif
+
+#define PINS_SPI0_CS { PIN_SPI0_CS0, PIN_SPI0_CS1, PIN_SPI0_CS2, PIN_SPI0_CS3 }
+
+#ifndef PIN_SPI1_CS0
+#define PIN_SPI1_CS0 {0, (Pio *)0, 0, 0}
+#endif
+
+#ifndef PIN_SPI1_CS1
+#define PIN_SPI1_CS1 {0, (Pio *)0, 0, 0}
+#endif
+
+#ifndef PIN_SPI1_CS2
+#define PIN_SPI1_CS2 {0, (Pio *)0, 0, 0}
+#endif
+
+#ifndef PIN_SPI1_CS3
+#define PIN_SPI1_CS3 {0, (Pio *)0, 0, 0}
+#endif
+
+#define PINS_SPI1_CS { PIN_SPI1_CS0, PIN_SPI1_CS1, PIN_SPI1_CS2, PIN_SPI1_CS3 }
 
 #define SPI_SAM_DEFINE_CONFIG(n)					\
 	static const struct spi_sam_config spi_sam_config_##n = {	\
-		.regs = (Spi *)CONFIG_SPI_##n##_BASE_ADDRESS,		\
-		.periph_id = CONFIG_SPI_##n##_PERIPHERAL_ID,		\
+		.regs = (Spi *)DT_SPI_##n##_BASE_ADDRESS,		\
+		.periph_id = DT_SPI_##n##_PERIPHERAL_ID,		\
 		.pins = PINS_SPI##n,					\
 		.cs = PINS_SPI##n##_CS,					\
 	}
@@ -470,11 +497,11 @@ static const struct spi_driver_api spi_sam_driver_api = {
 			    &spi_sam_config_##n, POST_KERNEL,		\
 			    CONFIG_SPI_INIT_PRIORITY, &spi_sam_driver_api)
 
-#if CONFIG_SPI_0_BASE_ADDRESS
+#if DT_SPI_0_BASE_ADDRESS
 SPI_SAM_DEVICE_INIT(0);
 #endif
 
-#if CONFIG_SPI_1_BASE_ADDRESS
+#if DT_SPI_1_BASE_ADDRESS
 SPI_SAM_DEVICE_INIT(1);
 #endif
 

@@ -140,7 +140,7 @@ if(CONFIG_HAS_DTS)
   # Run extract_dts_includes.py for the header file
   # generated_dts_board.h
   set_ifndef(DTS_BOARD_FIXUP_FILE ${BOARD_DIR}/dts_fixup.h)
-  set_ifndef(DTS_SOC_FIXUP_FILE   ${PROJECT_SOURCE_DIR}/soc/${ARCH}/${SOC_PATH}/dts_fixup.h)
+  set_ifndef(DTS_SOC_FIXUP_FILE   ${SOC_DIR}/${ARCH}/${SOC_PATH}/dts_fixup.h)
 
   list(APPEND dts_fixups
     ${DTS_BOARD_FIXUP_FILE}
@@ -170,6 +170,7 @@ if(CONFIG_HAS_DTS)
     ${DTS_FIXUPS_WITH_FLAG}
     --keyvalue ${GENERATED_DTS_BOARD_CONF}
     --include ${GENERATED_DTS_BOARD_H}
+    --old-alias-names
     )
 
   # Run extract_dts_includes.py to create a .conf and a header file that can be
