@@ -446,10 +446,10 @@ static u32_t max_filter_get(u32_t filters)
 	return max_filter;
 }
 
-u32_t log_filter_set(struct log_backend const *const backend,
-		     u32_t domain_id,
-		     u32_t src_id,
-		     u32_t level)
+void log_filter_set(struct log_backend const *const backend,
+		    u32_t domain_id,
+		    u32_t src_id,
+		    u32_t level)
 {
 	assert(src_id < log_sources_count());
 
@@ -460,23 +460,13 @@ u32_t log_filter_set(struct log_backend const *const backend,
 
 		if (backend == NULL) {
 			struct log_backend const *backend;
-			u32_t max = 0;
-			u32_t current;
 
 			for (int i = 0; i < log_backend_count_get(); i++) {
 				backend = log_backend_get(i);
-				current = log_filter_set(backend, domain_id,
-							 src_id, level);
-				max = max(current, max);
+				log_filter_set(backend, domain_id,
+					       src_id, level);
 			}
-
-			level = max;
 		} else {
-			u32_t max = log_filter_get(backend, domain_id,
-						   src_id, false);
-
-			level = min(level, max);
-
 			LOG_FILTER_SLOT_SET(filters,
 					    log_backend_id_get(backend),
 					    level);
@@ -491,8 +481,6 @@ u32_t log_filter_set(struct log_backend const *const backend,
 					    new_aggr_filter);
 		}
 	}
-
-	return level;
 }
 
 static void backend_filter_set(struct log_backend const *const backend,

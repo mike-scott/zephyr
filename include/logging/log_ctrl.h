@@ -134,18 +134,15 @@ u32_t log_filter_get(struct log_backend const *const backend,
 /**
  * @brief Set filter on given source for the provided backend.
  *
- * @param backend	Backend instance. NULL for all backends.
+ * @param backend	Backend instance.
  * @param domain_id	ID of the domain.
  * @param src_id	Source (module or instance) ID.
  * @param level		Severity level.
- *
- * @return Actual level set which may be limited by compiled level. If filter
- *	   was set for all backends then maximal level that was set is returned.
  */
-u32_t log_filter_set(struct log_backend const *const backend,
-		     u32_t domain_id,
-		     u32_t src_id,
-		     u32_t level);
+void log_filter_set(struct log_backend const *const backend,
+		    u32_t domain_id,
+		    u32_t src_id,
+		    u32_t level);
 
 /**
  *
