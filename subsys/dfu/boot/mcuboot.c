@@ -251,6 +251,11 @@ static int boot_copy_done_read(u32_t bank_offs)
 	return boot_flag_read(BOOT_FLAG_COPY_DONE, bank_offs);
 }
 
+static int boot_copy_done_write(u32_t bank_offs, u8_t data)
+{
+	return boot_flag_write(BOOT_FLAG_COPY_DONE, bank_offs, data);
+}
+
 static int boot_magic_write(u32_t bank_offs)
 {
 	u32_t offs;
@@ -453,6 +458,32 @@ int boot_request_upgrade(int permanent)
 		rc = boot_image_ok_write(FLASH_BANK1_OFFSET, BOOT_FLAG_SET);
 	}
 
+	return rc;
+}
+
+int boot_request_erase(void)
+{
+	static const u32_t boot_img_magic_blank[4] = {
+		0xffffffff,
+		0xffffffff,
+		0xffffffff,
+		0xffffffff,
+	};
+	u32_t offs;
+	int rc;
+
+	offs = MAGIC_OFFS(FLASH_BANK1_OFFSET);
+	rc = boot_flash_write(offs, boot_img_magic_blank, BOOT_MAGIC_SZ);
+	if (rc != 0) {
+		return rc;
+	}
+
+	rc = boot_image_ok_write(FLASH_BANK1_OFFSET, 0xFF);
+	if (rc != 0) {
+		return rc;
+	}
+
+	rc = boot_copy_done_write(FLASH_BANK1_OFFSET, 0xFF);
 	return rc;
 }
 
