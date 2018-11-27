@@ -198,7 +198,7 @@ static int boot_flash_write(off_t offs, const void *data, size_t len)
 	return rc;
 }
 
-static int boot_flag_write(int flag, u32_t bank_offs)
+static int boot_flag_write(int flag, u32_t bank_offs, u8_t data)
 {
 	u8_t buf[FLASH_MIN_WRITE_SIZE];
 	u32_t offs;
@@ -210,7 +210,7 @@ static int boot_flag_write(int flag, u32_t bank_offs)
 	}
 
 	(void)memset(buf, BOOT_FLAG_UNSET, sizeof(buf));
-	buf[0] = BOOT_FLAG_SET;
+	buf[0] = data;
 
 	rc = boot_flash_write(offs, buf, sizeof(buf));
 
@@ -241,9 +241,9 @@ static int boot_image_ok_read(u32_t bank_offs)
 	return boot_flag_read(BOOT_FLAG_IMAGE_OK, bank_offs);
 }
 
-static int boot_image_ok_write(u32_t bank_offs)
+static int boot_image_ok_write(u32_t bank_offs, u8_t data)
 {
-	return boot_flag_write(BOOT_FLAG_IMAGE_OK, bank_offs);
+	return boot_flag_write(BOOT_FLAG_IMAGE_OK, bank_offs, data);
 }
 
 static int boot_copy_done_read(u32_t bank_offs)
@@ -450,7 +450,7 @@ int boot_request_upgrade(int permanent)
 
 	rc = boot_magic_write(FLASH_BANK1_OFFSET);
 	if (rc == 0 && permanent) {
-		rc = boot_image_ok_write(FLASH_BANK1_OFFSET);
+		rc = boot_image_ok_write(FLASH_BANK1_OFFSET, BOOT_FLAG_SET);
 	}
 
 	return rc;
@@ -470,7 +470,7 @@ int boot_write_img_confirmed(void)
 		return 0;
 	}
 
-	rc = boot_image_ok_write(FLASH_BANK0_OFFSET);
+	rc = boot_image_ok_write(FLASH_BANK0_OFFSET, BOOT_FLAG_SET);
 
 	return rc;
 }
