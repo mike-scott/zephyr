@@ -168,6 +168,11 @@ static void sc_ccc_cfg_changed(const struct bt_gatt_attr *attr,
 
 static struct bt_gatt_attr gatt_attrs[] = {
 	BT_GATT_PRIMARY_SERVICE(BT_UUID_GATT),
+	/* Bluetooth 5.0, Vol3 Part G:
+	 * The Service Changed characteristic Attribute Handle on the server
+	 * shall not change if the server has a trusted relationship with any
+	 * client.
+	 */
 	BT_GATT_CHARACTERISTIC(BT_UUID_GATT_SC, BT_GATT_CHRC_INDICATE,
 			       BT_GATT_PERM_NONE, NULL, NULL, NULL),
 	BT_GATT_CCC(sc_ccc_cfg, sc_ccc_cfg_changed),
@@ -336,8 +341,8 @@ void bt_gatt_init(void)
 	}
 
 	/* Register mandatory services */
-	gatt_register(&gap_svc);
 	gatt_register(&gatt_svc);
+	gatt_register(&gap_svc);
 
 	k_delayed_work_init(&gatt_sc.work, sc_process);
 #if defined(CONFIG_BT_SETTINGS_CCC_STORE_ON_WRITE)
@@ -2519,14 +2524,6 @@ int bt_gatt_store_ccc(u8_t id, const bt_addr_le_t *addr)
 
 	bt_gatt_foreach_attr(0x0001, 0xffff, ccc_save, &save);
 
-	str = settings_str_from_bytes(save.store,
-				      save.count * sizeof(*save.store),
-				      val, sizeof(val));
-	if (!str) {
-		BT_ERR("Unable to encode CCC as handle:value");
-		return -EINVAL;
-	}
-
 	if (id) {
 		char id_str[4];
 
@@ -2538,6 +2535,21 @@ int bt_gatt_store_ccc(u8_t id, const bt_addr_le_t *addr)
 				       (bt_addr_le_t *)addr, NULL);
 	}
 
+	if (!save.count) {
+		/* No entries to encode just clear */
+		str = NULL;
+		goto save;
+	}
+
+	str = settings_str_from_bytes(save.store,
+				      save.count * sizeof(*save.store),
+				      val, sizeof(val));
+	if (!str) {
+		BT_ERR("Unable to encode CCC as handle:value");
+		return -EINVAL;
+	}
+
+save:
 	err = settings_save_one(key, str);
 	if (err) {
 		BT_ERR("Failed to store CCCs (err %d)", err);
@@ -2545,7 +2557,7 @@ int bt_gatt_store_ccc(u8_t id, const bt_addr_le_t *addr)
 	}
 
 	BT_DBG("Stored CCCs for %s (%s) val %s", bt_addr_le_str(addr), key,
-	       str);
+	       str ? str : "nill");
 
 	return 0;
 }
@@ -2627,13 +2639,16 @@ static u8_t ccc_load(const struct bt_gatt_attr *attr, void *user_data)
 	BT_DBG("Restoring CCC: handle 0x%04x value 0x%04x", load->entry->handle,
 	       load->entry->value);
 
-	cfg = ccc_find_cfg(ccc, BT_ADDR_LE_ANY);
+	cfg = ccc_find_cfg(ccc, &load->addr);
 	if (!cfg) {
-		BT_DBG("Unable to restore CCC: no cfg left");
-		goto next;
+		cfg = ccc_find_cfg(ccc, BT_ADDR_LE_ANY);
+		if (!cfg) {
+			BT_DBG("Unable to restore CCC: no cfg left");
+			goto next;
+		}
+		bt_addr_le_copy(&cfg->peer, &load->addr);
 	}
 
-	bt_addr_le_copy(&cfg->peer, &load->addr);
 	cfg->value = load->entry->value;
 
 next:

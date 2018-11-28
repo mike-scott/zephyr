@@ -21,18 +21,18 @@ struct led_device_info {
 };
 
 static struct led_device_info led_dev_info[] = {
-	{NULL, LED0_GPIO_CONTROLLER, LED0_GPIO_PIN}, /* green back LED */
-	{NULL, LED1_GPIO_CONTROLLER, LED1_GPIO_PIN}, /* red front LED */
-	{NULL, LED2_GPIO_CONTROLLER, LED2_GPIO_PIN}, /* green front LED */
-	{NULL, LED3_GPIO_CONTROLLER, LED3_GPIO_PIN}, /* blue front LED */
+	{ NULL, LED0_GPIO_CONTROLLER, LED0_GPIO_PIN }, /* green back LED */
+	{ NULL, LED1_GPIO_CONTROLLER, LED1_GPIO_PIN }, /* red front LED */
+	{ NULL, LED2_GPIO_CONTROLLER, LED2_GPIO_PIN }, /* green front LED */
+	{ NULL, LED3_GPIO_CONTROLLER, LED3_GPIO_PIN }, /* blue front LED */
 };
 
 static struct device_info dev_info[] = {
-	{NULL, SW0_GPIO_CONTROLLER},
-	{NULL, DT_HDC1008_NAME},
-	{NULL, DT_FXOS8700_NAME},
-	{NULL, DT_APDS9960_DRV_NAME},
-	{NULL, DT_SSD1673_DEV_NAME},
+	{ NULL, SW0_GPIO_CONTROLLER },
+	{ NULL, DT_HDC1008_NAME },
+	{ NULL, DT_FXOS8700_NAME },
+	{ NULL, DT_APDS9960_DRV_NAME },
+	{ NULL, DT_SSD1673_DEV_NAME },
 };
 
 static void configure_gpios(void)
@@ -60,8 +60,9 @@ static void configure_gpios(void)
 
 int set_led_state(u8_t id, bool state)
 {
+	/* Invert state because of active low state for GPIO LED pins */
 	return gpio_pin_write(led_dev_info[id].dev, led_dev_info[id].pin,
-			      state);
+			      !state);
 }
 
 int get_hdc1010_val(struct sensor_value *val)
@@ -110,14 +111,12 @@ int get_apds9960_val(struct sensor_value *val)
 	}
 
 	if (sensor_channel_get(dev_info[DEV_IDX_APDS9960].dev,
-			       SENSOR_CHAN_LIGHT,
-			       &val[0])) {
+			       SENSOR_CHAN_LIGHT, &val[0])) {
 		return -1;
 	}
 
 	if (sensor_channel_get(dev_info[DEV_IDX_APDS9960].dev,
-			       SENSOR_CHAN_PROX,
-			       &val[1])) {
+			       SENSOR_CHAN_PROX, &val[1])) {
 		return -1;
 	}
 
@@ -146,7 +145,7 @@ int periphs_init(void)
 			return -EBUSY;
 		}
 	}
-	configure_gpios();
 
+	configure_gpios();
 	return 0;
 }

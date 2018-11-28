@@ -50,9 +50,14 @@ static int spi_sam_configure(struct device *dev,
 			     const struct spi_config *config)
 {
 	const struct spi_sam_config *cfg = dev->config->config_info;
+	struct spi_sam_data *data = dev->driver_data;
 	Spi *regs = cfg->regs;
 	u32_t spi_mr = 0, spi_csr = 0;
 	int div;
+
+	if (spi_context_configured(&data->ctx, config)) {
+		return 0;
+	}
 
 	if (SPI_OP_MODE_GET(config->operation) != SPI_OP_MODE_MASTER) {
 		/* Slave mode is not implemented. */
@@ -94,6 +99,10 @@ static int spi_sam_configure(struct device *dev,
 	regs->SPI_MR = spi_mr;
 	regs->SPI_CSR[config->slave] = spi_csr;
 	regs->SPI_CR = SPI_CR_SPIEN; /* Enable SPI */
+
+	spi_context_cs_configure(&data->ctx);
+
+	data->ctx.config = config;
 
 	return 0;
 }
@@ -362,8 +371,6 @@ static int spi_sam_transceive(struct device *dev,
 		goto done;
 	}
 
-	data->ctx.config = config;
-	spi_context_cs_configure(&data->ctx);
 	spi_context_cs_control(&data->ctx, true);
 
 	/* This driver special cases the common send only, receive
@@ -388,6 +395,17 @@ done:
 	return err;
 }
 
+static int spi_sam0_transceive_sync(struct device *dev,
+				    const struct spi_config *config,
+				    const struct spi_buf_set *tx_bufs,
+				    const struct spi_buf_set *rx_bufs)
+{
+	struct spi_sam0_data *data = dev->driver_data;
+
+	spi_context_lock(&data->ctx, false, NULL);
+	return spi_sam0_transceive(dev, config, tx_bufs, rx_bufs);
+}
+
 #ifdef CONFIG_SPI_ASYNC
 static int spi_sam_transceive_async(struct device *dev,
 				     const struct spi_config *config,
@@ -395,7 +413,10 @@ static int spi_sam_transceive_async(struct device *dev,
 				     const struct spi_buf_set *rx_bufs,
 				     struct k_poll_signal *async)
 {
-	return -ENOTSUP;
+	struct spi_sam0_data *data = dev->driver_data;
+
+	spi_context_lock(&data->ctx, true, async);
+	return spi_sam0_transceive(dev, config, tx_bufs, rx_bufs);
 }
 #endif /* CONFIG_SPI_ASYNC */
 
@@ -434,7 +455,7 @@ static int spi_sam_init(struct device *dev)
 }
 
 static const struct spi_driver_api spi_sam_driver_api = {
-	.transceive = spi_sam_transceive,
+	.transceive = spi_sam_transceive_sync,
 #ifdef CONFIG_SPI_ASYNC
 	.transceive_async = spi_sam_transceive_async,
 #endif
@@ -504,4 +525,3 @@ SPI_SAM_DEVICE_INIT(0);
 #if DT_SPI_1_BASE_ADDRESS
 SPI_SAM_DEVICE_INIT(1);
 #endif
-

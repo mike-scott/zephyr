@@ -28,6 +28,7 @@ struct uarte_nrfx_data {
 	uart_irq_callback_user_data_t cb; /**< Callback function pointer */
 	void *cb_data; /**< Callback function arg */
 	u8_t *tx_buffer;
+	volatile bool disable_tx_irq;
 #endif /* UARTE_INTERRUPT_DRIVEN */
 };
 
@@ -82,7 +83,22 @@ static inline NRF_UARTE_Type *get_uarte_instance(struct device *dev)
 static void uarte_nrfx_isr(void *arg)
 {
 	struct device *dev = arg;
-	const struct uarte_nrfx_data *data = get_dev_data(dev);
+	struct uarte_nrfx_data *data = get_dev_data(dev);
+	NRF_UARTE_Type *uarte = get_uarte_instance(dev);
+
+	if (data->disable_tx_irq &&
+	    nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_ENDTX)) {
+		nrf_uarte_int_disable(uarte, NRF_UARTE_INT_ENDTX_MASK);
+
+		/* If there is nothing to send, driver will save an energy
+		 * when TX is stopped.
+		 */
+		nrf_uarte_task_trigger(uarte, NRF_UARTE_TASK_STOPTX);
+
+		data->disable_tx_irq = false;
+
+		return;
+	}
 
 	if (data->cb) {
 		data->cb(data->cb_data);
@@ -275,6 +291,9 @@ static int uarte_nrfx_fifo_fill(struct device *dev,
 	struct uarte_nrfx_data *data = get_dev_data(dev);
 	const struct uarte_nrfx_config *config = get_dev_config(dev);
 
+	if (!nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_ENDTX)) {
+		return 0;
+	}
 
 	if (len > config->tx_buff_size) {
 		len = config->tx_buff_size;
@@ -320,21 +339,18 @@ static int uarte_nrfx_fifo_read(struct device *dev,
 static void uarte_nrfx_irq_tx_enable(struct device *dev)
 {
 	NRF_UARTE_Type *uarte = get_uarte_instance(dev);
+	struct uarte_nrfx_data *data = get_dev_data(dev);
 
 	nrf_uarte_int_enable(uarte, NRF_UARTE_INT_ENDTX_MASK);
+	data->disable_tx_irq = false;
 }
 
 /** Interrupt driven transfer disabling function */
 static void uarte_nrfx_irq_tx_disable(struct device *dev)
 {
-	NRF_UARTE_Type *uarte = get_uarte_instance(dev);
-
-	nrf_uarte_int_disable(uarte, NRF_UARTE_INT_ENDTX_MASK);
-
-	/* If there is nothing to send, driver will save an energy
-	 * when TX is stopped.
-	 */
-	nrf_uarte_task_trigger(uarte, NRF_UARTE_TASK_STOPTX);
+	struct uarte_nrfx_data *data = get_dev_data(dev);
+	/* TX IRQ will be disabled after current transmission is finished */
+	data->disable_tx_irq = true;
 }
 
 /** Interrupt driven transfer ready function */
@@ -342,7 +358,13 @@ static int uarte_nrfx_irq_tx_ready_complete(struct device *dev)
 {
 	NRF_UARTE_Type *uarte = get_uarte_instance(dev);
 
-	return nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_ENDTX);
+	/* ENDTX flag is always on so that ISR is called when we enable TX IRQ.
+	 * Because of that we have to explicitly check if ENDTX interrupt is
+	 * enabled, otherwise this function would always return true no matter
+	 * what would be the source of interrupt.
+	 */
+	return nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_ENDTX) &&
+	       nrf_uarte_int_enable_check(uarte, NRF_UARTE_INT_ENDTX_MASK);
 }
 
 static int uarte_nrfx_irq_rx_ready(struct device *dev)
@@ -502,42 +524,44 @@ static int uarte_instance_init(struct device *dev,
 	return 0;
 }
 
-#define UART_NRF_UARTE_DEVICE(idx)					  \
-	DEVICE_DECLARE(uart_nrfx_uarte##idx);				  \
-	UARTE_##idx##_CREATE_TX_BUFF;					  \
-	static struct uarte_nrfx_data uarte_##idx##_data = {		  \
-		UARTE_##idx##_DATA_INIT					  \
-	};								  \
-	static const struct uarte_nrfx_config uarte_##idx##_config = {	  \
-		.uarte_regs = (NRF_UARTE_Type *)DT_UART_##idx##_BASE, \
-		UARTE_##idx##_CONFIG_INIT				  \
-	};								  \
-	static int uarte_##idx##_init(struct device *dev)		  \
-	{								  \
-		const struct uarte_init_config init_config = {		  \
-			.pseltxd = DT_UART_##idx##_TX_PIN,	  \
-			.pselrxd = DT_UART_##idx##_RX_PIN,	  \
-			UARTE_##idx##_NRF_HWFC_CONFIG			  \
-			.parity = UARTE_##idx##_NRF_PARITY_BIT,		  \
-			.baudrate = DT_UART_##idx##_BAUD_RATE	  \
-		};							  \
-		UARTE_##idx##_INTERRUPTS_INIT();			  \
-		return uarte_instance_init(dev,				  \
-				&init_config,				  \
-				UARTE_##idx##_INTERRUPT_DRIVEN);	  \
-	}								  \
-	DEVICE_AND_API_INIT(uart_nrfx_uarte##idx,			  \
-			DT_UART_##idx##_NAME,			  \
-			uarte_##idx##_init,				  \
-			&uarte_##idx##_data,				  \
-			&uarte_##idx##_config,				  \
-			PRE_KERNEL_1,					  \
-			CONFIG_KERNEL_INIT_PRIORITY_DEVICE,		  \
-			&uart_nrfx_uarte_driver_api)
+#define UART_NRF_UARTE_DEVICE(idx)					       \
+	DEVICE_DECLARE(uart_nrfx_uarte##idx);				       \
+	UARTE_##idx##_CREATE_TX_BUFF;					       \
+	static struct uarte_nrfx_data uarte_##idx##_data = {		       \
+		UARTE_##idx##_DATA_INIT					       \
+	};								       \
+	static const struct uarte_nrfx_config uarte_##idx##_config = {	       \
+		.uarte_regs = (NRF_UARTE_Type *)			       \
+			DT_NORDIC_NRF_UARTE_UART_##idx##_BASE_ADDRESS,	       \
+		UARTE_##idx##_CONFIG_INIT				       \
+	};								       \
+	static int uarte_##idx##_init(struct device *dev)		       \
+	{								       \
+		const struct uarte_init_config init_config = {		       \
+			.pseltxd = DT_NORDIC_NRF_UARTE_UART_##idx##_TX_PIN,    \
+			.pselrxd = DT_NORDIC_NRF_UARTE_UART_##idx##_RX_PIN,    \
+			UARTE_##idx##_NRF_HWFC_CONFIG			       \
+			.parity = UARTE_##idx##_NRF_PARITY_BIT,		       \
+			.baudrate =					       \
+				DT_NORDIC_NRF_UARTE_UART_##idx##_CURRENT_SPEED \
+		};							       \
+		UARTE_##idx##_INTERRUPTS_INIT();			       \
+		return uarte_instance_init(dev,				       \
+				&init_config,				       \
+				UARTE_##idx##_INTERRUPT_DRIVEN);	       \
+	}								       \
+	DEVICE_AND_API_INIT(uart_nrfx_uarte##idx,			       \
+			    DT_NORDIC_NRF_UARTE_UART_##idx##_LABEL,	       \
+			    uarte_##idx##_init,				       \
+			    &uarte_##idx##_data,			       \
+			    &uarte_##idx##_config,			       \
+			    PRE_KERNEL_1,				       \
+			    CONFIG_KERNEL_INIT_PRIORITY_DEVICE,		       \
+			    &uart_nrfx_uarte_driver_api)
 
 #define UARTE_NRF_HWFC_ENABLED(idx)				\
-	.pselcts = DT_UART_##idx##_CTS_PIN,		\
-	.pselrts = DT_UART_##idx##_RTS_PIN,		\
+	.pselcts = DT_NORDIC_NRF_UARTE_UART_##idx##_CTS_PIN,	\
+	.pselrts = DT_NORDIC_NRF_UARTE_UART_##idx##_RTS_PIN,	\
 	.hwfc = NRF_UARTE_HWFC_ENABLED,
 #define UARTE_NRF_HWFC_DISABLED					\
 	.pselcts = NRF_UARTE_PSEL_DISCONNECTED,			\
@@ -546,11 +570,11 @@ static int uarte_instance_init(struct device *dev,
 
 #define UARTE_NRF_IRQ_ENABLED(idx)				\
 	IRQ_CONNECT(NRFX_IRQ_NUMBER_GET(NRF_UARTE##idx),	\
-		DT_UART_##idx##_IRQ_PRI,			\
+		DT_NORDIC_NRF_UARTE_UART_##idx##_IRQ_PRIORITY,	\
 		uarte_nrfx_isr,					\
 		DEVICE_GET(uart_nrfx_uarte##idx),		\
 		0);						\
-	irq_enable(DT_UART_##idx##_IRQ_NUM)
+	irq_enable(DT_NORDIC_NRF_UARTE_UART_##idx##_IRQ)
 
 #define UARTE_TX_BUFFER_SIZE(idx)				\
 	CONFIG_UART_##idx##_NRF_TX_BUFFER_SIZE <		\
@@ -584,10 +608,10 @@ static int uarte_instance_init(struct device *dev,
 
 	#ifdef CONFIG_UART_0_NRF_FLOW_CONTROL
 		#define UARTE_0_NRF_HWFC_CONFIG	       UARTE_NRF_HWFC_ENABLED(0)
-		#ifndef DT_UART_0_RTS_PIN
+		#ifndef DT_NORDIC_NRF_UARTE_UART_0_RTS_PIN
 		#error Flow control for UARTE0 is enabled, but RTS pin is not defined.
 		#endif
-		#ifndef DT_UART_0_CTS_PIN
+		#ifndef DT_NORDIC_NRF_UARTE_UART_0_CTS_PIN
 		#error Flow control for UARTE0 is enabled, but CTS pin is not defined.
 		#endif
 	#else
@@ -620,10 +644,10 @@ static int uarte_instance_init(struct device *dev,
 
 	#ifdef CONFIG_UART_1_NRF_FLOW_CONTROL
 		#define UARTE_1_NRF_HWFC_CONFIG	       UARTE_NRF_HWFC_ENABLED(1)
-		#ifndef DT_UART_1_RTS_PIN
+		#ifndef DT_NORDIC_NRF_UARTE_UART_1_RTS_PIN
 		#error Flow control for UARTE1 is enabled, but RTS pin is not defined.
 		#endif
-		#ifndef DT_UART_1_CTS_PIN
+		#ifndef DT_NORDIC_NRF_UARTE_UART_1_CTS_PIN
 		#error Flow control for UARTE1 is enabled, but CTS pin is not defined.
 		#endif
 	#else

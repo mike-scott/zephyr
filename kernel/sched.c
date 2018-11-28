@@ -206,19 +206,26 @@ static struct k_thread *next_up(void)
 static int slice_time;
 static int slice_max_prio;
 
+/* Subtle note on locking here: in theory we're subject to a race
+ * where _get_next_timeout_expiry() returns a value that changes
+ * between the return and the z_clock_set_timeout() of the adjusted
+ * time: another context can add a new timeout that should expire
+ * sooner, and we'll miss it.  But that's OK, because (1) we're inside
+ * the scheduler lock, so cannot be interrupted on uniprocessor
+ * systems, and (2) it's an interrupt time for our local CPU -- in
+ * SMP, it's safe to miss a timeout as long as another CPU (i.e. the
+ * one we're racing against) is available to wake up at the
+ * appropriate time.
+ */
 static void reset_time_slice(void)
 {
-	int to = _get_next_timeout_expiry();
-
 	/* Add the elapsed time since the last announced tick to the
 	 * slice count, as we'll see those "expired" ticks arrive in a
 	 * FUTURE z_time_slice() call.
 	 */
 	_current_cpu->slice_ticks = slice_time + z_clock_elapsed();
 
-	if (to == K_FOREVER || slice_time < to) {
-		z_clock_set_timeout(slice_time, false);
-	}
+	z_set_timeout_expiry(slice_time, false);
 }
 
 void k_sched_time_slice_set(s32_t duration_in_ms, int prio)
