@@ -3,6 +3,7 @@
 #
 # Copyright (c) 2014-2015 Wind River Systems, Inc.
 # Copyright (c) 2016 Intel Corporation
+# Copyright (c) 2018 Nordic Semiconductor ASA
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -52,13 +53,6 @@ config SHELL_STACK_SIZE
 	default 0 if !MULTITHREADING
 	help
 	  Stack size for thread created for each instance.
-
-config SHELL_THREAD_PRIO
-	int "Shell thread priority"
-	depends on MULTITHREADING
-	default -2
-	help
-	  Shell thread priority.
 
 config SHELL_BACKSPACE_MODE_DELETE
 	bool "Default escape code for backspace is DELETE (0x7F)"

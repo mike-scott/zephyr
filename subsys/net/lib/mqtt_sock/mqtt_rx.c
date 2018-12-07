@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_mqtt_rx
-#define NET_LOG_LEVEL CONFIG_MQTT_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_mqtt_rx, CONFIG_MQTT_LOG_LEVEL);
 
 #include "mqtt_internal.h"
 #include "mqtt_transport.h"
@@ -232,7 +232,7 @@ static int mqtt_read_and_parse_fixed_header(struct mqtt_client *client,
 
 		/* Reset to pointer to the beginning of the frame. */
 		buf->cur = client->rx_buf;
-		chunk_size = 1;
+		chunk_size = 1U;
 
 		err_code = fixed_header_decode(buf, type_and_flags, var_length);
 	} while (err_code == -EAGAIN);

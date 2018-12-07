@@ -9,8 +9,8 @@
  * @brief MQTT Client API Implementation.
  */
 
-#define LOG_MODULE_NAME net_mqtt
-#define NET_LOG_LEVEL CONFIG_MQTT_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_mqtt, CONFIG_MQTT_LOG_LEVEL);
 
 #include <net/mqtt.h>
 
@@ -185,16 +185,14 @@ int mqtt_connect(struct mqtt_client *client)
 	}
 
 	err_code = client_connect(client);
-	if (err_code < 0) {
-		err_code = -ECONNREFUSED;
-		goto error;
-	}
-
-	return 0;
 
 error:
-	client_reset(client);
+	if (err_code < 0) {
+		client_reset(client);
+	}
+
 	mqtt_mutex_unlock(client);
+
 	return err_code;
 }
 

@@ -9,8 +9,8 @@
  * @brief Internal functions to handle transport over TLS socket.
  */
 
-#define LOG_MODULE_NAME net_mqtt_sock_tls
-#define NET_LOG_LEVEL CONFIG_MQTT_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_mqtt_sock_tls, CONFIG_MQTT_LOG_LEVEL);
 
 #include <errno.h>
 #include <net/socket.h>
@@ -104,7 +104,7 @@ error:
 int mqtt_client_tls_write(struct mqtt_client *client, const u8_t *data,
 			  u32_t datalen)
 {
-	u32_t offset = 0;
+	u32_t offset = 0U;
 	int ret;
 
 	while (offset < datalen) {

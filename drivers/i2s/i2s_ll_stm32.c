@@ -99,6 +99,7 @@ static int i2s_stm32_enable_clock(struct device *dev)
 
 	ret = clock_control_on(clk, (clock_control_subsys_t *) &cfg->pclken);
 	if (ret != 0) {
+		LOG_ERR("Could not enable I2S clock");
 		return -EIO;
 	}
 
@@ -775,7 +776,7 @@ static void tx_queue_drop(struct stream *stream)
 {
 	size_t size;
 	void *mem_block;
-	unsigned int n = 0;
+	unsigned int n = 0U;
 
 	while (queue_get(&stream->mem_block_queue, &mem_block, &size) == 0) {
 		k_mem_slab_free(stream->cfg.mem_slab, &mem_block);

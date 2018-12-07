@@ -71,8 +71,10 @@ endforeach()
 
 if("${ZEPHYR_TOOLCHAIN_VARIANT}" STREQUAL "xcc")
 
-  LIST(APPEND TOOLCHAIN_LIBS gcc)
-  LIST(APPEND TOOLCHAIN_LIBS hal)
+  list(APPEND TOOLCHAIN_LIBS
+	gcc
+	hal
+	)
 
 else()
   include(${ZEPHYR_BASE}/cmake/gcc-m-cpu.cmake)
@@ -82,15 +84,22 @@ else()
       -mthumb
       -mcpu=${GCC_M_CPU}
       )
+    list(APPEND TOOLCHAIN_LD_FLAGS
+      -mthumb
+      -mcpu=${GCC_M_CPU}
+      )
 
     include(${ZEPHYR_BASE}/cmake/fpu-for-gcc-m-cpu.cmake)
 
     if(CONFIG_FLOAT)
       list(APPEND TOOLCHAIN_C_FLAGS -mfpu=${FPU_FOR_${GCC_M_CPU}})
+      list(APPEND TOOLCHAIN_LD_FLAGS -mfpu=${FPU_FOR_${GCC_M_CPU}})
       if    (CONFIG_FP_SOFTABI)
         list(APPEND TOOLCHAIN_C_FLAGS -mfloat-abi=softfp)
+        list(APPEND TOOLCHAIN_LD_FLAGS -mfloat-abi=softfp)
       elseif(CONFIG_FP_HARDABI)
         list(APPEND TOOLCHAIN_C_FLAGS -mfloat-abi=hard)
+        list(APPEND TOOLCHAIN_LD_FLAGS -mfloat-abi=hard)
       endif()
     endif()
   elseif("${ARCH}" STREQUAL "arc")

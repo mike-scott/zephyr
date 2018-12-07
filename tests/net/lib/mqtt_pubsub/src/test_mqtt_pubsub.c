@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_test
-#define NET_LOG_LEVEL LOG_LEVEL_WRN
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_test, LOG_LEVEL_WRN);
 
 #include <ztest.h>
 #include <net/socket.h>
@@ -102,7 +102,7 @@ void publish_handler(struct mqtt_client *const client,
 {
 	int rc;
 	u8_t buf[16];
-	u32_t offset = 0;
+	u32_t offset = 0U;
 
 	if (evt->result != 0) {
 		TC_PRINT("MQTT PUBLISH error: %d\n", evt->result);

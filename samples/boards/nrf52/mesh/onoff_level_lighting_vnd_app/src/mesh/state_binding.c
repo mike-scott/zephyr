@@ -147,28 +147,30 @@ void state_binding(u8_t lightness, u8_t temperature)
 		break;
 	}
 
-	tmp16 = 0;
+	tmp16 = 0U;
 
 	switch (lightness) {
 	case ONPOWERUP: /* Lightness update as per Generic OnPowerUp state */
 		if (gen_onoff_srv_root_user_data.onoff == STATE_OFF) {
-			light_lightness_srv_user_data.actual = 0;
-			light_lightness_srv_user_data.linear = 0;
+			light_lightness_srv_user_data.actual = 0U;
+			light_lightness_srv_user_data.linear = 0U;
 			gen_level_srv_root_user_data.level = -32768;
-			light_ctl_srv_user_data.lightness = 0;
+			light_ctl_srv_user_data.lightness = 0U;
 			return;
 		} else if (gen_onoff_srv_root_user_data.onoff == STATE_ON) {
 			light_lightness_srv_user_data.actual =
 				light_lightness_srv_user_data.last;
 		}
 
+		constrain_light_actual_state(light_lightness_srv_user_data.actual);
+
 		break;
 	case ONOFF: /* Lightness update as per Generic OnOff (root) state */
 		if (gen_onoff_srv_root_user_data.onoff == STATE_OFF) {
-			light_lightness_srv_user_data.actual = 0;
-			light_lightness_srv_user_data.linear = 0;
+			light_lightness_srv_user_data.actual = 0U;
+			light_lightness_srv_user_data.linear = 0U;
 			gen_level_srv_root_user_data.level = -32768;
-			light_ctl_srv_user_data.lightness = 0;
+			light_ctl_srv_user_data.lightness = 0U;
 			return;
 		} else if (gen_onoff_srv_root_user_data.onoff == STATE_ON) {
 			if (light_lightness_srv_user_data.def == 0) {
@@ -179,6 +181,8 @@ void state_binding(u8_t lightness, u8_t temperature)
 					light_lightness_srv_user_data.def;
 			}
 		}
+
+		constrain_light_actual_state(light_lightness_srv_user_data.actual);
 
 		break;
 	case LEVEL: /* Lightness update as per Generic Level (root) state */
@@ -192,7 +196,7 @@ void state_binding(u8_t lightness, u8_t temperature)
 		if (tmp16 > 0 &&
 		    tmp16 < light_lightness_srv_user_data.light_range_min) {
 			if (gen_level_srv_root_user_data.last_delta < 0) {
-				tmp16 = 0;
+				tmp16 = 0U;
 			} else {
 				tmp16 =
 				light_lightness_srv_user_data.light_range_min;
@@ -258,7 +262,7 @@ void calculate_lightness_target_values(u8_t type)
 	switch (type) {
 	case ONOFF:
 		if (gen_onoff_srv_root_user_data.target_onoff == 0) {
-			tmp16 = 0;
+			tmp16 = 0U;
 		} else {
 			if (light_lightness_srv_user_data.def == 0) {
 				tmp16 = light_lightness_srv_user_data.last;
@@ -335,9 +339,6 @@ void calculate_temp_target_values(u8_t type)
 
 		gen_level_srv_s0_user_data.target_level = (s16_t)
 		light_ctl_temp_to_level(light_ctl_srv_user_data.target_temp);
-
-		light_ctl_srv_user_data.target_lightness =
-			light_ctl_srv_user_data.lightness;
 		break;
 	default:
 		return;

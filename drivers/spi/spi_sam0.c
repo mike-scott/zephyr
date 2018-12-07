@@ -131,7 +131,7 @@ static void spi_sam0_shift_master(SercomSpi *regs, struct spi_sam0_data *data)
 	if (spi_context_tx_buf_on(&data->ctx)) {
 		tx = *(u8_t *)(data->ctx.tx_buf);
 	} else {
-		tx = 0;
+		tx = 0U;
 	}
 
 	while (!regs->INTFLAG.bit.DRE) {
@@ -228,7 +228,7 @@ static void spi_sam0_fast_txrx(SercomSpi *regs,
 	u8_t *rx = rx_buf->buf;
 	size_t len = rx_buf->len;
 
-	if (len <= 0) {
+	if (len == 0) {
 		return;
 	}
 

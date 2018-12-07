@@ -19,6 +19,7 @@
 
 #include <bluetooth/hci.h>
 #include <bluetooth/bluetooth.h>
+#include <bluetooth/conn.h>
 #include <bluetooth/uuid.h>
 #include <bluetooth/gatt.h>
 #include <bluetooth/hci_driver.h>
@@ -188,7 +189,7 @@ static int gatt_register(struct bt_gatt_service *svc)
 	u16_t count = svc->attr_count;
 
 	if (sys_slist_is_empty(&db)) {
-		handle = 0;
+		handle = 0U;
 		goto populate;
 	}
 
@@ -265,8 +266,8 @@ static void sc_process(struct k_work *work)
 	sc_range[1] = sys_cpu_to_le16(sc->end);
 
 	atomic_clear_bit(sc->flags, SC_RANGE_CHANGED);
-	sc->start = 0;
-	sc->end = 0;
+	sc->start = 0U;
+	sc->end = 0U;
 
 	sc->params.attr = &gatt_attrs[2];
 	sc->params.func = sc_indicate_rsp;
@@ -289,12 +290,12 @@ static struct gatt_ccc_store {
 
 static bool gatt_ccc_conn_is_queued(struct bt_conn *conn)
 {
-	return (conn == gatt_ccc_store.conn_list[bt_conn_get_id(conn)]);
+	return (conn == gatt_ccc_store.conn_list[bt_conn_index(conn)]);
 }
 
 static void gatt_ccc_conn_unqueue(struct bt_conn *conn)
 {
-	u8_t index = bt_conn_get_id(conn);
+	u8_t index = bt_conn_index(conn);
 
 	if (gatt_ccc_store.conn_list[index] != NULL) {
 		bt_conn_unref(gatt_ccc_store.conn_list[index]);
@@ -727,7 +728,7 @@ ssize_t bt_gatt_attr_write_ccc(struct bt_conn *conn,
 			/* Store the connection with the same index it has in
 			 * the conns array
 			 */
-			gatt_ccc_store.conn_list[bt_conn_get_id(conn)] =
+			gatt_ccc_store.conn_list[bt_conn_index(conn)] =
 				bt_conn_ref(conn);
 			k_delayed_work_submit(&gatt_ccc_store.work,
 					      CCC_STORE_DELAY);
@@ -1293,7 +1294,7 @@ static void gatt_find_type_rsp(struct bt_conn *conn, u8_t err,
 	const struct bt_att_find_type_rsp *rsp = pdu;
 	struct bt_gatt_discover_params *params = user_data;
 	u8_t i;
-	u16_t end_handle = 0, start_handle;
+	u16_t end_handle = 0U, start_handle;
 
 	BT_DBG("err 0x%02x", err);
 
@@ -1302,7 +1303,7 @@ static void gatt_find_type_rsp(struct bt_conn *conn, u8_t err,
 	}
 
 	/* Parse attributes found */
-	for (i = 0; length >= sizeof(rsp->list[i]);
+	for (i = 0U; length >= sizeof(rsp->list[i]);
 	     i++, length -=  sizeof(rsp->list[i])) {
 		struct bt_gatt_attr attr = {};
 		struct bt_gatt_service_val value;
@@ -1457,7 +1458,7 @@ static u16_t parse_include(struct bt_conn *conn, const void *pdu,
 			   u16_t length)
 {
 	const struct bt_att_read_type_rsp *rsp = pdu;
-	u16_t handle = 0;
+	u16_t handle = 0U;
 	struct bt_gatt_include value;
 	union {
 		struct bt_uuid uuid;
@@ -1555,7 +1556,7 @@ static u16_t parse_characteristic(struct bt_conn *conn, const void *pdu,
 				  u16_t length)
 {
 	const struct bt_att_read_type_rsp *rsp = pdu;
-	u16_t handle = 0;
+	u16_t handle = 0U;
 	union {
 		struct bt_uuid uuid;
 		struct bt_uuid_16 u16;
@@ -1683,7 +1684,7 @@ static u16_t parse_service(struct bt_conn *conn, const void *pdu,
 				  u16_t length)
 {
 	const struct bt_att_read_group_rsp *rsp = pdu;
-	u16_t start_handle, end_handle = 0;
+	u16_t start_handle, end_handle = 0U;
 	union {
 		struct bt_uuid uuid;
 		struct bt_uuid_16 u16;
@@ -1815,7 +1816,7 @@ static void gatt_find_info_rsp(struct bt_conn *conn, u8_t err,
 {
 	const struct bt_att_find_info_rsp *rsp = pdu;
 	struct bt_gatt_discover_params *params = user_data;
-	u16_t handle = 0;
+	u16_t handle = 0U;
 	u8_t len;
 	union {
 		const struct bt_att_info_16 *i16;
@@ -2036,7 +2037,7 @@ static int gatt_read_multiple(struct bt_conn *conn,
 		return -ENOMEM;
 	}
 
-	for (i = 0; i < params->handle_count; i++) {
+	for (i = 0U; i < params->handle_count; i++) {
 		net_buf_add_le16(buf, params->handles[i]);
 	}
 
@@ -2562,6 +2563,29 @@ save:
 	return 0;
 }
 
+static u8_t remove_peer_from_attr(const struct bt_gatt_attr *attr,
+				       void *user_data)
+{
+	const bt_addr_le_t *peer = user_data;
+	struct _bt_gatt_ccc *ccc;
+	struct bt_gatt_ccc_cfg *cfg;
+
+	/* Check if attribute is a CCC */
+	if (attr->write != bt_gatt_attr_write_ccc) {
+		return BT_GATT_ITER_CONTINUE;
+	}
+
+	ccc = attr->user_data;
+
+	/* Check if there is a cfg for the peer */
+	cfg = ccc_find_cfg(ccc, peer);
+	if (cfg) {
+		memset(cfg, 0, sizeof(*cfg));
+	}
+
+	return BT_GATT_ITER_CONTINUE;
+}
+
 int bt_gatt_clear_ccc(u8_t id, const bt_addr_le_t *addr)
 {
 	char key[BT_SETTINGS_KEY_MAX];
@@ -2576,6 +2600,9 @@ int bt_gatt_clear_ccc(u8_t id, const bt_addr_le_t *addr)
 		bt_settings_encode_key(key, sizeof(key), "ccc",
 				       (bt_addr_le_t *)addr, NULL);
 	}
+
+	bt_gatt_foreach_attr(0x0001, 0xffff, remove_peer_from_attr,
+			     (void *)addr);
 
 	return settings_save_one(key, NULL);
 }

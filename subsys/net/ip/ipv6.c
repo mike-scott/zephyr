@@ -8,13 +8,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_ipv6
-#define NET_LOG_LEVEL CONFIG_NET_IPV6_LOG_LEVEL
-
 /* By default this prints too much data, set the value to 1 to see
  * neighbor cache contents.
  */
 #define NET_DEBUG_NBR 0
+
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_ipv6, CONFIG_NET_IPV6_LOG_LEVEL);
 
 #include <errno.h>
 #include <stdlib.h>
@@ -150,22 +150,16 @@ static inline enum net_verdict process_icmpv6_pkt(struct net_pkt *pkt,
 						  struct net_ipv6_hdr *ipv6)
 {
 	struct net_icmp_hdr icmp_hdr;
-	u16_t chksum;
 	int ret;
+
+	if (net_calc_chksum_icmpv6(pkt) != 0) {
+		NET_DBG("DROP: ICMPv6 invalid checksum");
+		return NET_DROP;
+	}
 
 	ret = net_icmpv6_get_hdr(pkt, &icmp_hdr);
 	if (ret < 0) {
 		NET_DBG("NULL ICMPv6 header - dropping");
-		return NET_DROP;
-	}
-
-	chksum = icmp_hdr.chksum;
-	net_icmpv6_set_chksum(pkt);
-	(void)net_icmpv6_get_hdr(pkt, &icmp_hdr);
-
-	if (chksum != icmp_hdr.chksum) {
-		NET_DBG("ICMPv6 invalid checksum (0x%04x instead of 0x%04x)",
-			ntohs(chksum), ntohs(icmp_hdr.chksum));
 		return NET_DROP;
 	}
 
@@ -226,7 +220,7 @@ static inline struct net_buf *handle_ext_hdr_options(struct net_pkt *pkt,
 						     enum net_verdict *verdict)
 {
 	u8_t opt_type, opt_len;
-	u16_t length = 0, loc;
+	u16_t length = 0U, loc;
 #if defined(CONFIG_NET_RPL)
 	bool result;
 #endif
@@ -443,13 +437,16 @@ enum net_verdict net_ipv6_process_pkt(struct net_pkt *pkt, bool is_loopback)
 	u8_t first_option;
 	u16_t offset;
 	u16_t length;
-	u16_t total_len = 0;
+	u16_t total_len = 0U;
 	u8_t ext_bitmap;
 
-	if (real_len != pkt_len) {
+	if (real_len < pkt_len) {
 		NET_DBG("IPv6 packet size %d pkt len %d", pkt_len, real_len);
 		net_stats_update_ipv6_drop(net_pkt_iface(pkt));
 		goto drop;
+	} else if (real_len > pkt_len) {
+		net_pkt_pull(pkt, pkt_len, real_len - pkt_len);
+		real_len = net_pkt_get_len(pkt);
 	}
 
 	NET_DBG("IPv6 packet len %d received from %s to %s", real_len,
@@ -536,9 +533,9 @@ enum net_verdict net_ipv6_process_pkt(struct net_pkt *pkt, bool is_loopback)
 	frag = pkt->frags;
 	next = hdr->nexthdr;
 	first_option = next;
-	length = 0;
-	ext_bitmap = 0;
-	start_of_ext = 0;
+	length = 0U;
+	ext_bitmap = 0U;
+	start_of_ext = 0U;
 	offset = sizeof(struct net_ipv6_hdr);
 	prev_hdr = &NET_IPV6_HDR(pkt)->nexthdr - &NET_IPV6_HDR(pkt)->vtc;
 

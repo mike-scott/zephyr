@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define NET_LOG_LEVEL CONFIG_OPENTHREAD_L2_LOG_LEVEL
-#define LOG_MODULE_NAME net_l2_openthread_utils
+#include <logging/log.h>
+LOG_MODULE_DECLARE(net_l2_openthread, CONFIG_OPENTHREAD_L2_LOG_LEVEL);
 
 #include <net/net_core.h>
 #include <net/net_pkt.h>
@@ -25,7 +25,7 @@ int pkt_list_add(struct openthread_context *context, struct net_pkt *pkt)
 
 	i_idx++;
 	if (i_idx == CONFIG_OPENTHREAD_PKT_LIST_SIZE) {
-		i_idx = 0;
+		i_idx = 0U;
 	}
 
 	if (i_idx == context->pkt_list_out_idx) {

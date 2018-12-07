@@ -19,6 +19,10 @@
 #include <arch/arc/v2/mpu/arc_core_mpu.h>
 #endif
 
+#if defined(CONFIG_ARM)
+#include <arch/arm/cortex_m/mpu/arm_core_mpu_dev.h>
+#endif
+
 #define INFO(fmt, ...) printk(fmt, ##__VA_ARGS__)
 #define PIPE_LEN 1
 #define BYTES_TO_READ_WRITE 1
@@ -502,7 +506,7 @@ static void write_other_stack(void)
 	expect_fault = true;
 	expected_reason = REASON_HW_EXCEPTION;
 	BARRIER();
-	*ptr = 0;
+	*ptr = 0U;
 
 	/* Shouldn't be reached, but if so, let the other thread exit */
 	if (give_uthread_end_sem) {

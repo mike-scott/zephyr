@@ -153,7 +153,6 @@ struct wncm14a2a_socket {
 	struct sockaddr dst;
 
 	int socket_id;
-	bool socket_reading;
 
 	/** semaphore */
 	struct k_sem sock_send_sem;
@@ -425,13 +424,13 @@ static void net_buf_skipcrlf(struct net_buf **buf)
 static u16_t net_buf_findcrlf(struct net_buf *buf, struct net_buf **frag,
 			      u16_t *offset)
 {
-	u16_t len = 0, pos = 0;
+	u16_t len = 0U, pos = 0U;
 
 	while (buf && !is_crlf(*(buf->data + pos))) {
 		if (pos + 1 >= buf->len) {
 			len += buf->len;
 			buf = buf->frags;
-			pos = 0;
+			pos = 0U;
 		} else {
 			pos++;
 		}
@@ -458,7 +457,7 @@ static int net_pkt_setup_ip_data(struct net_pkt *pkt,
 				  struct wncm14a2a_socket *sock)
 {
 	int hdr_len = 0;
-	u16_t src_port = 0, dst_port = 0;
+	u16_t src_port = 0U, dst_port = 0U;
 
 #if defined(CONFIG_NET_IPV6)
 	if (net_pkt_family(pkt) == AF_INET6) {
@@ -768,7 +767,7 @@ static void on_cmd_sockread(struct net_buf **buf, u16_t len)
 {
 	struct wncm14a2a_socket *sock = NULL;
 	struct net_buf *frag;
-	u8_t c = 0;
+	u8_t c = 0U;
 	u16_t pos;
 	int i, actual_length, hdr_len = 0;
 	size_t value_size;
@@ -826,7 +825,7 @@ static void on_cmd_sockread(struct net_buf **buf, u16_t len)
 	sock->recv_pkt = net_pkt_get_rx(sock->context, BUF_ALLOC_TIMEOUT);
 	if (!sock->recv_pkt) {
 		LOG_ERR("Failed net_pkt_get_reserve_rx!");
-		goto cleanup;
+		return;
 	}
 
 	/* set pkt data */
@@ -839,7 +838,7 @@ static void on_cmd_sockread(struct net_buf **buf, u16_t len)
 		LOG_ERR("Failed net_pkt_get_frag!");
 		net_pkt_unref(sock->recv_pkt);
 		sock->recv_pkt = NULL;
-		goto cleanup;
+		return;
 	}
 
 	net_pkt_frag_add(sock->recv_pkt, frag);
@@ -866,10 +865,10 @@ static void on_cmd_sockread(struct net_buf **buf, u16_t len)
 				LOG_ERR("Unable to add data! Aborting!");
 				net_pkt_unref(sock->recv_pkt);
 				sock->recv_pkt = NULL;
-				goto cleanup;
+				return;
 			}
 
-			c = 0;
+			c = 0U;
 		} else {
 			c = c << 4;
 		}
@@ -896,9 +895,6 @@ static void on_cmd_sockread(struct net_buf **buf, u16_t len)
 	 * case the app takes a long time.
 	 */
 	k_work_submit_to_queue(&wncm14a2a_workq, &sock->recv_cb_work);
-
-cleanup:
-	sock->socket_reading = false;
 }
 
 /* Handler: @SOCKDATAIND: <socket_id>,<session_status>,<left_bytes> */
@@ -946,23 +942,19 @@ static void on_cmd_sockdataind(struct net_buf **buf, u16_t len)
 	}
 
 	if (left_bytes > 0) {
-		if (!sock->socket_reading) {
-			LOG_DBG("socket_id:%d left_bytes:%d",
-				    socket_id, left_bytes);
+		LOG_DBG("socket_id:%d left_bytes:%d", socket_id, left_bytes);
+		snprintk(sendbuf, sizeof(sendbuf), "AT@SOCKREAD=%d,%d",
+			 sock->socket_id, left_bytes);
 
-			/* TODO: add a timeout to unset this */
-			sock->socket_reading = true;
-			snprintk(sendbuf, sizeof(sendbuf), "AT@SOCKREAD=%d,%d",
-				 sock->socket_id, left_bytes);
-
-			/* We still have a lock from hitting this cmd trigger,
-			 * so don't hold one when we send the new command
-			 */
-			send_at_cmd(sock, sendbuf, K_NO_WAIT);
-		} else {
-			LOG_DBG("SKIPPING socket_id:%d left_bytes:%d",
-				    socket_id, left_bytes);
-		}
+		/* We entered this trigger due to an unsolicited modem response.
+		 * When we send the AT@SOCKREAD command it won't generate an
+		 * "OK" response directly.  The modem will respond with
+		 * "@SOCKREAD ..." and the data requested and then "OK" or
+		 * "ERROR".  Let's not wait here by passing in a timeout to
+		 * send_at_cmd().  Instead, when the resulting response is
+		 * received, we trigger on_cmd_sockread() to handle it.
+		 */
+		send_at_cmd(sock, sendbuf, K_NO_WAIT);
 	}
 }
 
@@ -1027,7 +1019,7 @@ static void on_cmd_socknotifyev(struct net_buf **buf, u16_t len)
 static int net_buf_ncmp(struct net_buf *buf, const u8_t *s2, size_t n)
 {
 	struct net_buf *frag = buf;
-	u16_t offset = 0;
+	u16_t offset = 0U;
 
 	while ((n > 0) && (*(frag->data + offset) == *s2) && (*s2 != '\0')) {
 		if (offset == frag->len) {
@@ -1035,7 +1027,7 @@ static int net_buf_ncmp(struct net_buf *buf, const u8_t *s2, size_t n)
 				break;
 			}
 			frag = frag->frags;
-			offset = 0;
+			offset = 0U;
 		} else {
 			offset++;
 		}
@@ -1829,7 +1821,6 @@ static void offload_iface_init(struct net_if *iface)
 
 static struct net_if_api api_funcs = {
 	.init	= offload_iface_init,
-	.send	= NULL,
 };
 
 NET_DEVICE_OFFLOAD_INIT(modem_wncm14a2a, "MODEM_WNCM14A2A",

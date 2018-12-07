@@ -4,10 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#if defined(CONFIG_NET_DEBUG_COAP_SOCK)
-#define SYS_LOG_DOMAIN "coap"
-#define NET_LOG_ENABLED 1
-#endif
+#include <logging/log.h>
+LOG_MODULE_DECLARE(net_coap, CONFIG_COAP_LOG_LEVEL);
 
 #include <stdlib.h>
 #include <stddef.h>
@@ -221,7 +219,7 @@ static bool append_to_coap_pkt(struct coap_packet *response,
 			       u16_t *remaining, size_t *offset,
 			       size_t current)
 {
-	u16_t pos = 0;
+	u16_t pos = 0U;
 	bool res;
 
 	if (!*remaining) {
@@ -422,7 +420,7 @@ int clear_more_flag(struct coap_packet *cpkt)
 	u8_t len;
 
 	offset = cpkt->hdr_len;
-	delta = 0;
+	delta = 0U;
 
 	while (1) {
 		opt = cpkt->data[offset++];
@@ -504,7 +502,7 @@ int coap_well_known_core_get(struct coap_resource *resource,
 		goto end;
 	}
 
-	format = 40; /* application/link-format */
+	format = 40U; /* application/link-format */
 
 	r = coap_packet_append_option(response, COAP_OPTION_CONTENT_FORMAT,
 				      &format, sizeof(format));
@@ -688,7 +686,7 @@ int coap_well_known_core_get(struct coap_resource *resource,
 		return r;
 	}
 
-	format = 40; /* application/link-format */
+	format = 40U; /* application/link-format */
 	r = coap_packet_append_option(response, COAP_OPTION_CONTENT_FORMAT,
 				      &format, sizeof(format));
 	if (r < 0) {

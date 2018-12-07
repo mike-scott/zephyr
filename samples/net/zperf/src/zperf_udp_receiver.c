@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_zperf_udp_recv
-#define NET_LOG_LEVEL LOG_LEVEL_DBG
+#include <logging/log.h>
+LOG_MODULE_DECLARE(net_zperf_sample, LOG_LEVEL_DBG);
 
 #include <linker/sections.h>
 #include <toolchain.h>
@@ -26,17 +26,8 @@
 #define NET_LOG_ENABLED 1
 #include "net_private.h"
 
-#define RX_THREAD_STACK_SIZE 1024
-#define MY_SRC_PORT 50001
-
-/* Static data */
-static K_THREAD_STACK_DEFINE(zperf_rx_stack, RX_THREAD_STACK_SIZE);
-static struct k_thread zperf_rx_thread_data;
-
 static struct sockaddr_in6 *in6_addr_my;
 static struct sockaddr_in *in4_addr_my;
-
-#define MAX_DBG_PRINT 64
 
 static inline void set_dst_addr(const struct shell *shell,
 				sa_family_t family,
@@ -255,7 +246,7 @@ static void udp_received(struct net_context *context,
 				  (u64_t)USEC_PER_SEC) /
 				 ((u64_t)duration * 1024));
 		} else {
-			rate_in_kbps = 0;
+			rate_in_kbps = 0U;
 
 			/* Fill statistics */
 			session->stat.flags = 0x80000000;
@@ -309,12 +300,19 @@ static void udp_received(struct net_context *context,
 	}
 }
 
-/* RX thread entry point */
-static void zperf_rx_thread(const struct shell *shell, int port)
+void zperf_udp_receiver_init(const struct shell *shell, int port)
 {
 	struct net_context *context4 = NULL;
 	struct net_context *context6 = NULL;
 	int ret;
+
+	if (IS_ENABLED(CONFIG_NET_IPV6)) {
+		in6_addr_my = zperf_get_sin6();
+	}
+
+	if (IS_ENABLED(CONFIG_NET_IPV4)) {
+		in4_addr_my = zperf_get_sin();
+	}
 
 	if (IS_ENABLED(CONFIG_NET_IPV4) && MY_IP4ADDR) {
 		ret = net_context_get(AF_INET, SOCK_DGRAM, IPPROTO_UDP,
@@ -410,23 +408,4 @@ static void zperf_rx_thread(const struct shell *shell, int port)
 
 	shell_fprintf(shell, SHELL_NORMAL,
 		      "Listening on port %d\n", port);
-
-	k_sleep(K_FOREVER);
-}
-
-void zperf_receiver_init(const struct shell *shell, int port)
-{
-	if (IS_ENABLED(CONFIG_NET_IPV6)) {
-		in6_addr_my = zperf_get_sin6();
-	}
-
-	if (IS_ENABLED(CONFIG_NET_IPV4)) {
-		in4_addr_my = zperf_get_sin();
-	}
-
-	k_thread_create(&zperf_rx_thread_data, zperf_rx_stack,
-			K_THREAD_STACK_SIZEOF(zperf_rx_stack),
-			(k_thread_entry_t)zperf_rx_thread,
-			(void *)shell, INT_TO_POINTER(port), 0,
-			K_PRIO_COOP(7), 0, K_NO_WAIT);
 }

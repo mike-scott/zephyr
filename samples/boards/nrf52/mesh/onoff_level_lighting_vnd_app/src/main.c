@@ -166,14 +166,14 @@ static void light_default_status_init(void)
 
 static void unsolicitedly_publish_states_work_handler(struct k_work *work)
 {
-	gen_onoff_publisher(&root_models[2]);
-	gen_level_publisher(&root_models[4]);
-	light_lightness_publisher(&root_models[11]);
-	light_lightness_linear_publisher(&root_models[11]);
-	light_ctl_publisher(&root_models[14]);
+	gen_onoff_publish(&root_models[2]);
+	gen_level_publish(&root_models[4]);
+	light_lightness_publish(&root_models[11]);
+	light_lightness_linear_publish(&root_models[11]);
+	light_ctl_publish(&root_models[14]);
 
-	gen_level_publisher(&s0_models[0]);
-	light_ctl_temp_publisher(&s0_models[2]);
+	gen_level_publish(&s0_models[0]);
+	light_ctl_temp_publish(&s0_models[2]);
 }
 
 K_WORK_DEFINE(unsolicitedly_publish_states_work,
@@ -259,7 +259,7 @@ void update_light_state(void)
 static void short_time_multireset_bt_mesh_unprovisioning(void)
 {
 	if (reset_counter >= 4) {
-		reset_counter = 0;
+		reset_counter = 0U;
 		printk("BT Mesh reset\n");
 		bt_mesh_reset();
 	} else {
@@ -272,7 +272,7 @@ static void short_time_multireset_bt_mesh_unprovisioning(void)
 
 static void reset_counter_timer_handler(struct k_timer *dummy)
 {
-	reset_counter = 0;
+	reset_counter = 0U;
 	save_on_flash(RESET_COUNTER);
 	printk("Reset Counter set to Zero\n");
 }

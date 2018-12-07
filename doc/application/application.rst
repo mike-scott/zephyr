@@ -930,6 +930,19 @@ Below is a simple example :file:`CMakeList.txt`:
 
    target_sources(app PRIVATE src/main.c)
 
+The Cmake property ``HEX_FILES_TO_MERGE``
+leverages the application configuration provided by
+Kconfig and CMake to let you merge externally built hex files
+with the hex file generated when building the Zephyr application.
+For example:
+
+.. code-block:: cmake
+
+  set_property(GLOBAL APPEND PROPERTY HEX_FILES_TO_MERGE
+      ${app_bootloader_hex}
+      ${PROJECT_BINARY_DIR}/${KERNEL_HEX_NAME}
+      ${app_provision_hex})
+
 CMakeCache.txt
 ==============
 
@@ -1195,7 +1208,11 @@ As described in :ref:`device-tree`, Zephyr uses Device Tree to
 describe the hardware it runs on. This section describes how you can
 modify an application build's device tree using overlay files. For additional
 information regarding the relationship between Device Tree and Kconfig see
-:ref:`dt_vs_kconfig`.
+:ref:`dt_vs_kconfig`. In some cases the information contained in Device Tree
+files is closely connected to the software and might need to be modified
+using the overlay file concept. This can be relevant for many of the different
+Device Tree nodes, but is particularly useful for :ref:`certain types
+of nodes <dt-alias-chosen>`.
 
 Overlay files, which customarily have the :file:`.overlay` extension,
 contain device tree fragments which add to or modify the device tree
@@ -1292,3 +1309,4 @@ project that demonstrates some of these features.
 .. _Eclipse IDE for C/C++ Developers: https://www.eclipse.org/downloads/packages/eclipse-ide-cc-developers/oxygen2
 .. _GNU MCU Eclipse plug-ins: https://gnu-mcu-eclipse.github.io/plugins/install/
 .. _pyOCD v0.11.0: https://github.com/mbedmicro/pyOCD/releases/tag/v0.11.0
+
