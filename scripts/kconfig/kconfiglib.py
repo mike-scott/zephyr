@@ -456,14 +456,8 @@ module being run by default, as well as installation directories.
 If the KCONFIG_FUNCTIONS environment variable is set, it gives a different
 module name to use instead of 'kconfigfunctions'.
 
-The imported module is expected to define a dictionary named 'functions', with
-the following format:
-
-  functions = {
-      "my-fn":       (my_fn,       <min.args>, <max.args>/None),
-      "my-other-fn": (my_other_fn, <min.args>, <max.args>/None),
-      ...
-  }
+The imported module is expected to define a global dictionary named 'functions'
+that maps function names to Python functions, as follows:
 
   def my_fn(kconf, name, arg_1, arg_2, ...):
       # kconf:
@@ -481,6 +475,12 @@ the following format:
 
   def my_other_fn(kconf, name, arg_1, arg_2, ...):
       ...
+
+  functions = {
+      "my-fn":       (my_fn,       <min.args>, <max.args>/None),
+      "my-other-fn": (my_other_fn, <min.args>, <max.args>/None),
+      ...
+  }
 
   ...
 
@@ -761,7 +761,7 @@ class Kconfig(object):
 
         # Parsing-related
         "_parsing_kconfigs",
-        "_file",
+        "_readline",
         "_filename",
         "_linenr",
         "_include_path",
@@ -952,8 +952,10 @@ class Kconfig(object):
         self._filename = filename
         self._linenr = 0
 
-        # Open the top-level Kconfig file
-        self._file = self._open(os.path.join(self.srctree, filename), "r")
+        # Open the top-level Kconfig file. Store the readline() method directly
+        # as a small optimization.
+        self._readline = \
+            self._open(os.path.join(self.srctree, filename), "r").readline
 
         try:
             # Parse everything
@@ -961,8 +963,9 @@ class Kconfig(object):
         except UnicodeDecodeError as e:
             _decoding_error(e, self._filename)
 
-        # Close the top-level Kconfig file
-        self._file.close()
+        # Close the top-level Kconfig file. __self__ fetches the 'file' object
+        # for the method.
+        self._readline.__self__.close()
 
         self.top_node.list = self.top_node.next
         self.top_node.next = None
@@ -1021,7 +1024,7 @@ class Kconfig(object):
 
         return None
 
-    def load_config(self, filename, replace=True):
+    def load_config(self, filename=None, replace=True, verbose=True):
         """
         Loads symbol values from a file in the .config format. Equivalent to
         calling Symbol.set_value() to set each of the values.
@@ -1038,14 +1041,63 @@ class Kconfig(object):
         'strerror', and 'filename' are available). Note that IOError can be
         caught as OSError on Python 3.
 
-        filename:
-          The file to load. Respects $srctree if set (see the class
-          documentation).
+        filename (default: None):
+          Path to load configuration from (a string). Respects $srctree if set
+          (see the class documentation).
+
+          If 'filename' is None (the default), the configuration file to load
+          (if any) is calculated automatically, giving the behavior you'd
+          usually want:
+
+            1. If the KCONFIG_CONFIG environment variable is set, it gives the
+               path to the configuration file to load. Otherwise, ".config" is
+               used. See standard_config_filename().
+
+            2. If the path from (1.) doesn't exist, the configuration file
+               given by kconf.defconfig_filename is loaded instead, which is
+               derived from the 'option defconfig_list' symbol.
+
+            3. If (1.) and (2.) fail to find a configuration file to load, no
+               configuration file is loaded, and symbols retain their current
+               values (e.g., their default values). This is not an error.
+
+           See the return value as well.
 
         replace (default: True):
-          True if all existing user values should be cleared before loading the
+          If True, all existing user values will be cleared before loading the
           .config. Pass False to merge configurations.
+
+        verbose (default: True):
+          If True and filename is None (automatically infer configuration
+          file), a message will be printed to stdout telling which file got
+          loaded (or that no file got loaded). This is meant to reduce
+          boilerplate in tools.
+
+        Returns True if an existing configuration was loaded (that didn't come
+        from the 'option defconfig_list' symbol), and False otherwise. This is
+        mostly useful in conjunction with filename=None, as True will always be
+        returned otherwise.
         """
+        loaded_existing = True
+        if filename is None:
+            filename = standard_config_filename()
+            if os.path.exists(filename):
+                if verbose:
+                    print("Using existing configuration '{}' as base"
+                          .format(filename))
+            else:
+                filename = self.defconfig_filename
+                if filename is None:
+                    if verbose:
+                        print("Using default symbol values as base")
+                    return False
+
+                if verbose:
+                    print("Using default configuration found in '{}' as "
+                          "base".format(filename))
+
+                loaded_existing = False
+
         # Disable the warning about assigning to symbols without prompts. This
         # is normal and expected within a .config file.
         self._warn_for_no_prompt = False
@@ -1057,6 +1109,8 @@ class Kconfig(object):
             _decoding_error(e, filename)
         finally:
             self._warn_for_no_prompt = True
+
+        return loaded_existing
 
     def _load_config(self, filename, replace):
         with self._open_config(filename) as f:
@@ -1235,7 +1289,7 @@ class Kconfig(object):
                                 .format(self.config_prefix, sym.name,
                                         escape(val)))
 
-                    elif sym.orig_type in _INT_HEX:
+                    else:  # sym.orig_type in _INT_HEX:
                         if sym.orig_type is HEX and \
                            not val.startswith(("0x", "0X")):
                             val = "0x" + val
@@ -1243,13 +1297,9 @@ class Kconfig(object):
                         f.write("#define {}{} {}\n"
                                 .format(self.config_prefix, sym.name, val))
 
-                    else:
-                        _internal_error("Internal error while creating C "
-                                        'header: unknown type "{}".'
-                                        .format(sym.orig_type))
-
-    def write_config(self, filename,
-                     header="# Generated by Kconfiglib (https://github.com/ulfalizer/Kconfiglib)\n"):
+    def write_config(self, filename=None,
+                     header="# Generated by Kconfiglib (https://github.com/ulfalizer/Kconfiglib)\n",
+                     save_old=True, verbose=True):
         r"""
         Writes out symbol values in the .config format. The format matches the
         C implementation, including ordering.
@@ -1262,14 +1312,40 @@ class Kconfig(object):
         See the 'Intro to symbol values' section in the module docstring to
         understand which symbols get written out.
 
-        filename:
-          Self-explanatory.
+        filename (default: None):
+          Filename to save configuration to (a string).
+
+          If None (the default), the filename in the the environment variable
+          KCONFIG_CONFIG is used if set, and ".config" otherwise. See
+          standard_config_filename().
 
         header (default: "# Generated by Kconfiglib (https://github.com/ulfalizer/Kconfiglib)\n"):
           Text that will be inserted verbatim at the beginning of the file. You
           would usually want each line to start with '#' to make it a comment,
           and include a final terminating newline.
+
+        save_old (default: True):
+          If True and <filename> already exists, a copy of it will be saved to
+          .<filename>.old in the same directory before the new configuration is
+          written. The leading dot is added only if the filename doesn't
+          already start with a dot.
+
+          Errors are silently ignored if .<filename>.old cannot be written
+          (e.g. due to being a directory).
+
+        verbose (default: True):
+          If True and filename is None (automatically infer configuration
+          file), a message will be printed to stdout telling which file got
+          written. This is meant to reduce boilerplate in tools.
         """
+        if filename is None:
+            filename = standard_config_filename()
+        else:
+            verbose = False
+
+        if save_old:
+            _save_old(filename)
+
         with self._open(filename, "w") as f:
             f.write(header)
 
@@ -1284,6 +1360,9 @@ class Kconfig(object):
                        item is COMMENT):
 
                     f.write("\n#\n# {}\n#\n".format(node.prompt[0]))
+
+        if verbose:
+            print("Configuration written to '{}'".format(filename))
 
     def write_min_config(self, filename,
                          header="# Generated by Kconfiglib (https://github.com/ulfalizer/Kconfiglib)\n"):
@@ -1435,15 +1514,7 @@ class Kconfig(object):
                 continue
 
             # 'sym' has a new value. Flag it.
-
-            sym_path = sym.name.lower().replace("_", os.sep) + ".h"
-            sym_path_dir = os.path.dirname(sym_path)
-            if sym_path_dir and not os.path.exists(sym_path_dir):
-                os.makedirs(sym_path_dir, 0o755)
-
-            # A kind of truncating touch, mirroring the C tools
-            os.close(os.open(
-                sym_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644))
+            _touch_dep_file(sym.name)
 
         # Remember the current values as the "new old" values.
         #
@@ -1501,6 +1572,10 @@ class Kconfig(object):
                         val = unescape(match.group(1))
 
                     self.syms[name]._old_val = val
+                else:
+                    # Flag that the symbol no longer exists, in
+                    # case something still depends on it
+                    _touch_dep_file(name)
 
     def node_iter(self, unique_syms=False):
         """
@@ -1756,8 +1831,9 @@ class Kconfig(object):
         # to be assigned directly to MenuNode.include_path without having to
         # copy it, sharing it wherever possible.
 
-        # Save include path and 'file' object before entering the file
-        self._filestack.append((self._include_path, self._file))
+        # Save include path and 'file' object (via its 'readline' function)
+        # before entering the file
+        self._filestack.append((self._include_path, self._readline))
 
         # _include_path is a tuple, so this rebinds the variable instead of
         # doing in-place modification
@@ -1777,7 +1853,7 @@ class Kconfig(object):
         # Note: We already know that the file exists
 
         try:
-            self._file = self._open(full_filename, "r")
+            self._readline = self._open(full_filename, "r").readline
         except IOError as e:
             raise _KconfigIOError(
                 e, "{}:{}: Could not open '{}' ({}: {})"
@@ -1791,11 +1867,12 @@ class Kconfig(object):
         # Returns from a Kconfig file to the file that sourced it. See
         # _enter_file().
 
-        self._file.close()
+        # __self__ fetches the 'file' object for the method
+        self._readline.__self__.close()
         # Restore location from parent Kconfig file
         self._filename, self._linenr = self._include_path[-1]
         # Restore include path and 'file' object
-        self._include_path, self._file = self._filestack.pop()
+        self._include_path, self._readline = self._filestack.pop()
 
     def _next_line(self):
         # Fetches and tokenizes the next line from the current Kconfig file.
@@ -1812,17 +1889,18 @@ class Kconfig(object):
 
         # Note: readline() returns '' over and over at EOF, which we rely on
         # for help texts at the end of files (see _line_after_help())
-        self._line = self._file.readline()
-        if not self._line:
+        line = self._readline()
+        if not line:
             return False
         self._linenr += 1
 
         # Handle line joining
-        while self._line.endswith("\\\n"):
-            self._line = self._line[:-2] + self._file.readline()
+        while line.endswith("\\\n"):
+            line = line[:-2] + self._readline()
             self._linenr += 1
 
-        self._tokens = self._tokenize(self._line)
+        self._line = line  # Used for error reporting
+        self._tokens = self._tokenize(line)
         # Initialize to 1 instead of 0 to factor out code from _parse_block()
         # and _parse_properties(). They immediately fetch self._tokens[0].
         self._tokens_i = 1
@@ -1830,24 +1908,22 @@ class Kconfig(object):
         return True
 
     def _line_after_help(self, line):
-        # Tokenizes the line after a help text. This case is special in that
-        # the line has already been fetched (to discover that it isn't part of
-        # the help text).
+        # Tokenizes a line after a help text. This case is special in that the
+        # line has already been fetched (to discover that it isn't part of the
+        # help text).
         #
         # An earlier version used a _saved_line variable instead that was
         # checked in _next_line(). This special-casing gets rid of it and makes
         # _reuse_tokens alone sufficient to handle unget.
 
-        if line:
-            # Handle line joining
-            while line.endswith("\\\n"):
-                line = line[:-2] + self._file.readline()
-                self._linenr += 1
+        # Handle line joining
+        while line.endswith("\\\n"):
+            line = line[:-2] + self._readline()
+            self._linenr += 1
 
-            self._line = line
-
-            self._tokens = self._tokenize(line)
-            self._reuse_tokens = True
+        self._line = line
+        self._tokens = self._tokenize(line)
+        self._reuse_tokens = True
 
 
     #
@@ -2655,7 +2731,12 @@ class Kconfig(object):
         # End of file reached. Terminate the final node and return it.
 
         if end_token:
-            raise KconfigError("Unexpected end of file " + self._filename)
+            raise KconfigError(
+                "expected '{}' at end of '{}'"
+                .format("endchoice" if end_token is _T_ENDCHOICE else
+                        "endif"     if end_token is _T_ENDIF else
+                        "endmenu",
+                        self._filename))
 
         prev.next = None
         return prev
@@ -2867,65 +2948,68 @@ class Kconfig(object):
         node.prompt = (prompt, self._parse_cond())
 
     def _parse_help(self, node):
-        # Find first non-blank (not all-space) line and get its indentation
-
         if node.help is not None:
-            self._warn(_name_and_loc(node.item) +
-                       " defined with more than one help text -- only the "
-                       "last one will be used")
+            self._warn(_name_and_loc(node.item) + " defined with more than "
+                       "one help text -- only the last one will be used")
 
-        # Small optimization. This code is pretty hot.
-        readline = self._file.readline
+        # Micro-optimization. This code is pretty hot.
+        readline = self._readline
+
+        # Find first non-blank (not all-space) line and get its
+        # indentation
 
         while 1:
             line = readline()
             self._linenr += 1
-            if not line or not line.isspace():
+            if not line:
+                self._empty_help(node, line)
+                return
+            if not line.isspace():
                 break
 
-        if not line:
-            self._warn(_name_and_loc(node.item) +
-                       " has 'help' but empty help text")
+        len_ = len  # Micro-optimization
 
-            node.help = ""
-            return
-
-        indent = _indentation(line)
+        # Use a separate 'expline' variable here and below to avoid stomping on
+        # any tabs people might've put deliberately into the first line after
+        # the help text
+        expline = line.expandtabs()
+        indent = len_(expline) - len_(expline.lstrip())
         if not indent:
-            # If the first non-empty lines has zero indent, there is no help
-            # text
-            self._warn(_name_and_loc(node.item) +
-                       " has 'help' but empty help text")
-
-            node.help = ""
-            self._line_after_help(line)
+            self._empty_help(node, line)
             return
 
-        # The help text goes on till the first non-empty line with less indent
+        # The help text goes on till the first non-blank line with less indent
         # than the first line
 
-        help_lines = []
-        # Small optimizations
-        add_help_line = help_lines.append
-        indentation = _indentation
+        # Add the first line
+        lines = [expline[indent:]]
+        add_line = lines.append  # Micro-optimization
 
-        while line and (line.isspace() or indentation(line) >= indent):
-            # De-indent 'line' by 'indent' spaces and rstrip() it to remove any
-            # newlines (which gets rid of other trailing whitespace too, but
-            # that's fine).
-            #
-            # This prepares help text lines in a speedy way: The [indent:]
-            # might already remove trailing newlines for lines shorter than
-            # indent (e.g. empty lines). The rstrip() makes it consistent,
-            # meaning we can join the lines with "\n" later.
-            add_help_line(line.expandtabs()[indent:].rstrip())
-
+        while 1:
             line = readline()
+            if line.isspace():
+                # No need to preserve the exact whitespace in these
+                add_line("\n")
+            elif not line:
+                # End of file
+                break
+            else:
+                expline = line.expandtabs()
+                if len_(expline) - len_(expline.lstrip()) < indent:
+                    break
+                add_line(expline[indent:])
 
-        self._linenr += len(help_lines)
+        self._linenr += len_(lines)
+        node.help = "".join(lines).rstrip()
+        if line:
+            self._line_after_help(line)
 
-        node.help = "\n".join(help_lines).rstrip()
-        self._line_after_help(line)
+    def _empty_help(self, node, line):
+        self._warn(_name_and_loc(node.item) +
+                   " has 'help' but empty help text")
+        node.help = ""
+        if line:
+            self._line_after_help(line)
 
     def _parse_expr(self, transform_m):
         # Parses an expression from the tokens in Kconfig._tokens using a
@@ -3332,9 +3416,7 @@ class Kconfig(object):
                                        "default value for string symbol "
                                        + _name_and_loc(sym))
 
-                    elif sym.orig_type in _INT_HEX and \
-                         not num_ok(default, sym.orig_type):
-
+                    elif not num_ok(default, sym.orig_type):  # INT/HEX
                         self._warn("the {0} symbol {1} has a non-{0} default {2}"
                                    .format(TYPE_TO_STR[sym.orig_type],
                                            _name_and_loc(sym),
@@ -3913,11 +3995,11 @@ class Symbol(object):
                 # Used to implement the warning below
                 has_default = False
 
-                for val_sym, cond in self.defaults:
+                for sym, cond in self.defaults:
                     if expr_value(cond):
                         has_default = self._write_to_conf = True
 
-                        val = val_sym.str_value
+                        val = sym.str_value
 
                         if _is_base_n(val, base):
                             val_num = int(val, base)
@@ -3958,9 +4040,9 @@ class Symbol(object):
                 val = self.user_value
             else:
                 # Otherwise, look at defaults
-                for val_sym, cond in self.defaults:
+                for sym, cond in self.defaults:
                     if expr_value(cond):
-                        val = val_sym.str_value
+                        val = sym.str_value
                         self._write_to_conf = True
                         break
 
@@ -4097,12 +4179,9 @@ class Symbol(object):
             return "{}{}={}\n" \
                    .format(self.kconfig.config_prefix, self.name, val)
 
-        if self.orig_type is STRING:
-            return '{}{}="{}"\n' \
-                   .format(self.kconfig.config_prefix, self.name, escape(val))
-
-        _internal_error("Internal error while creating .config: unknown "
-                        'type "{}".'.format(self.orig_type))
+        # sym.orig_type is STRING
+        return '{}{}="{}"\n' \
+               .format(self.kconfig.config_prefix, self.name, escape(val))
 
     def set_value(self, value):
         """
@@ -5182,15 +5261,8 @@ class MenuNode(object):
         elif self.item is MENU:
             fields.append("menu node for menu")
 
-        elif self.item is COMMENT:
+        else:  # self.item is COMMENT
             fields.append("menu node for comment")
-
-        elif not self.item:
-            fields.append("menu node for if (should not appear in the final "
-                          " tree)")
-
-        else:
-            _internal_error("unable to determine type in MenuNode.__repr__()")
 
         if self.prompt:
             fields.append('prompt "{}" (visibility {})'
@@ -5390,7 +5462,7 @@ class KconfigError(Exception):
 KconfigSyntaxError = KconfigError  # Backwards compatibility
 
 class InternalError(Exception):
-    "Exception raised for internal errors"
+    "Never raised. Kept around for backwards compatibility."
 
 # Workaround:
 #
@@ -5439,35 +5511,33 @@ def expr_value(expr):
     if expr[0] is NOT:
         return 2 - expr_value(expr[1])
 
-    if expr[0] in _RELATIONS:
-        # Implements <, <=, >, >= comparisons as well. These were added to
-        # kconfig in 31847b67 (kconfig: allow use of relations other than
-        # (in)equality).
+    # Relation
+    #
+    # Implements <, <=, >, >= comparisons as well. These were added to
+    # kconfig in 31847b67 (kconfig: allow use of relations other than
+    # (in)equality).
 
-        rel, v1, v2 = expr
+    rel, v1, v2 = expr
 
-        # If both operands are strings...
-        if v1.orig_type is STRING and v2.orig_type is STRING:
-            # ...then compare them lexicographically
+    # If both operands are strings...
+    if v1.orig_type is STRING and v2.orig_type is STRING:
+        # ...then compare them lexicographically
+        comp = _strcmp(v1.str_value, v2.str_value)
+    else:
+        # Otherwise, try to compare them as numbers
+        try:
+            comp = _sym_to_num(v1) - _sym_to_num(v2)
+        except ValueError:
+            # Fall back on a lexicographic comparison if the operands don't
+            # parse as numbers
             comp = _strcmp(v1.str_value, v2.str_value)
-        else:
-            # Otherwise, try to compare them as numbers
-            try:
-                comp = _sym_to_num(v1) - _sym_to_num(v2)
-            except ValueError:
-                # Fall back on a lexicographic comparison if the operands don't
-                # parse as numbers
-                comp = _strcmp(v1.str_value, v2.str_value)
 
-        if rel is EQUAL:         return 2*(comp == 0)
-        if rel is UNEQUAL:       return 2*(comp != 0)
-        if rel is LESS:          return 2*(comp < 0)
-        if rel is LESS_EQUAL:    return 2*(comp <= 0)
-        if rel is GREATER:       return 2*(comp > 0)
-        if rel is GREATER_EQUAL: return 2*(comp >= 0)
-
-    _internal_error("Internal error while evaluating expression: "
-                    "unknown operation {}.".format(expr[0]))
+    if rel is EQUAL:      return 2*(comp == 0)
+    if rel is UNEQUAL:    return 2*(comp != 0)
+    if rel is LESS:       return 2*(comp < 0)
+    if rel is LESS_EQUAL: return 2*(comp <= 0)
+    if rel is GREATER:    return 2*(comp > 0)
+    return 2*(comp >= 0)  # rel is GREATER_EQUAL
 
 def standard_sc_expr_str(sc):
     """
@@ -5637,6 +5707,9 @@ def standard_config_filename():
     """
     Helper for tools. Returns the value of KCONFIG_CONFIG (which specifies the
     .config file to load/save) if it is set, and ".config" otherwise.
+
+    Note: Calling load_config() with filename=None might give the behavior you
+    want, without having to use this function.
     """
     return os.environ.get("KCONFIG_CONFIG", ".config")
 
@@ -5753,13 +5826,6 @@ def _parenthesize(expr, type_, sc_expr_str_fn):
         return "({})".format(expr_str(expr, sc_expr_str_fn))
     return expr_str(expr, sc_expr_str_fn)
 
-def _indentation(line):
-    # Returns the length of the line's leading whitespace, treating tab stops
-    # as being spaced 8 characters apart.
-
-    line = line.expandtabs()
-    return len(line) - len(line.lstrip())
-
 def _ordered_unique(lst):
     # Returns 'lst' with any duplicates removed, preserving order. This hacky
     # version seems to be a common idiom. It relies on short-circuit evaluation
@@ -5791,12 +5857,43 @@ def _sym_to_num(sym):
     return sym.tri_value if sym.orig_type in _BOOL_TRISTATE else \
            int(sym.str_value, _TYPE_TO_BASE[sym.orig_type])
 
-def _internal_error(msg):
-    raise InternalError(
-        msg +
-        "\nSorry! You may want to send an email to ulfalizer a.t Google's "
-        "email service to tell me about this. Include the message above and "
-        "the stack trace and describe what you were doing.")
+def _touch_dep_file(sym_name):
+    # If sym_name is MY_SYM_NAME, touches my/sym/name.h. See the sync_deps()
+    # docstring.
+
+    sym_path = sym_name.lower().replace("_", os.sep) + ".h"
+    sym_path_dir = os.path.dirname(sym_path)
+    if sym_path_dir and not os.path.exists(sym_path_dir):
+        os.makedirs(sym_path_dir, 0o755)
+
+    # A kind of truncating touch, mirroring the C tools
+    os.close(os.open(
+        sym_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644))
+
+def _save_old(path):
+    # See write_config()
+
+    dirname, basename = os.path.split(path)
+    backup = os.path.join(dirname,
+                          basename + ".old" if basename.startswith(".") else
+                              "." + basename + ".old")
+
+    # os.replace() would be nice here, but it's Python 3 (3.3+) only
+    try:
+        # Use copyfile() if 'path' is a symlink. The intention is probably to
+        # overwrite the target in that case.
+        if os.name == "posix" and not os.path.islink(path):
+            # Will remove .<filename>.old if it already exists on POSIX
+            # systems
+            os.rename(path, backup)
+        else:
+            import shutil
+            shutil.copyfile(path, backup)
+    except:
+        # Ignore errors from 'filename' missing as well as other errors. The
+        # backup file is more of a nice-to-have, and not worth erroring out
+        # over e.g. if .<filename>.old happens to be a directory.
+        pass
 
 def _decoding_error(e, filename, macro_linenr=None):
     # Gives the filename and context for UnicodeDecodeError's, which are a pain
@@ -5806,18 +5903,15 @@ def _decoding_error(e, filename, macro_linenr=None):
     # macro_linenr holds the line number where it was run (the exact line
     # number isn't available for decoding errors in files).
 
-    if macro_linenr is None:
-        loc = filename
-    else:
-        loc = "output from macro at {}:{}".format(filename, macro_linenr)
-
     raise KconfigError(
         "\n"
         "Malformed {} in {}\n"
         "Context: {}\n"
         "Problematic data: {}\n"
         "Reason: {}".format(
-            e.encoding, loc,
+            e.encoding,
+            "'{}'".format(filename) if macro_linenr is None else
+                "output from macro at {}:{}".format(filename, macro_linenr),
             e.object[max(e.start - 40, 0):e.end + 40],
             e.object[e.start:e.end],
             e.reason))
