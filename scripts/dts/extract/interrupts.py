@@ -50,12 +50,6 @@ class DTInterrupts(DTDirective):
         l_base = def_label.split('/')
         index = 0
 
-        # Newer versions of dtc might have the interrupt propertly look like
-        # interrupts = <1 2>, <3 4>;
-        # So we need to flatten the list in that case
-        if isinstance(props[0], list):
-            props = [item for sublist in props for item in sublist]
-
         while props:
             prop_def = {}
             prop_alias = {}
@@ -76,9 +70,16 @@ class DTInterrupts(DTDirective):
 
                 l_fqn = '_'.join(l_base + l_cell_prefix + l_idx + l_cell_name)
                 prop_def[l_fqn] = props.pop(0)
+                add_compat_alias(node_address,
+                        '_'.join(l_cell_prefix + l_idx + l_cell_name),
+                        l_fqn, prop_alias)
+
                 if len(name):
                     alias_list = l_base + l_cell_prefix + name + l_cell_name
                     prop_alias['_'.join(alias_list)] = l_fqn
+                    add_compat_alias(node_address,
+                            '_'.join(l_cell_prefix + name + l_cell_name),
+                            l_fqn, prop_alias)
 
                 if node_address in aliases:
                     add_prop_aliases(

@@ -162,6 +162,9 @@ void shell_op_left_arrow(const struct shell *shell);
 
 void shell_op_right_arrow(const struct shell *shell);
 
+/* Moves cursor by defined number of words left (val negative) or right. */
+void shell_op_cursor_word_move(const struct shell *shell, s16_t val);
+
 /*
  *  Removes the "word" to the left of the cursor:
  *  - if there are spaces at the cursor position, remove all spaces to the left
@@ -178,13 +181,13 @@ void shell_op_cursor_home_move(const struct shell *shell);
 /* Function moves cursor to end of command. */
 void shell_op_cursor_end_move(const struct shell *shell);
 
-void char_replace(const struct shell *shell, char data);
-
 void shell_op_char_insert(const struct shell *shell, char data);
 
 void shell_op_char_backspace(const struct shell *shell);
 
 void shell_op_char_delete(const struct shell *shell);
+
+void shell_op_delete_from_cursor(const struct shell *shell);
 
 void shell_op_completion_insert(const struct shell *shell,
 				const char *compl,

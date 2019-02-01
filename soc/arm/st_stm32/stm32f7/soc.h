@@ -17,10 +17,6 @@
 #ifndef _STM32F7_SOC_H_
 #define _STM32F7_SOC_H_
 
-#define GPIO_REG_SIZE         0x400
-/* base address for where GPIO registers start */
-#define GPIO_PORTS_BASE       (GPIOA_BASE)
-
 #ifndef _ASMLANGUAGE
 
 #include <stm32f7xx.h>
@@ -30,6 +26,10 @@
  * core SOC-specific headers.
  */
 #include <kernel_includes.h>
+
+#ifdef CONFIG_EXTI_STM32
+#include <stm32f7xx_ll_exti.h>
+#endif
 
 #ifdef CONFIG_CLOCK_CONTROL_STM32_CUBE
 #include <stm32f7xx_ll_utils.h>
@@ -58,6 +58,10 @@
 #include <stm32f7xx_ll_rtc.h>
 #include <stm32f7xx_ll_exti.h>
 #include <stm32f7xx_ll_pwr.h>
+#endif
+
+#ifdef CONFIG_GPIO_STM32
+#include <stm32f7xx_ll_gpio.h>
 #endif
 
 #endif /* !_ASMLANGUAGE */

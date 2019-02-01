@@ -83,6 +83,9 @@ struct net_pkt {
 	u8_t *appdata;	/* application data starts here */
 	u8_t *next_hdr;	/* where is the next header */
 
+	/** Reference counter */
+	atomic_t atomic_ref;
+
 	/* Filled by layer 2 when network packet is received. */
 	struct net_linkaddr lladdr_src;
 	struct net_linkaddr lladdr_dst;
@@ -108,9 +111,6 @@ struct net_pkt {
 #if defined(CONFIG_NET_TCP)
 	sys_snode_t sent_list;
 #endif
-
-	/** Reference counter */
-	u8_t ref;
 
 	u8_t sent_or_eof: 1;	/* For outgoing packet: is this sent or not
 				 * For incoming packet of a socket: last
@@ -1122,21 +1122,19 @@ int net_frag_linear_copy(struct net_buf *dst, struct net_buf *src,
 			 u16_t offset, u16_t len);
 
 /**
- * @brief Copy len bytes from src starting from offset to dst buffer
+ * @brief Copy bytes from src packet starting at offset to linear buffer
  *
- * This routine assumes that dst is large enough to store @a len bytes
- * starting from offset at src.
+ * This routine behaves is a convenience wrapper for @ref net_buf_linearize .
  *
  * @param dst Destination buffer
- * @param dst_len Destination buffer max length
- * @param src Source buffer that may be fragmented
- * @param offset Starting point to copy from
+ * @param dst_len Destination buffer length
+ * @param src Source packet with fragmented net_buf chain
+ * @param offset Starting offset to copy from
  * @param len Number of bytes to copy
- * @return number of bytes copied if everything is ok
- * @return -ENOMEM on error
+ * @return number of bytes actually copied
  */
-int net_frag_linearize(u8_t *dst, size_t dst_len,
-		       struct net_pkt *src, u16_t offset, u16_t len);
+size_t net_frag_linearize(void *dst, size_t dst_len,
+			  struct net_pkt *src, size_t offset, size_t len);
 
 /**
  * @brief Compact the fragment list of a packet.

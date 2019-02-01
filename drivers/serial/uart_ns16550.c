@@ -193,7 +193,9 @@
 #ifdef UART_NS16550_ACCESS_IOPORT
 #define INBYTE(x) sys_in8(x)
 #define OUTBYTE(x, d) sys_out8(d, x)
+#ifndef UART_REG_ADDR_INTERVAL
 #define UART_REG_ADDR_INTERVAL 1 /* address diff of adjacent regs. */
+#endif
 #else
 #define INBYTE(x) sys_read8(x)
 #define OUTBYTE(x, d) sys_write8(d, x)
@@ -250,8 +252,12 @@ static void set_baud_rate(struct device *dev, u32_t baud_rate)
 	u8_t lcr_cache;
 
 	if ((baud_rate != 0) && (dev_cfg->sys_clk_freq != 0)) {
-		/* calculate baud rate divisor */
-		divisor = (dev_cfg->sys_clk_freq / baud_rate) >> 4;
+		/*
+		 * calculate baud rate divisor. a variant of
+		 * (u32_t)(dev_cfg->sys_clk_freq / (16.0 * baud_rate) + 0.5)
+		 */
+		divisor = ((dev_cfg->sys_clk_freq + (baud_rate << 3))
+					/ baud_rate) >> 4;
 
 		/* set the DLAB to access the baud rate divisor registers */
 		lcr_cache = INBYTE(LCR(dev));
@@ -323,11 +329,11 @@ static int uart_ns16550_init(struct device *dev)
 
 	old_level = irq_lock();
 
-	set_baud_rate(dev, dev_data->baud_rate);
-
 #ifdef CONFIG_UART_NS16550_DLF
 	set_dlf(dev, dev_data->dlf);
 #endif
+
+	set_baud_rate(dev, dev_data->baud_rate);
 
 	/* 8 data bits, 1 stop bit, no parity, clear DLAB */
 	OUTBYTE(LCR(dev), LCR_CS8 | LCR_1_STB | LCR_PDIS);

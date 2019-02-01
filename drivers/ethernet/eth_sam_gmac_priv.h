@@ -18,11 +18,7 @@
 /** Cache alignment */
 #define GMAC_DCACHE_ALIGNMENT             32
 /** Memory alignment of the RX/TX Buffer Descriptor List */
-#if __DCACHE_PRESENT == 1
-#define GMAC_DESC_ALIGNMENT               GMAC_DCACHE_ALIGNMENT
-#else
 #define GMAC_DESC_ALIGNMENT               4
-#endif
 /** Total number of queues supported by GMAC hardware module */
 #define GMAC_QUEUE_NO                     3
 /** Number of priority queues used */
@@ -30,8 +26,11 @@
 
 /** RX descriptors count for main queue */
 #define MAIN_QUEUE_RX_DESC_COUNT CONFIG_ETH_SAM_GMAC_BUF_RX_COUNT
-/** TX descriptors count for main queue */
-#define MAIN_QUEUE_TX_DESC_COUNT (CONFIG_NET_BUF_TX_COUNT + 1)
+/** TX descriptors count for main queue. They should be able to store a full
+ ** packet, that might use either the TX or the RX buffers.
+ */
+#define MAIN_QUEUE_TX_DESC_COUNT (max(CONFIG_NET_BUF_RX_COUNT, \
+				      CONFIG_NET_BUF_TX_COUNT) + 1)
 
 /** RX/TX descriptors count for priority queues */
 #if GMAC_PRIORITY_QUEUE_NO == 2
@@ -169,7 +168,6 @@ struct gmac_queue {
 	struct gmac_desc_list rx_desc_list;
 	struct gmac_desc_list tx_desc_list;
 	struct k_sem tx_desc_sem;
-	struct k_delayed_work tx_timeout_work;
 
 	struct ring_buf rx_frag_list;
 	struct ring_buf tx_frames;

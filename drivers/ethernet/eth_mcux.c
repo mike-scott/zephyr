@@ -107,11 +107,19 @@ struct eth_context {
 
 static void eth_0_config_func(void);
 
+#ifdef CONFIG_HAS_MCUX_CACHE
+static __nocache enet_rx_bd_struct_t __aligned(ENET_BUFF_ALIGNMENT)
+rx_buffer_desc[CONFIG_ETH_MCUX_RX_BUFFERS];
+
+static __nocache enet_tx_bd_struct_t __aligned(ENET_BUFF_ALIGNMENT)
+tx_buffer_desc[CONFIG_ETH_MCUX_TX_BUFFERS];
+#else
 static enet_rx_bd_struct_t __aligned(ENET_BUFF_ALIGNMENT)
 rx_buffer_desc[CONFIG_ETH_MCUX_RX_BUFFERS];
 
 static enet_tx_bd_struct_t __aligned(ENET_BUFF_ALIGNMENT)
 tx_buffer_desc[CONFIG_ETH_MCUX_TX_BUFFERS];
+#endif
 
 #if defined(CONFIG_PTP_CLOCK_MCUX)
 /* Packets to be timestamped. */
@@ -319,6 +327,7 @@ static void eth_mcux_phy_event(struct eth_context *context)
 			context->link_up = link_up;
 			context->phy_state = eth_mcux_phy_state_read_duplex;
 			net_eth_carrier_on(context->iface);
+			k_sleep(USEC_PER_MSEC);
 		} else if (!link_up && context->link_up) {
 			LOG_INF("Link down");
 			context->link_up = link_up;
@@ -372,6 +381,25 @@ static void eth_mcux_delayed_phy_work(struct k_work *item)
 		CONTAINER_OF(item, struct eth_context, delayed_phy_work);
 
 	eth_mcux_phy_event(context);
+}
+
+static void eth_mcux_phy_setup(void)
+{
+#ifdef CONFIG_SOC_SERIES_IMX_RT
+	const u32_t phy_addr = 0U;
+	u32_t status;
+
+	/* Prevent PHY entering NAND Tree mode override*/
+	ENET_StartSMIRead(ENET, phy_addr, PHY_OMS_STATUS_REG,
+		kENET_MiiReadValidFrame);
+	status = ENET_ReadSMIData(ENET);
+
+	if (status & PHY_OMS_NANDTREE_MASK) {
+		status &= ~PHY_OMS_NANDTREE_MASK;
+		ENET_StartSMIWrite(ENET, phy_addr, PHY_OMS_OVERRIDE_REG,
+			kENET_MiiWriteValidFrame, status);
+	}
+#endif
 }
 
 #if defined(CONFIG_PTP_CLOCK_MCUX)
@@ -555,14 +583,13 @@ static void eth_rx(struct device *iface)
 		goto flush;
 	}
 
-	pkt = net_pkt_get_reserve_rx(K_NO_WAIT);
-	if (!pkt) {
+	if (sizeof(context->frame_buf) < frame_length) {
+		LOG_ERR("frame too large (%d)", frame_length);
 		goto flush;
 	}
 
-	if (sizeof(context->frame_buf) < frame_length) {
-		LOG_ERR("frame too large (%d)", frame_length);
-		net_pkt_unref(pkt);
+	pkt = net_pkt_get_reserve_rx(K_NO_WAIT);
+	if (!pkt) {
 		goto flush;
 	}
 
@@ -678,7 +705,7 @@ static inline void ts_register_tx_event(struct eth_context *context)
 	enet_ptp_time_data_t timeData;
 
 	pkt = ts_tx_pkt[ts_tx_rd];
-	if (pkt && pkt->ref > 0) {
+	if (pkt && atomic_get(&pkt->atomic_ref) > 0) {
 		if (eth_get_ptp_data(net_pkt_iface(pkt), pkt, &timeData,
 				     true)) {
 			int status;
@@ -806,6 +833,8 @@ static int eth_0_init(struct device *dev)
 	k_work_init(&context->phy_work, eth_mcux_phy_work);
 	k_delayed_work_init(&context->delayed_phy_work,
 			    eth_mcux_delayed_phy_work);
+
+	eth_mcux_phy_setup();
 
 	sys_clock = CLOCK_GetFreq(kCLOCK_CoreSysClk);
 

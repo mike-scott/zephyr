@@ -697,6 +697,28 @@ function(zephyr_code_relocate file location)
     "${location}:${CMAKE_CURRENT_SOURCE_DIR}/${file}")
 endfunction()
 
+# Usage:
+#   check_dtc_flag("-Wtest" DTC_WARN_TEST)
+#
+# Writes 1 to the output variable 'ok' if
+# the flag is supported, otherwise writes 0.
+#
+# using
+function(check_dtc_flag flag ok)
+  execute_process(
+    COMMAND
+    ${DTC} ${flag} -v
+    ERROR_QUIET
+    OUTPUT_QUIET
+    RESULT_VARIABLE dtc_check_ret
+  )
+  if (dtc_check_ret EQUAL 0)
+    set(${ok} 1 PARENT_SCOPE)
+  else()
+    set(${ok} 0 PARENT_SCOPE)
+  endif()
+endfunction()
+
 ########################################################
 # 2. Kconfig-aware extensions
 ########################################################
@@ -1108,10 +1130,12 @@ endmacro()
 function(print_usage)
   message("see usage:")
   string(REPLACE ";" " " BOARD_ROOT_SPACE_SEPARATED "${BOARD_ROOT}")
+  string(REPLACE ";" " " SHIELD_LIST_SPACE_SEPARATED "${SHIELD_LIST}")
   execute_process(
     COMMAND
     ${CMAKE_COMMAND}
     -DBOARD_ROOT_SPACE_SEPARATED=${BOARD_ROOT_SPACE_SEPARATED}
+    -DSHIELD_LIST_SPACE_SEPARATED=${SHIELD_LIST_SPACE_SEPARATED}
     -P ${ZEPHYR_BASE}/cmake/usage/usage.cmake
     )
 endfunction()

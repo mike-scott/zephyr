@@ -70,7 +70,7 @@ static int cursor_position_get(const struct shell *shell, u16_t *x, u16_t *y)
 	/* fprintf buffer needs to be flushed to start sending prepared
 	 * escape code to the terminal.
 	 */
-	shell_fprintf_buffer_flush(shell->fprintf_ctx);
+	transport_buffer_flush(shell);
 
 	/* timeout for terminal response = ~1s */
 	for (u16_t i = 0; i < 1000; i++) {
@@ -278,6 +278,13 @@ static int cmd_help(const struct shell *shell, size_t argc, char **argv)
 		" all commands or its subcommands.\n"
 		"You can try to call commands with <-h> or <--help> parameter"
 		" for more information.");
+#if CONFIG_SHELL_METAKEYS
+	shell_print(shell,
+		"Shell supports following meta-keys:\n"
+		"Ctrl+a, Ctrl+b, Ctrl+c, Ctrl+d, Ctrl+e, Ctrl+f, Ctrl+k,"
+		" Ctrl+l, Ctrl+u, Ctrl+w\nAlt+b, Alt+f.\nPlease refer to"
+		" shell documentation for more details.");
+#endif
 
 	return 0;
 }

@@ -40,7 +40,6 @@ LOG_MODULE_REGISTER(net_pkt, CONFIG_NET_PKT_LOG_LEVEL);
 
 #include "net_private.h"
 #include "tcp_internal.h"
-#include "rpl.h"
 
 /* Find max header size of IP protocol (IPv4 or IPv6) */
 #if defined(CONFIG_NET_IPV6) || defined(CONFIG_NET_RAW_MODE)
@@ -345,7 +344,7 @@ struct net_pkt *net_pkt_get_reserve(struct k_mem_slab *slab,
 
 	(void)memset(pkt, 0, sizeof(struct net_pkt));
 
-	pkt->ref = 1;
+	pkt->atomic_ref = ATOMIC_INIT(1);
 	pkt->slab = slab;
 
 	net_pkt_set_priority(pkt, CONFIG_NET_TX_DEFAULT_PRIORITY);
@@ -353,10 +352,10 @@ struct net_pkt *net_pkt_get_reserve(struct k_mem_slab *slab,
 
 	net_pkt_alloc_add(pkt, true, caller, line);
 
-#if NET_LOG_PKT_LOG_LEVEL >= LOG_LEVEL_DBG
+#if CONFIG_NET_PKT_LOG_LEVEL >= LOG_LEVEL_DBG
 	NET_DBG("%s [%u] pkt %p ref %d (%s():%d)",
 		slab2str(slab), k_mem_slab_num_free_get(slab),
-		pkt, pkt->ref, caller, line);
+		pkt, atomic_get(&pkt->atomic_ref), caller, line);
 #endif
 	return pkt;
 }
@@ -394,7 +393,7 @@ struct net_buf *net_pkt_get_reserve_data(struct net_buf_pool *pool,
 
 	net_pkt_alloc_add(frag, false, caller, line);
 
-#if NET_LOG_PKT_LOG_LEVEL >= LOG_LEVEL_DBG
+#if CONFIG_NET_PKT_LOG_LEVEL >= LOG_LEVEL_DBG
 	NET_DBG("%s (%s) [%d] frag %p ref %d (%s():%d)",
 		pool2str(pool), get_name(pool), get_frees(pool),
 		frag, frag->ref, caller, line);
@@ -575,10 +574,6 @@ static struct net_pkt *net_pkt_get(struct k_mem_slab *slab,
 
 		if (IS_ENABLED(CONFIG_NET_UDP) && proto == IPPROTO_UDP) {
 			data_len -= NET_UDPH_LEN;
-
-			if (IS_ENABLED(CONFIG_NET_RPL_INSERT_HBH_OPTION)) {
-				data_len -= NET_RPL_HOP_BY_HOP_LEN;
-			}
 		}
 
 		if (proto == IPPROTO_ICMP || proto == IPPROTO_ICMPV6) {
@@ -726,6 +721,8 @@ void net_pkt_unref_debug(struct net_pkt *pkt, const char *caller, int line)
 void net_pkt_unref(struct net_pkt *pkt)
 {
 #endif /* NET_LOG_LEVEL >= LOG_LEVEL_DBG */
+	atomic_val_t ref;
+
 	if (!pkt) {
 #if NET_LOG_LEVEL >= LOG_LEVEL_DBG
 		NET_ERR("*** ERROR *** pkt %p (%s():%d)", pkt, caller, line);
@@ -733,30 +730,34 @@ void net_pkt_unref(struct net_pkt *pkt)
 		return;
 	}
 
-	if (!pkt->ref) {
+	do {
+		ref = atomic_get(&pkt->atomic_ref);
+		if (!ref) {
 #if NET_LOG_LEVEL >= LOG_LEVEL_DBG
-		const char *func_freed;
-		int line_freed;
+			const char *func_freed;
+			int line_freed;
 
-		if (net_pkt_alloc_find(pkt, &func_freed, &line_freed)) {
-			NET_ERR("*** ERROR *** pkt %p is freed already by "
-				"%s():%d (%s():%d)",
-				pkt, func_freed, line_freed, caller, line);
-		} else {
-			NET_ERR("*** ERROR *** pkt %p is freed already "
-				"(%s():%d)", pkt, caller, line);
-		}
+			if (net_pkt_alloc_find(pkt, &func_freed, &line_freed)) {
+				NET_ERR("*** ERROR *** pkt %p is freed already "
+					"by %s():%d (%s():%d)",
+					pkt, func_freed, line_freed, caller,
+					line);
+			} else {
+				NET_ERR("*** ERROR *** pkt %p is freed already "
+					"(%s():%d)", pkt, caller, line);
+			}
 #endif
-		return;
-	}
+			return;
+		}
+	} while (!atomic_cas(&pkt->atomic_ref, ref, ref - 1));
 
 #if NET_LOG_LEVEL >= LOG_LEVEL_DBG
 #if CONFIG_NET_PKT_LOG_LEVEL >= LOG_LEVEL_DBG
 	NET_DBG("%s [%d] pkt %p ref %d frags %p (%s():%d)",
 		slab2str(pkt->slab), k_mem_slab_num_free_get(pkt->slab),
-		pkt, pkt->ref - 1, pkt->frags, caller, line);
+		pkt, ref - 1, pkt->frags, caller, line);
 #endif
-	if (pkt->ref > 1) {
+	if (ref > 1) {
 		goto done;
 	}
 
@@ -796,7 +797,7 @@ void net_pkt_unref(struct net_pkt *pkt)
 done:
 #endif /* NET_LOG_LEVEL >= LOG_LEVEL_DBG */
 
-	if (--pkt->ref > 0) {
+	if (ref > 1) {
 		return;
 	}
 
@@ -814,20 +815,25 @@ struct net_pkt *net_pkt_ref_debug(struct net_pkt *pkt, const char *caller,
 struct net_pkt *net_pkt_ref(struct net_pkt *pkt)
 #endif /* NET_LOG_LEVEL >= LOG_LEVEL_DBG */
 {
-	if (!pkt) {
+	atomic_val_t ref;
+
+	do {
+		ref = pkt ? atomic_get(&pkt->atomic_ref) : 0;
+		if (!ref) {
 #if NET_LOG_LEVEL >= LOG_LEVEL_DBG
-		NET_ERR("*** ERROR *** pkt %p (%s():%d)", pkt, caller, line);
+			NET_ERR("*** ERROR *** pkt %p (%s():%d)",
+				pkt, caller, line);
 #endif
-		return NULL;
-	}
+			return NULL;
+		}
+	} while (!atomic_cas(&pkt->atomic_ref, ref, ref + 1));
 
 #if CONFIG_NET_PKT_LOG_LEVEL >= LOG_LEVEL_DBG
 	NET_DBG("%s [%d] pkt %p ref %d (%s():%d)",
 		slab2str(pkt->slab), k_mem_slab_num_free_get(pkt->slab),
-		pkt, pkt->ref + 1, caller, line);
+		pkt, ref + 1, caller, line);
 #endif
 
-	pkt->ref++;
 
 	return pkt;
 }
@@ -1097,8 +1103,8 @@ int net_frag_linear_copy(struct net_buf *dst, struct net_buf *src,
 	return 0;
 }
 
-int net_frag_linearize(u8_t *dst, size_t dst_len, struct net_pkt *src,
-			 u16_t offset, u16_t len)
+size_t net_frag_linearize(void *dst, size_t dst_len, struct net_pkt *src,
+			  size_t offset, size_t len)
 {
 	return net_buf_linearize(dst, dst_len, src->frags, offset, len);
 }

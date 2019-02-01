@@ -11,10 +11,6 @@
 	model = "Silicon Labs EFR32 SLWSTK6061A board";
 	compatible = "silabs,efr32_slwstk6061a", "silabs,efr32fg1p";
 
-	aliases {
-		usart-0 = &usart0;
-	};
-
 	chosen {
 		zephyr,console = &usart0;
 		zephyr,shell-uart = &usart0;
@@ -60,7 +56,13 @@
 
 &usart0 {
 	current-speed = <115200>;
-	location = <0>;
+	location-rx = <GECKO_LOCATION(0) GECKO_PORT_A GECKO_PIN(1)>;
+	location-tx = <GECKO_LOCATION(0) GECKO_PORT_A GECKO_PIN(0)>;
+	status = "ok";
+};
+
+&gpio {
+	location-swo = <0>;
 	status = "ok";
 };
 

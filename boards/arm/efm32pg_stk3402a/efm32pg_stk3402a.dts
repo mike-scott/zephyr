@@ -20,9 +20,6 @@
 
 	/* These aliases are provided for compatibility with samples */
 	aliases {
-		i2c-0  = &i2c0;
-		usart-0 = &usart0;
-		leuart-0 = &leuart0;
 		led0 = &led0;
 		led1 = &led1;
 		sw0 = &button0;
@@ -58,7 +55,8 @@
 
 &usart0 {
 	current-speed = <115200>;
-	location = <0>;
+	location-rx = <GECKO_LOCATION(0) GECKO_PORT_A GECKO_PIN(1)>;
+	location-tx = <GECKO_LOCATION(0) GECKO_PORT_A GECKO_PIN(0)>;
 	status = "ok";
 };
 
@@ -70,5 +68,10 @@
 
 &i2c0 {
 	location = <15>;
+	status = "ok";
+};
+
+&gpio {
+	location-swo = <0>;
 	status = "ok";
 };

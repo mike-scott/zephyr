@@ -39,24 +39,13 @@ extern "C" {
 	_LOG_RESOLVED_LEVEL1(_level, _default)
 
 #define _LOG_RESOLVED_LEVEL1(_level, _default) \
-	__LOG_RESOLVED_LEVEL2(_LOG_XXXX##_level, _level, _default)
+	__COND_CODE(_LOG_XXXX##_level, (_level), (_default))
 
 #define _LOG_XXXX0 _LOG_YYYY,
 #define _LOG_XXXX1 _LOG_YYYY,
 #define _LOG_XXXX2 _LOG_YYYY,
 #define _LOG_XXXX3 _LOG_YYYY,
 #define _LOG_XXXX4 _LOG_YYYY,
-
-#define __LOG_RESOLVED_LEVEL2(one_or_two_args, _level, _default) \
-	__LOG_ARG_2(one_or_two_args _level, _default)
-
-#define LOG_DEBRACKET(...) __VA_ARGS__
-
-#define __LOG_ARG_1(val, ...) val
-#define __LOG_ARG_2(ignore_this, val, ...) val
-#define __LOG_ARGS_LESS1(val, ...) __VA_ARGS__
-
-#define __LOG_ARG_2_DEBRACKET(ignore_this, val, ...) LOG_DEBRACKET val
 
 /**
  * @brief Macro for conditional code generation if provided log level allows.
@@ -76,35 +65,12 @@ extern "C" {
 	_LOG_EVAL1(_eval_level, _iftrue, _iffalse)
 
 #define _LOG_EVAL1(_eval_level, _iftrue, _iffalse) \
-	_LOG_EVAL2(_LOG_ZZZZ##_eval_level, _iftrue, _iffalse)
+	__COND_CODE(_LOG_ZZZZ##_eval_level, _iftrue, _iffalse)
 
 #define _LOG_ZZZZ1 _LOG_YYYY,
 #define _LOG_ZZZZ2 _LOG_YYYY,
 #define _LOG_ZZZZ3 _LOG_YYYY,
 #define _LOG_ZZZZ4 _LOG_YYYY,
-
-#define _LOG_EVAL2(one_or_two_args, _iftrue, _iffalse) \
-	__LOG_ARG_2_DEBRACKET(one_or_two_args _iftrue, _iffalse)
-
-/**
- * @brief Macro for condition code generation.
- *
- * @param _eval Parameter evaluated against 0
- * @param _ifzero Code included if _eval is 0. Must be wrapped in brackets.
- * @param _ifnzero Code included if _eval is not  0.
- *		   Must be wrapped in brackets.
- */
-
-#define _LOG_Z_EVAL(_eval, _ifzero, _ifnzero) \
-	_LOG_Z_EVAL1(_eval, _ifzero, _ifnzero)
-
-#define _LOG_Z_EVAL1(_eval, _ifzero, _ifnzero) \
-	_LOG_Z_EVAL2(_LOG_Z_ZZZZ##_eval, _ifzero, _ifnzero)
-
-#define _LOG_Z_ZZZZ0 _LOG_Z_YYYY,
-
-#define _LOG_Z_EVAL2(one_or_two_args, _ifzero, _ifnzero) \
-	__LOG_ARG_2_DEBRACKET(one_or_two_args _ifzero, _ifnzero)
 
 /** @brief Macro for getting log level for given module.
  *
@@ -156,7 +122,7 @@ extern "C" {
 
 /**
  * @brief Macro for optional injection of function name as first argument of
- *	  formatted string. _LOG_Z_EVAL() macro is used to handle no arguments
+ *	  formatted string. COND_CODE_0() macro is used to handle no arguments
  *	  case.
  *
  *	  The purpose of this macro is to prefix string literal with format
@@ -165,10 +131,10 @@ extern "C" {
  *	  used.
  */
 
-#define _LOG_STR(...) "%s: " __LOG_ARG_1(__VA_ARGS__), __func__\
-		_LOG_Z_EVAL(NUM_VA_ARGS_LESS_1(__VA_ARGS__),\
+#define _LOG_STR(...) "%s: " GET_ARG1(__VA_ARGS__), __func__\
+		COND_CODE_0(NUM_VA_ARGS_LESS_1(__VA_ARGS__),\
 			    (),\
-			    (, __LOG_ARGS_LESS1(__VA_ARGS__))\
+			    (, GET_ARGS_LESS_1(__VA_ARGS__))\
 			   )
 
 
@@ -195,9 +161,15 @@ extern "C" {
 
 #define _LOG_INTERNAL_X(N, ...)  UTIL_CAT(_LOG_INTERNAL_, N)(__VA_ARGS__)
 
-#define __LOG_INTERNAL(_src_level, ...)			 \
-	_LOG_INTERNAL_X(_LOG_NARGS_POSTFIX(__VA_ARGS__), \
-			_src_level, __VA_ARGS__)
+#define __LOG_INTERNAL(_src_level, ...)					 \
+	do {								 \
+		if (IS_ENABLED(CONFIG_LOG_IMMEDIATE)) {		 \
+			log_string_sync(_src_level, __VA_ARGS__);	 \
+		} else {						 \
+			_LOG_INTERNAL_X(_LOG_NARGS_POSTFIX(__VA_ARGS__), \
+						_src_level, __VA_ARGS__);\
+		}							 \
+	} while (0)
 
 #define _LOG_INTERNAL_0(_src_level, _str) \
 	log_0(_str, _src_level)
@@ -280,17 +252,23 @@ extern "C" {
 /******************************************************************************/
 /****************** Macros for hexdump logging ********************************/
 /******************************************************************************/
-#define __LOG_HEXDUMP(_level, _id, _filter, _data, _length, _str)     \
-	do {							      \
-		if (_LOG_CONST_LEVEL_CHECK(_level) &&		      \
-		    (_level <= LOG_RUNTIME_FILTER(_filter))) {	      \
-			struct log_msg_ids src_level = {	      \
-				.level = _level,		      \
-				.source_id = _id,		      \
-				.domain_id = CONFIG_LOG_DOMAIN_ID     \
-			};					      \
-			log_hexdump(_str, _data, _length, src_level); \
-		}						      \
+#define __LOG_HEXDUMP(_level, _id, _filter, _data, _length, _str)	      \
+	do {								      \
+		if (_LOG_CONST_LEVEL_CHECK(_level) &&			      \
+		    (_level <= LOG_RUNTIME_FILTER(_filter))) {		      \
+			struct log_msg_ids src_level = {		      \
+				.level = _level,			      \
+				.source_id = _id,			      \
+				.domain_id = CONFIG_LOG_DOMAIN_ID	      \
+			};						      \
+									      \
+			if (IS_ENABLED(CONFIG_LOG_IMMEDIATE)) {	      \
+				log_hexdump_sync(src_level, _str,	      \
+						 _data, _length);	      \
+			} else {					      \
+				log_hexdump(_str, _data, _length, src_level); \
+			}						      \
+		}							      \
 	} while (false)
 
 #define _LOG_HEXDUMP(_level, _data, _length, _str)	       \
@@ -355,6 +333,11 @@ extern "C" {
 #else
 #define LOG_RUNTIME_FILTER(_filter) LOG_LEVEL_DBG
 #endif
+
+/** @brief Log level value used to indicate log entry that should not be
+ *	   formatted (raw string).
+ */
+#define LOG_LEVEL_INTERNAL_RAW_STRING LOG_LEVEL_NONE
 
 extern struct log_source_const_data __log_const_start[0];
 extern struct log_source_const_data __log_const_end[0];
@@ -517,6 +500,24 @@ void log_hexdump(const char *str,
  * @return Number of bytes processed.
  */
 int log_printk(const char *fmt, va_list ap);
+
+/** @brief Process log message synchronously.
+ *
+ * @param src_level	Log message details.
+ * @param fmt		String to format.
+ * @param ...		Variable list of arguments.
+ */
+void log_string_sync(struct log_msg_ids src_level, const char *fmt, ...);
+
+/** @brief Process log hexdump message synchronously.
+ *
+ * @param src_level	Log message details.
+ * @param metadata	Raw string associated with the data.
+ * @param data		Data.
+ * @param len		Data length.
+ */
+void log_hexdump_sync(struct log_msg_ids src_level, const char *metadata,
+		      const u8_t *data, u32_t len);
 
 /**
  * @brief Writes a generic log message to the log.

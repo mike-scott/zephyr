@@ -9,6 +9,10 @@
 #include <logging/log_core.h>
 #include <string.h>
 
+#ifndef CONFIG_LOG_BUFFER_SIZE
+#define CONFIG_LOG_BUFFER_SIZE 0
+#endif
+
 #define MSG_SIZE sizeof(union log_msg_chunk)
 #define NUM_OF_MSGS (CONFIG_LOG_BUFFER_SIZE / MSG_SIZE)
 
@@ -152,7 +156,7 @@ static struct log_msg *msg_alloc(u32_t nargs)
 	struct  log_msg *msg = _log_msg_std_alloc();
 	int n = (int)nargs;
 
-	if (!msg || nargs <= LOG_MSG_NARGS_SINGLE_CHUNK) {
+	if ((msg == NULL) || nargs <= LOG_MSG_NARGS_SINGLE_CHUNK) {
 		return msg;
 	}
 
@@ -165,7 +169,7 @@ static struct log_msg *msg_alloc(u32_t nargs)
 	while (n > 0) {
 		cont = (struct log_msg_cont *)log_msg_chunk_alloc();
 
-		if (!cont) {
+		if (cont == NULL) {
 			msg_free(msg);
 			return NULL;
 		}
@@ -194,7 +198,7 @@ static void copy_args_to_msg(struct  log_msg *msg, u32_t *args, u32_t nargs)
 		nargs  = 0U;
 	}
 
-	while (nargs) {
+	while (nargs != 0) {
 		u32_t cpy_args = min(nargs, ARGS_CONT_MSG);
 
 		(void)memcpy(cont->payload.args, args,
@@ -213,7 +217,7 @@ struct log_msg *log_msg_create_n(const char *str, u32_t *args, u32_t nargs)
 
 	msg = msg_alloc(nargs);
 
-	if (msg) {
+	if (msg != NULL) {
 		msg->str = str;
 		msg->hdr.params.std.nargs = nargs;
 		copy_args_to_msg(msg, args, nargs);
@@ -236,14 +240,13 @@ struct log_msg *log_msg_hexdump_create(const char *str,
 		 LOG_MSG_HEXDUMP_MAX_LENGTH : length;
 
 	msg = (struct log_msg *)log_msg_chunk_alloc();
-	if (!msg) {
+	if (msg == NULL) {
 		return NULL;
 	}
 
 	/* all fields reset to 0, reference counter to 1 */
 	msg->hdr.ref_cnt = 1;
 	msg->hdr.params.hexdump.type = LOG_MSG_TYPE_HEXDUMP;
-	msg->hdr.params.hexdump.raw_string = 0;
 	msg->hdr.params.hexdump.length = length;
 	msg->str = str;
 
@@ -267,7 +270,7 @@ struct log_msg *log_msg_hexdump_create(const char *str,
 
 	while (length > 0) {
 		cont = (struct log_msg_cont *)log_msg_chunk_alloc();
-		if (!cont) {
+		if (cont == NULL) {
 			msg_free(msg);
 			return NULL;
 		}

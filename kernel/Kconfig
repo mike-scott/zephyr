@@ -128,6 +128,7 @@ config SCHED_DEADLINE
 
 config MAIN_STACK_SIZE
 	int "Size of stack for initialization and main thread"
+	default 2048 if COVERAGE_GCOV
 	default 512 if ZTEST
 	default 1024
 	help
@@ -139,6 +140,7 @@ config MAIN_STACK_SIZE
 
 config IDLE_STACK_SIZE
 	int "Size of stack for idle thread"
+	default 512 if COVERAGE_GCOV
 	default 1024 if XTENSA
 	default 512 if RISCV32
 	default 320 if ARC || (ARM && CPU_HAS_FPU)
@@ -483,6 +485,18 @@ config ARCH_HAS_CUSTOM_SWAP_TO_MAIN
 	  the _main() thread, but instead must do something custom. It must
 	  enable this option in that case.
 
+config SWAP_NONATOMIC
+	bool
+	help
+	  On some architectures, the _Swap() primitive cannot be made
+	  atomic with respect to the irq_lock being released.  That
+	  is, interrupts may be received between the entry to _Swap
+	  and the completion of the context switch.  There are a
+	  handful of workaround cases in the kernel that need to be
+	  enabled when this is true.  Currently, this only happens on
+	  ARM when the PendSV exception priority sits below that of
+	  Zephyr-handled interrupts.
+
 config ARCH_HAS_CUSTOM_BUSY_WAIT
 	bool
 	# hidden
@@ -594,7 +608,7 @@ config RETPOLINE
 config STACK_CANARIES
 	bool "Compiler stack canaries"
 	help
-	  This option enables compiler stack canaries support kernel functions.
+	  This option enables compiler stack canaries.
 
 	  If stack canaries are supported by the compiler, it will emit
 	  extra code that inserts a canary value into the stack frame when
@@ -604,8 +618,8 @@ config STACK_CANARIES
 	  Enabling this option can result in a significant increase
 	  in footprint and an associated decrease in performance.
 
-	  If stack canaries are not supported by the compiler, enabling this
-	  option has no effect.
+	  If stack canaries are not supported by the compiler an error
+	  will occur at build time.
 
 config EXECUTE_XOR_WRITE
 	bool "Enable W^X for memory partitions"

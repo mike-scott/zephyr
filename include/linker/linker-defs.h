@@ -24,25 +24,6 @@
 #include <misc/util.h>
 #include <offsets.h>
 
-/* include platform dependent linker-defs */
-#ifdef CONFIG_X86
-/* Nothing yet to include */
-#elif defined(CONFIG_ARM)
-/* Nothing yet to include */
-#elif defined(CONFIG_ARC)
-/* Nothing yet to include */
-#elif defined(CONFIG_NIOS2)
-/* Nothing yet to include */
-#elif defined(CONFIG_RISCV32)
-/* Nothing yet to include */
-#elif defined(CONFIG_XTENSA)
-/* Nothing yet to include */
-#elif defined(CONFIG_ARCH_POSIX)
-/* Nothing yet to include */
-#else
-#error Arch not supported.
-#endif
-
 #ifdef _LINKER
 
 
@@ -135,7 +116,7 @@
 #define APP_INPUT_SECTION(sect)    *(MAYBE_EXCLUDE_SOME_FILES sect)
 #define KERNEL_INPUT_SECTION(sect) *(sect)
 
-#define APP_SMEM_SECTION() KEEP(*(SORT(data_smem_[_a-zA-Z0-9]*)))
+#define APP_SMEM_SECTION() KEEP(*(SORT("data_smem_*")))
 
 #ifdef CONFIG_X86 /* LINKER FILES: defines used by linker script */
 /* Should be moved to linker-common-defs.h */
@@ -254,6 +235,12 @@ extern char _image_rodata_end[];
 
 extern char _vector_start[];
 extern char _vector_end[];
+
+#ifdef CONFIG_COVERAGE_GCOV
+extern char __gcov_bss_start[];
+extern char __gcov_bss_end[];
+extern char __gcov_bss_size[];
+#endif	/* CONFIG_COVERAGE_GCOV */
 
 /* end address of image, used by newlib for the heap */
 extern char _end[];

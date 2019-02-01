@@ -14,8 +14,6 @@ menuconfig PINMUX
 
 if PINMUX
 
-source "drivers/pinmux/dev/Kconfig"
-
 config PINMUX_NAME
 	string "Pinmux driver name"
 	depends on PINMUX
@@ -60,5 +58,7 @@ source "drivers/pinmux/Kconfig.esp32"
 source "drivers/pinmux/Kconfig.sam0"
 
 source "drivers/pinmux/Kconfig.intel_s1000"
+
+source "drivers/pinmux/Kconfig.rv32m1"
 
 endif # PINMUX

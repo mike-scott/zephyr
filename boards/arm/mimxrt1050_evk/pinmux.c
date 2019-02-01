@@ -68,6 +68,26 @@ static int mimxrt1050_evk_init(struct device *dev)
 			    IOMUXC_SW_PAD_CTL_PAD_DSE(6));
 #endif
 
+#ifdef CONFIG_I2C_1
+	/* LPI2C1 SCL, SDA */
+	IOMUXC_SetPinMux(IOMUXC_GPIO_AD_B1_00_LPI2C1_SCL, 1);
+	IOMUXC_SetPinMux(IOMUXC_GPIO_AD_B1_01_LPI2C1_SDA, 1);
+
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_00_LPI2C1_SCL,
+			    IOMUXC_SW_PAD_CTL_PAD_PUS(3) |
+			    IOMUXC_SW_PAD_CTL_PAD_PKE_MASK |
+			    IOMUXC_SW_PAD_CTL_PAD_ODE_MASK |
+			    IOMUXC_SW_PAD_CTL_PAD_SPEED(2) |
+			    IOMUXC_SW_PAD_CTL_PAD_DSE(6));
+
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_01_LPI2C1_SDA,
+			    IOMUXC_SW_PAD_CTL_PAD_PUS(3) |
+			    IOMUXC_SW_PAD_CTL_PAD_PKE_MASK |
+			    IOMUXC_SW_PAD_CTL_PAD_ODE_MASK |
+			    IOMUXC_SW_PAD_CTL_PAD_SPEED(2) |
+			    IOMUXC_SW_PAD_CTL_PAD_DSE(6));
+#endif
+
 #ifdef CONFIG_SPI_3
 	/* LPSPI3 SCK, SDO, SDI, PCS0 */
 	IOMUXC_SetPinMux(IOMUXC_GPIO_AD_B0_00_LPSPI3_SCK, 0);
@@ -131,11 +151,24 @@ static int mimxrt1050_evk_init(struct device *dev)
 
 	/* pull up the ENET_INT before RESET. */
 	GPIO_WritePinOutput(GPIO1, 10, 1);
-	/* RESET PHY chip. */
-	GPIO_WritePinOutput(GPIO1, 9, 1);
+	GPIO_WritePinOutput(GPIO1, 9, 0);
 #endif
 
 	return 0;
 }
 
+#ifdef CONFIG_ETH_MCUX_0
+static int mimxrt1050_evk_phy_reset(struct device *dev)
+{
+	/* RESET PHY chip. */
+	k_busy_wait(10*USEC_PER_MSEC);
+	GPIO_WritePinOutput(GPIO1, 9, 1);
+
+	return 0;
+}
+#endif
+
 SYS_INIT(mimxrt1050_evk_init, PRE_KERNEL_1, 0);
+#ifdef CONFIG_ETH_MCUX_0
+SYS_INIT(mimxrt1050_evk_phy_reset, PRE_KERNEL_2, 0);
+#endif

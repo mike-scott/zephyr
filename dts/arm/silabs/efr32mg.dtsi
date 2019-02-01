@@ -1,6 +1,7 @@
 #include <arm/armv7-m.dtsi>
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/i2c/i2c.h>
+#include "gpio_gecko.h"
 
 / {
 	cpus {
@@ -16,6 +17,12 @@
 	sram0: memory@20000000 {
 		device_type = "memory";
 		compatible = "mmio-sram";
+	};
+
+	aliases {
+		leuart-0 = &leuart0;
+		i2c-0 = &i2c0;
+		i2c-1 = &i2c1;
 	};
 
 	soc {
@@ -101,7 +108,7 @@
 			status = "disabled";
 		};
 
-		gpio@4000a400 {
+		gpio: gpio@4000a400 {
 			compatible = "silabs,efr32mg-gpio";
 			reg = <0x4000a400 0xc00>;
 			interrupts = <9 2 17 2>;
