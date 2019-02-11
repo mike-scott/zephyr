@@ -165,4 +165,19 @@ int boot_request_upgrade(int permanent);
  */
 int boot_erase_img_bank(u8_t area_id);
 
+#ifdef CONFIG_FLASH_PAGE_LAYOUT
+/**
+ * @brief Destructively modifies slot 1 so it is not bootable.
+ *
+ * This function erases the flash page containing slot 1's "magic"
+ * bytes, then zeroes just those bytes. If the page size is smaller
+ * than the slot size, this ensures slot 1's contents are not bootable
+ * without taking the time required to erase the entire slot, which
+ * can be a time consuming operation if the slot is large.
+ *
+ * @return 0 on success, negative errno code on fail.
+ */
+int boot_invalidate_slot1(void);
+#endif /* CONFIG_FLASH_PAGE_LAYOUT */
+
 #endif  /* ZEPHYR_INCLUDE_DFU_MCUBOOT_H_ */

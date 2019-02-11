@@ -505,3 +505,49 @@ int boot_erase_img_bank(u8_t area_id)
 
 	return rc;
 }
+
+#ifdef CONFIG_FLASH_PAGE_LAYOUT
+int boot_invalidate_slot1(void)
+{
+	static const u32_t zero_magic[4] = {
+		0x00000000,
+		0x00000000,
+		0x00000000,
+		0x00000000,
+	};
+	struct flash_pages_info magic_info;
+	const struct flash_area *fa;
+	struct device *dev;
+	u32_t magic_off;
+	int rc;
+
+	rc = flash_area_open(FLASH_BANK1_ID, &fa);
+	if (rc) {
+		return rc;
+	}
+
+	magic_off = MAGIC_OFFS(fa); /* offset within "fa", not "dev" */
+
+	dev = device_get_binding(fa->fa_dev_name);
+	if (!dev) {
+		goto out;
+	}
+
+	rc = flash_get_page_info_by_offs(dev, fa->fa_off + magic_off,
+					 &magic_info);
+	if (rc != 0) {
+		goto out;
+	}
+
+	rc = flash_erase(dev, magic_info.start_offset, magic_info.size);
+	if (rc != 0) {
+		goto out;
+	}
+
+	rc = flash_area_write(fa, magic_off, zero_magic, sizeof(zero_magic));
+
+out:
+	flash_area_close(fa);
+	return rc;
+}
+#endif
