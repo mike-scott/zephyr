@@ -2,7 +2,6 @@
 # conf/mconf needs to be run from a different directory because of: GH-3408
 file(MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/kconfig/include/generated)
 file(MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/kconfig/include/config)
-file(MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/include/generated)
 
 if(KCONFIG_ROOT)
   # KCONFIG_ROOT has either been specified as a CMake variable or is
@@ -30,6 +29,8 @@ set(ENV{PYTHON_EXECUTABLE} ${PYTHON_EXECUTABLE})
 set(ENV{ARCH}      ${ARCH})
 set(ENV{BOARD_DIR} ${BOARD_DIR})
 set(ENV{SOC_DIR}   ${SOC_DIR})
+set(ENV{PROJECT_BINARY_DIR} ${PROJECT_BINARY_DIR})
+set(ENV{ARCH_DIR}   ${ARCH_DIR})
 
 add_custom_target(
   menuconfig
@@ -41,6 +42,9 @@ add_custom_target(
   ARCH=$ENV{ARCH}
   BOARD_DIR=$ENV{BOARD_DIR}
   SOC_DIR=$ENV{SOC_DIR}
+  PROJECT_BINARY_DIR=$ENV{PROJECT_BINARY_DIR}
+  ZEPHYR_TOOLCHAIN_VARIANT=${ZEPHYR_TOOLCHAIN_VARIANT}
+  ARCH_DIR=$ENV{ARCH_DIR}
   ${PYTHON_EXECUTABLE} ${ZEPHYR_BASE}/scripts/kconfig/menuconfig.py ${KCONFIG_ROOT}
   WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/kconfig
   USES_TERMINAL

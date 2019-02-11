@@ -1125,6 +1125,8 @@ static void add_nbr(struct net_if *iface,
 
 static enum net_verdict udp_data_received(struct net_conn *conn,
 					  struct net_pkt *pkt,
+					  union net_ip_header *ip_hdr,
+					  union net_proto_header *proto_hdr,
 					  void *user_data)
 {
 	DBG("Data %p received\n", pkt);
@@ -1150,8 +1152,8 @@ static void setup_udp_handler(const struct in6_addr *raddr,
 	net_ipaddr_copy(&net_sin6(&remote_addr)->sin6_addr, raddr);
 	remote_addr.sa_family = AF_INET6;
 
-	ret = net_udp_register(&remote_addr, &local_addr, remote_port,
-			       local_port, udp_data_received,
+	ret = net_udp_register(AF_INET6, &remote_addr, &local_addr,
+			       remote_port, local_port, udp_data_received,
 			       NULL, &handle);
 	zassert_equal(ret, 0, "Cannot register UDP handler");
 }
@@ -1355,6 +1357,8 @@ static void test_find_last_ipv6_fragment_hbho_2(void)
 				 ALLOC_TIMEOUT);
 	zassert_true(ret, "IPv6 header append failed");
 
+	net_pkt_set_overwrite(pkt, true);
+
 	net_pkt_lladdr_clear(pkt);
 
 	ret = net_ipv6_find_last_ext_hdr(pkt, &next_hdr_idx, &last_hdr_pos);
@@ -1398,6 +1402,8 @@ static void test_find_last_ipv6_fragment_hbho_3(void)
 				 ALLOC_TIMEOUT);
 	zassert_true(ret, "IPv6 header append failed");
 
+	net_pkt_set_overwrite(pkt, true);
+
 	net_pkt_lladdr_clear(pkt);
 
 	ret = net_ipv6_find_last_ext_hdr(pkt, &next_hdr_idx, &last_hdr_pos);
@@ -1438,6 +1444,8 @@ static void test_find_last_ipv6_fragment_hbho_frag(void)
 				 ALLOC_TIMEOUT);
 	zassert_true(ret, "IPv6 header append failed");
 
+	net_pkt_set_overwrite(pkt, true);
+
 	net_pkt_lladdr_clear(pkt);
 
 	ret = net_ipv6_find_last_ext_hdr(pkt, &next_hdr_idx, &last_hdr_pos);
@@ -1476,6 +1484,8 @@ static void test_find_last_ipv6_fragment_hbho_frag_1(void)
 	ret = net_pkt_append_all(pkt, sizeof(ipv6_hbho_frag_1),
 				 ipv6_hbho_frag_1, ALLOC_TIMEOUT);
 	zassert_true(ret, "IPv6 header append failed");
+
+	net_pkt_set_overwrite(pkt, true);
 
 	net_pkt_lladdr_clear(pkt);
 
@@ -1548,6 +1558,8 @@ static void test_send_ipv6_fragment(void)
 
 	NET_IPV6_HDR(pkt)->len = htons(total_len);
 
+	net_pkt_set_overwrite(pkt, true);
+
 	net_udp_set_chksum(pkt, pkt->frags);
 
 	test_failed = false;
@@ -1585,6 +1597,8 @@ static void test_send_ipv6_fragment_large_hbho(void)
 	ret = net_pkt_append_all(pkt, sizeof(ipv6_large_hbho),
 				 ipv6_large_hbho, ALLOC_TIMEOUT);
 	zassert_true(ret, "IPv6 header append failed");
+
+	net_pkt_set_overwrite(pkt, true);
 
 	net_pkt_lladdr_clear(pkt);
 

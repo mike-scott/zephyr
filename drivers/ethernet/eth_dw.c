@@ -86,14 +86,14 @@ static void eth_rx(struct device *dev)
 		frm_len -= sizeof(u32_t);
 	}
 
-	pkt = net_pkt_get_reserve_rx(K_NO_WAIT);
+	pkt = net_pkt_rx_alloc_with_buffer(context->iface, frm_len,
+					   AF_UNSPEC, 0, K_NO_WAIT);
 	if (!pkt) {
 		LOG_ERR("Failed to obtain RX buffer");
 		goto error;
 	}
 
-	if (!net_pkt_append_all(pkt, frm_len, (u8_t *)context->rx_buf,
-				K_NO_WAIT)) {
+	if (net_pkt_write_new(pkt, (void *)context->rx_buf, frm_len)) {
 		LOG_ERR("Failed to append RX buffer to context buffer");
 		net_pkt_unref(pkt);
 		goto error;
@@ -136,7 +136,7 @@ static void eth_tx_spin_wait(struct eth_runtime *context)
 
 static void eth_tx_data(struct eth_runtime *context, u8_t *data, u16_t len)
 {
-#ifdef CONFIG_NET_DEBUG_L2_ETHERNET
+#if CONFIG_ETHERNET_LOG_LEVEL >= LOG_LEVEL_DBG
 	/* Check whether an error occurred transmitting the previous frame. */
 	if (context->tx_desc.err_summary) {
 		LOG_ERR("Error transmitting frame: TDES0 = %08x,"

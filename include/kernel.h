@@ -452,6 +452,12 @@ struct _thread_base {
 
 	/* Recursive count of irq_lock() calls */
 	u8_t global_lock_count;
+
+#endif
+
+#ifdef CONFIG_SCHED_CPU_MASK
+	/* "May run on" bits for each CPU */
+	u8_t cpu_mask;
 #endif
 
 	/* data returned by APIs */
@@ -950,7 +956,7 @@ struct _static_thread_data {
 			entry, p1, p2, p3,                               \
 			prio, options, delay)                            \
 	K_THREAD_STACK_DEFINE(_k_thread_stack_##name, stack_size);	 \
-	struct k_thread __kernel _k_thread_obj_##name;			 \
+	struct k_thread _k_thread_obj_##name;			 \
 	struct _static_thread_data _k_thread_data_##name __aligned(4)    \
 		__in_section(_static_thread_data, static, name) =        \
 		_THREAD_INITIALIZER(&_k_thread_obj_##name,		 \
@@ -1033,6 +1039,52 @@ __syscall void k_thread_priority_set(k_tid_t thread, int prio);
  * @req K-THREAD-007
  */
 __syscall void k_thread_deadline_set(k_tid_t thread, int deadline);
+#endif
+
+#ifdef CONFIG_SCHED_CPU_MASK
+/**
+ * @brief Sets all CPU enable masks to zero
+ *
+ * After this returns, the thread will no longer be schedulable on any
+ * CPUs.  The thread must not be currently runnable.
+ *
+ * @param thread Thread to operate upon
+ * @return Zero on success, otherwise error code
+ */
+int k_thread_cpu_mask_clear(k_tid_t thread);
+
+/**
+ * @brief Sets all CPU enable masks to one
+ *
+ * After this returns, the thread will be schedulable on any CPU.  The
+ * thread must not be currently runnable.
+ *
+ * @param thread Thread to operate upon
+ * @return Zero on success, otherwise error code
+ */
+int k_thread_cpu_mask_enable_all(k_tid_t thread);
+
+/**
+ * @brief Enable thread to run on specified CPU
+ *
+ * The thread must not be currently runnable.
+ *
+ * @param thread Thread to operate upon
+ * @param cpu CPU index
+ * @return Zero on success, otherwise error code
+ */
+int k_thread_cpu_mask_enable(k_tid_t thread, int cpu);
+
+/**
+ * @brief Prevent thread to run on specified CPU
+ *
+ * The thread must not be currently runnable.
+ *
+ * @param thread Thread to operate upon
+ * @param cpu CPU index
+ * @return Zero on success, otherwise error code
+ */
+int k_thread_cpu_mask_disable(k_tid_t thread, int cpu);
 #endif
 
 /**
@@ -1560,7 +1612,12 @@ static inline void *_impl_k_timer_user_data_get(struct k_timer *timer)
  * This routine returns the elapsed time since the system booted,
  * in milliseconds.
  *
- * @return Current uptime.
+ * @note While this function returns time in milliseconds, it does not mean it
+ * has millisecond resolution. The actual resolution depends on
+ * :option:`CONFIG_SYS_CLOCK_TICKS_PER_SEC` config option, and with the default
+ * setting of 100, system time is updated in increments of 10ms.
+ *
+ * @return Current uptime in milliseconds.
  */
 __syscall s64_t k_uptime_get(void);
 
@@ -1599,7 +1656,12 @@ void k_disable_sys_clock_always_on(void);
  * cannot hold a system uptime time larger than approximately 50 days, so the
  * caller must handle possible rollovers.
  *
- * @return Current uptime.
+ * @note While this function returns time in milliseconds, it does not mean it
+ * has millisecond resolution. The actual resolution depends on
+ * :option:`CONFIG_SYS_CLOCK_TICKS_PER_SEC` config option, and with the default
+ * setting of 100, system time is updated in increments of 10ms.
+ *
+ * @return Current uptime in milliseconds.
  */
 __syscall u32_t k_uptime_get_32(void);
 
@@ -1666,6 +1728,7 @@ static inline u32_t k_uptime_delta_32(s64_t *reftime)
 
 struct k_queue {
 	sys_sflist_t data_q;
+	struct k_spinlock lock;
 	union {
 		_wait_q_t wait_q;
 
@@ -2307,6 +2370,7 @@ struct k_lifo {
 
 struct k_stack {
 	_wait_q_t wait_q;
+	struct k_spinlock lock;
 	u32_t *base, *next, *top;
 
 	_OBJECT_TRACING_NEXT_PTR(k_stack)
@@ -2464,6 +2528,7 @@ typedef void (*k_work_handler_t)(struct k_work *work);
 struct k_work_q {
 	struct k_queue queue;
 	struct k_thread thread;
+	struct k_spinlock lock;
 };
 
 enum {
@@ -3083,6 +3148,7 @@ static inline unsigned int _impl_k_sem_count_get(struct k_sem *sem)
  */
 struct k_msgq {
 	_wait_q_t wait_q;
+	struct k_spinlock lock;
 	size_t msg_size;
 	u32_t max_msgs;
 	char *buffer_start;
@@ -3151,7 +3217,7 @@ struct k_msgq_attrs {
  * @req K-MSGQ-001
  */
 #define K_MSGQ_DEFINE(q_name, q_msg_size, q_max_msgs, q_align)      \
-	static char __kernel_noinit __aligned(q_align)              \
+	static char __noinit __aligned(q_align)              \
 		_k_fifo_buf_##q_name[(q_max_msgs) * (q_msg_size)];  \
 	struct k_msgq q_name                                        \
 		__in_section(_k_msgq, static, q_name) =        \
@@ -3385,6 +3451,7 @@ struct k_mbox_msg {
 struct k_mbox {
 	_wait_q_t tx_msg_queue;
 	_wait_q_t rx_msg_queue;
+	struct k_spinlock lock;
 
 	_OBJECT_TRACING_NEXT_PTR(k_mbox)
 };
@@ -3564,6 +3631,7 @@ struct k_pipe {
 	size_t         bytes_used;      /**< # bytes used in buffer */
 	size_t         read_index;      /**< Where in buffer to read from */
 	size_t         write_index;     /**< Where in buffer to write */
+	struct k_spinlock lock;		/**< Synchronization lock */
 
 	struct {
 		_wait_q_t      readers; /**< Reader wait queue */
@@ -3612,7 +3680,7 @@ struct k_pipe {
  * @req K-PIPE-001
  */
 #define K_PIPE_DEFINE(name, pipe_buffer_size, pipe_align)		\
-	static unsigned char __kernel_noinit __aligned(pipe_align)	\
+	static unsigned char __noinit __aligned(pipe_align)	\
 		_k_pipe_buf_##name[pipe_buffer_size];			\
 	struct k_pipe name						\
 		__in_section(_k_pipe, static, name) =			\
@@ -4633,11 +4701,11 @@ static inline char *K_THREAD_STACK_BUFFER(k_thread_stack_t *sym)
 #ifdef _ARCH_MEM_PARTITION_ALIGN_CHECK
 #define K_MEM_PARTITION_DEFINE(name, start, size, attr) \
 	_ARCH_MEM_PARTITION_ALIGN_CHECK(start, size); \
-	__kernel struct k_mem_partition name =\
+	struct k_mem_partition name =\
 		{ (u32_t)start, size, attr}
 #else
 #define K_MEM_PARTITION_DEFINE(name, start, size, attr) \
-	__kernel struct k_mem_partition name =\
+	struct k_mem_partition name =\
 		{ (u32_t)start, size, attr}
 #endif /* _ARCH_MEM_PARTITION_ALIGN_CHECK */
 
@@ -4654,7 +4722,6 @@ struct k_mem_partition {
 };
 
 /* memory domain
- * Note: Always declare this structure with __kernel prefix
  */
 struct k_mem_domain {
 #ifdef CONFIG_USERSPACE

@@ -266,7 +266,6 @@ struct nrf_usbd_ctx {
 	bool ready;
 
 	struct k_work  usb_work;
-	struct k_fifo  work_queue;
 	struct k_mutex drv_lock;
 
 	struct nrf_usbd_ep_ctx ep_ctx[CFG_EP_CNT];
@@ -275,7 +274,13 @@ struct nrf_usbd_ctx {
 };
 
 
-static struct nrf_usbd_ctx usbd_ctx;
+K_FIFO_DEFINE(work_queue);
+
+
+static struct nrf_usbd_ctx usbd_ctx = {
+	.attached = false,
+	.ready = false,
+};
 
 
 static inline struct nrf_usbd_ctx *get_usbd_ctx(void)
@@ -392,7 +397,7 @@ static inline void usbd_evt_free(struct usbd_event *ev)
  */
 static inline void usbd_evt_put(struct usbd_event *ev)
 {
-	k_fifo_put(&get_usbd_ctx()->work_queue, ev);
+	k_fifo_put(&work_queue, ev);
 }
 
 /**
@@ -400,7 +405,7 @@ static inline void usbd_evt_put(struct usbd_event *ev)
  */
 static inline struct usbd_event *usbd_evt_get(void)
 {
-	return k_fifo_get(&get_usbd_ctx()->work_queue, K_NO_WAIT);
+	return k_fifo_get(&work_queue, K_NO_WAIT);
 }
 
 /**
@@ -498,8 +503,12 @@ void usb_dc_nrfx_power_event_callback(nrf_power_event_t event)
 	ev->evt_type = USBD_EVT_POWER;
 	ev->evt.pwr_evt.state = new_state;
 
+
 	usbd_evt_put(ev);
-	usbd_work_schedule();
+
+	if (usbd_ctx.attached) {
+		usbd_work_schedule();
+	}
 }
 
 /**
@@ -516,6 +525,7 @@ static int hf_clock_enable(bool on, bool blocking)
 {
 	int ret = -ENODEV;
 	struct device *clock;
+	static bool clock_requested;
 
 	clock = device_get_binding(CONFIG_CLOCK_CONTROL_NRF_M16SRC_DRV_NAME);
 	if (!clock) {
@@ -524,8 +534,18 @@ static int hf_clock_enable(bool on, bool blocking)
 	}
 
 	if (on) {
+		if (clock_requested) {
+			/* Do not request HFCLK multiple times. */
+			return 0;
+		}
 		ret = clock_control_on(clock, (void *)blocking);
 	} else {
+		if (!clock_requested) {
+			/* Cancel the operation if clock has not
+			 * been requested by this driver before.
+			 */
+			return 0;
+		}
 		ret = clock_control_off(clock, (void *)blocking);
 	}
 
@@ -535,9 +555,14 @@ static int hf_clock_enable(bool on, bool blocking)
 		return ret;
 	}
 
+	clock_requested = on;
 	LOG_DBG("HF clock %s success (%d)", on ? "start" : "stop", ret);
 
-	return ret;
+	/* NOTE: Non-blocking HF clock enable can return -EINPROGRESS
+	 * if HF clock start was already requested. Such error code
+	 * does not need to be propagated, hence returned value is 0.
+	 */
+	return 0;
 }
 
 static void usbd_enable_endpoints(struct nrf_usbd_ctx *ctx)
@@ -722,6 +747,8 @@ static inline void usbd_work_process_pwr_events(struct usbd_pwr_event *pwr_evt)
 	case USBD_ATTACHED:
 		LOG_DBG("USB detected");
 		nrfx_usbd_enable();
+		(void) hf_clock_enable(true, false);
+
 		break;
 
 	case USBD_POWERED:
@@ -739,6 +766,7 @@ static inline void usbd_work_process_pwr_events(struct usbd_pwr_event *pwr_evt)
 		LOG_DBG("USB Removed");
 		ctx->ready = false;
 		nrfx_usbd_disable();
+		(void) hf_clock_enable(false, false);
 
 		if (ctx->status_cb) {
 			ctx->status_cb(USB_DC_DISCONNECTED, NULL);
@@ -1215,7 +1243,7 @@ static void usbd_work_handler(struct k_work *item)
 				break;
 			}
 		default:
-			LOG_ERR("Unknown USBD event: %"PRIu32".", ev->evt_type);
+			LOG_ERR("Unknown USBD event: %"PRId16".", ev->evt_type);
 			break;
 		}
 		usbd_evt_free(ev);
@@ -1233,20 +1261,11 @@ int usb_dc_attach(void)
 	}
 
 	k_work_init(&ctx->usb_work, usbd_work_handler);
-	k_fifo_init(&ctx->work_queue);
 	k_mutex_init(&ctx->drv_lock);
 
 	IRQ_CONNECT(DT_NORDIC_NRF_USBD_USBD_0_IRQ,
 		    DT_NORDIC_NRF_USBD_USBD_0_IRQ_PRIORITY,
 		    nrfx_isr, nrfx_usbd_irq_handler, 0);
-
-	/* NOTE: Non-blocking HF clock enable can return -EINPROGRESS
-	 * if HF clock start was already requested.
-	 */
-	ret = hf_clock_enable(true, false);
-	if (ret && ret != -EINPROGRESS) {
-		return ret;
-	}
 
 	err = nrfx_usbd_init(usbd_event_handler);
 
@@ -1262,13 +1281,16 @@ int usb_dc_attach(void)
 		ctx->attached = true;
 	}
 
+	if (!k_fifo_is_empty(&work_queue)) {
+		usbd_work_schedule();
+	}
+
 	return ret;
 }
 
 int usb_dc_detach(void)
 {
 	struct nrf_usbd_ctx *ctx = get_usbd_ctx();
-	int ret;
 
 	k_mutex_lock(&ctx->drv_lock, K_FOREVER);
 
@@ -1277,18 +1299,13 @@ int usb_dc_detach(void)
 
 	nrfx_usbd_disable();
 	nrfx_usbd_uninit();
-
-	ret = hf_clock_enable(false, false);
-	if (ret) {
-		return ret;
-		k_mutex_unlock(&ctx->drv_lock);
-	}
-
+	(void) hf_clock_enable(false, false);
 	nrf5_power_usb_power_int_enable(false);
 
 	ctx->attached = false;
 	k_mutex_unlock(&ctx->drv_lock);
-	return ret;
+
+	return 0;
 }
 
 int usb_dc_reset(void)

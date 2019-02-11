@@ -24,12 +24,6 @@
 	};
 
 	chosen {
-#if defined(CONFIG_CODE_ITCM)
-		zephyr,flash = &itcm0;
-#elif defined(CONFIG_CODE_QSPI)
-		zephyr,flash = &is25wp064;
-#endif
-		zephyr,sram = &dtcm0;
 		zephyr,console = &uart1;
 		zephyr,shell-uart = &uart1;
 	};
@@ -37,6 +31,7 @@
 	sdram0: memory@80000000 {
 		/* Micron MT48LC16M16A2B4-6AIT:G */
 		device_type = "memory";
+		compatible = "mmio-sram";
 		reg = <0x80000000 0x2000000>;
 	};
 
@@ -55,6 +50,15 @@
 			gpios = <&gpio5 0 GPIO_INT_ACTIVE_LOW>;
 		};
 	};
+
+	panel {
+		compatible = "rocktech,rk043fn02h-ct";
+		port {
+			lcd_panel_in: endpoint {
+				remote-endpoint = <&lcd_panel_out>;
+			};
+		};
+	};
 };
 
 arduino_serial: &uart3 {};
@@ -65,6 +69,15 @@ arduino_serial: &uart3 {};
 		compatible = "issi,is25wp064", "jedec,spi-nor";
 		reg = <0>;
 		status = "ok";
+	};
+};
+
+&lcdif1 {
+	status = "ok";
+	port {
+		lcd_panel_out: endpoint {
+			remote-endpoint = <&lcd_panel_in>;
+		};
 	};
 };
 

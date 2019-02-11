@@ -35,14 +35,6 @@ LOG_MODULE_REGISTER(net_shell, LOG_LEVEL_DBG);
 
 #include "ipv6.h"
 
-#if defined(CONFIG_HTTP)
-#include <net/http.h>
-#endif
-
-#if defined(CONFIG_NET_APP)
-#include <net/net_app.h>
-#endif
-
 #if defined(CONFIG_NET_ARP)
 #include "ethernet/arp.h"
 #endif
@@ -189,6 +181,16 @@ static const char *iface2str(struct net_if *iface, const char **extra)
 	}
 #endif
 
+#ifdef CONFIG_NET_L2_CANBUS
+	if (net_if_l2(iface) == &NET_L2_GET_NAME(CANBUS)) {
+		if (extra) {
+			*extra = "======";
+		}
+
+		return "CANBUS";
+	}
+#endif
+
 	if (extra) {
 		*extra = "==============";
 	}
@@ -250,14 +252,18 @@ static void iface_cb(struct net_if *iface, void *user_data)
 #if defined(CONFIG_NET_VLAN)
 	struct ethernet_context *eth_ctx;
 #endif
+#if defined(CONFIG_NET_IPV4) || defined(CONFIG_NET_IPV6)
 	struct net_if_addr *unicast;
 	struct net_if_mcast_addr *mcast;
+#endif
 #if defined(CONFIG_NET_L2_ETHERNET_MGMT)
 	struct ethernet_req_params params;
 	int ret;
 #endif
 	const char *extra;
+#if defined(CONFIG_NET_IPV4) || defined(CONFIG_NET_IPV6)
 	int i, count;
+#endif
 
 	if (data->user_data && data->user_data != iface) {
 		return;
@@ -723,6 +729,7 @@ static void net_shell_print_statistics(struct net_if *iface, void *user_data)
 	   GET_STAT(iface, ip_errors.chkerr),
 	   GET_STAT(iface, ip_errors.protoerr));
 
+#if defined(CONFIG_NET_ICMPV4) || defined(CONFIG_NET_ICMPV6)
 	PR("ICMP recv      %d\tsent\t%d\tdrop\t%d\n",
 	   GET_STAT(iface, icmp.recv),
 	   GET_STAT(iface, icmp.sent),
@@ -730,6 +737,7 @@ static void net_shell_print_statistics(struct net_if *iface, void *user_data)
 	PR("ICMP typeer    %d\tchkerr\t%d\n",
 	   GET_STAT(iface, icmp.typeerr),
 	   GET_STAT(iface, icmp.chkerr));
+#endif
 
 #if defined(CONFIG_NET_UDP)
 	PR("UDP recv       %d\tsent\t%d\tdrop\t%d\n",
@@ -843,6 +851,10 @@ static void get_addresses(struct net_context *context,
 #endif
 	if (context->local.family == AF_UNSPEC) {
 		snprintk(addr_local, local_len, "AF_UNSPEC");
+	} else if (context->local.family == AF_PACKET) {
+		snprintk(addr_local, local_len, "AF_PACKET");
+	} else if (context->local.family == AF_CAN) {
+		snprintk(addr_local, local_len, "AF_CAN");
 	} else {
 		snprintk(addr_local, local_len, "AF_UNK(%d)",
 			 context->local.family);
@@ -871,9 +883,13 @@ static void context_cb(struct net_context *context, void *user_data)
 	PR("[%2d] %p\t%p    %c%c%c   %16s\t%16s\n",
 	   (*count) + 1, context,
 	   net_context_get_iface(context),
-	   net_context_get_family(context) == AF_INET6 ? '6' : '4',
-	   net_context_get_type(context) == SOCK_DGRAM ? 'D' : 'S',
-	   net_context_get_ip_proto(context) == IPPROTO_UDP ? 'U' : 'T',
+	   net_context_get_family(context) == AF_INET6 ? '6' :
+	   (net_context_get_family(context) == AF_INET ? '4' : ' '),
+	   net_context_get_type(context) == SOCK_DGRAM ? 'D' :
+	   (net_context_get_type(context) == SOCK_STREAM ? 'S' :
+	    (net_context_get_type(context) == SOCK_RAW ? 'R' : ' ')),
+	   net_context_get_ip_proto(context) == IPPROTO_UDP ? 'U' :
+	   (net_context_get_ip_proto(context) == IPPROTO_TCP ? 'T' : ' '),
 	   addr_local, addr_remote);
 
 	(*count)++;
@@ -928,7 +944,8 @@ static void conn_handler_cb(struct net_conn *conn, void *user_data)
 	}
 
 	PR("[%2d] %p %p\t%s\t%16s\t%16s\n",
-	   (*count) + 1, conn, conn->cb, net_proto2str(conn->proto),
+	   (*count) + 1, conn, conn->cb,
+	   net_proto2str(conn->local_addr.sa_family, conn->proto),
 	   addr_local, addr_remote);
 
 	(*count)++;
@@ -1136,253 +1153,6 @@ static int cmd_net_allocs(const struct shell *shell, size_t argc, char *argv[])
 #else
 	PR_INFO("Enable CONFIG_NET_DEBUG_NET_PKT_ALLOC to see allocations.\n");
 #endif /* CONFIG_NET_DEBUG_NET_PKT_ALLOC */
-
-	return 0;
-}
-
-#if (CONFIG_NET_APP_LOG_LEVEL >= LOG_LEVEL_DBG) && \
-	(defined(CONFIG_NET_APP_SERVER) || defined(CONFIG_NET_APP_CLIENT))
-
-#if defined(CONFIG_NET_APP_TLS) || defined(CONFIG_NET_APP_DTLS)
-static void print_app_sec_info(struct net_app_ctx *ctx, const char *sec_type)
-{
-	PR("     Security: %s  Thread id: %p\n", sec_type, ctx->tls.tid);
-
-#if defined(CONFIG_INIT_STACKS)
-	{
-		unsigned int pcnt, unused;
-
-		net_analyze_stack_get_values(
-			K_THREAD_STACK_BUFFER(ctx->tls.stack),
-			ctx->tls.stack_size,
-			&pcnt, &unused);
-		PR("     Stack: %p  Size: %d bytes unused %u usage "
-		   "%u/%d (%u %%)\n",
-		   ctx->tls.stack, ctx->tls.stack_size,
-		   unused, ctx->tls.stack_size - unused,
-		   ctx->tls.stack_size, pcnt);
-	}
-#endif /* CONFIG_INIT_STACKS */
-
-	if (ctx->tls.cert_host) {
-		PR("     Cert host: %s\n", ctx->tls.cert_host);
-	}
-}
-#endif /* CONFIG_NET_APP_TLS || CONFIG_NET_APP_DTLS */
-
-static void net_app_cb(struct net_app_ctx *ctx, void *user_data)
-{
-	struct net_shell_user_data *data = user_data;
-	const struct shell *shell = data->shell;
-	int *count = data->user_data;
-	char *sec_type = "none";
-	char *app_type = "unknown";
-	char *proto = "unknown";
-	bool printed = false;
-
-#if defined(CONFIG_NET_IPV6) && !defined(CONFIG_NET_IPV4)
-#define ADDR_LEN NET_IPV6_ADDR_LEN
-#elif defined(CONFIG_NET_IPV4) && !defined(CONFIG_NET_IPV6)
-#define ADDR_LEN NET_IPV4_ADDR_LEN
-#else
-#define ADDR_LEN NET_IPV6_ADDR_LEN
-#endif
-	/* +7 for []:port */
-	char addr_local[ADDR_LEN + 7];
-	char addr_remote[ADDR_LEN + 7] = "";
-
-	if (*count == 0) {
-		if (ctx->app_type == NET_APP_SERVER) {
-			PR("Network application server instances\n\n");
-		} else if (ctx->app_type == NET_APP_CLIENT) {
-			PR("Network application client instances\n\n");
-		} else {
-			PR("Invalid network application type %d\n",
-			   ctx->app_type);
-		}
-	}
-
-	if (IS_ENABLED(CONFIG_NET_APP_TLS) && ctx->is_tls) {
-		if (ctx->sock_type == SOCK_STREAM) {
-			sec_type = "TLS";
-		}
-	}
-
-	if (IS_ENABLED(CONFIG_NET_APP_DTLS) && ctx->is_tls) {
-		if (ctx->sock_type == SOCK_DGRAM) {
-			sec_type = "DTLS";
-		}
-	}
-
-	if (ctx->app_type == NET_APP_SERVER) {
-		app_type = "server";
-	} else if (ctx->app_type == NET_APP_CLIENT) {
-		app_type = "client";
-	}
-
-	if (ctx->proto == IPPROTO_UDP) {
-#if defined(CONFIG_NET_UDP)
-		proto = "UDP";
-#else
-		proto = "<UDP not configured>";
-#endif
-	}
-
-	if (ctx->proto == IPPROTO_TCP) {
-#if defined(CONFIG_NET_TCP)
-		proto = "TCP";
-#else
-		proto = "<TCP not configured>";
-#endif
-	}
-
-	PR("[%2d] App-ctx: %p  Status: %s  Type: %s  Protocol: %s\n",
-	   *count, ctx, ctx->is_enabled ? "enabled" : "disabled",
-	   app_type, proto);
-
-#if defined(CONFIG_NET_APP_TLS) || defined(CONFIG_NET_APP_DTLS)
-	if (ctx->is_tls) {
-		print_app_sec_info(ctx, sec_type);
-	}
-#endif /* CONFIG_NET_APP_TLS || CONFIG_NET_APP_DTLS */
-
-#if defined(CONFIG_NET_IPV6)
-	if (ctx->app_type == NET_APP_SERVER) {
-		if (ctx->ipv6.ctx && ctx->ipv6.ctx->local.family == AF_INET6) {
-			get_addresses(ctx->ipv6.ctx,
-				      addr_local, sizeof(addr_local),
-				      addr_remote, sizeof(addr_remote));
-
-			PR("     Listen IPv6: %16s <- %16s\n",
-			   addr_local, addr_remote);
-		} else {
-			PR("     Not listening IPv6 connections.\n");
-		}
-	} else if (ctx->app_type == NET_APP_CLIENT) {
-		if (ctx->ipv6.ctx && ctx->ipv6.ctx->local.family == AF_INET6) {
-			get_addresses(ctx->ipv6.ctx,
-				      addr_local, sizeof(addr_local),
-				      addr_remote, sizeof(addr_remote));
-
-			PR("     Connect IPv6: %16s -> %16s\n",
-			   addr_local, addr_remote);
-		}
-	} else {
-		PR("Invalid application type %d\n", ctx->app_type);
-		printed = true;
-	}
-#else
-	PR("     IPv6 connections not enabled.\n");
-#endif
-
-#if defined(CONFIG_NET_IPV4)
-	if (ctx->app_type == NET_APP_SERVER) {
-		if (ctx->ipv4.ctx && ctx->ipv4.ctx->local.family == AF_INET) {
-			get_addresses(ctx->ipv4.ctx,
-				      addr_local, sizeof(addr_local),
-				      addr_remote, sizeof(addr_remote));
-
-			PR("     Listen IPv4: %16s <- %16s\n", addr_local,
-			   addr_remote);
-		} else {
-			PR("     Not listening IPv4 connections.\n");
-		}
-	} else if (ctx->app_type == NET_APP_CLIENT) {
-		if (ctx->ipv4.ctx && ctx->ipv4.ctx->local.family == AF_INET) {
-			get_addresses(ctx->ipv4.ctx,
-				      addr_local, sizeof(addr_local),
-				      addr_remote, sizeof(addr_remote));
-
-			PR("     Connect IPv4: %16s -> %16s\n", addr_local,
-			   addr_remote);
-		}
-	} else {
-		if (!printed) {
-			PR("Invalid application type %d\n", ctx->app_type);
-		}
-	}
-#else
-	PR("     IPv4 connections not enabled.\n");
-#endif
-
-#if defined(CONFIG_NET_APP_SERVER)
-#if defined(CONFIG_NET_TCP)
-	{
-		int i, found = 0;
-
-		for (i = 0; i < CONFIG_NET_APP_SERVER_NUM_CONN; i++) {
-			if (!ctx->server.net_ctxs[i] ||
-			    !net_context_is_used(ctx->server.net_ctxs[i])) {
-				continue;
-			}
-
-			get_addresses(ctx->server.net_ctxs[i],
-				      addr_local, sizeof(addr_local),
-				      addr_remote, sizeof(addr_remote));
-
-			PR("     Active: %16s <- %16s\n", addr_local,
-			   addr_remote);
-			found++;
-		}
-
-		if (!found) {
-			PR("     No active connections to this server.\n");
-		}
-	}
-#else
-	PR("     TCP not enabled for this server.\n");
-#endif
-#endif /* CONFIG_NET_APP_SERVER */
-
-	(*count)++;
-
-	return;
-}
-#endif
-
-static int cmd_net_app(const struct shell *shell, size_t argc, char *argv[])
-{
-#if CONFIG_NET_APP_LOG_LEVEL >= LOG_LEVEL_DBG
-	struct net_shell_user_data user_data;
-	int i = 0;
-#endif
-
-	ARG_UNUSED(argc);
-	ARG_UNUSED(argv);
-
-#if CONFIG_NET_APP_LOG_LEVEL >= LOG_LEVEL_DBG
-	if (IS_ENABLED(CONFIG_NET_APP_SERVER)) {
-		user_data.shell = shell;
-		user_data.user_data = &i;
-
-		net_app_server_foreach(net_app_cb, &user_data);
-
-		if (i == 0) {
-			PR_WARNING("No net app server instances found.\n");
-			i = -1;
-		}
-	}
-
-	if (IS_ENABLED(CONFIG_NET_APP_CLIENT)) {
-		if (i) {
-			PR("\n");
-			i = 0;
-		}
-
-		user_data.shell = shell;
-		user_data.user_data = &i;
-
-		net_app_client_foreach(net_app_cb, &user_data);
-
-		if (i == 0) {
-			PR_WARNING("No net app client instances found.\n");
-		}
-	}
-#else
-	PR_INFO("Enable CONFIG_NET_APP_LOG_LEVEL_DBG and either "
-		"CONFIG_NET_APP_CLIENT or CONFIG_NET_APP_SERVER to see "
-		"client/server instance information.\n");
-#endif
 
 	return 0;
 }
@@ -2358,114 +2128,6 @@ static int cmd_net_gptp(const struct shell *shell, size_t argc, char *argv[])
 	return 0;
 }
 
-#if defined(CONFIG_NET_DEBUG_HTTP_CONN) && defined(CONFIG_HTTP_SERVER)
-#define MAX_HTTP_OUTPUT_LEN 64
-static char *http_str_output(char *output, int outlen, const char *str, int len)
-{
-	if (len > outlen) {
-		len = outlen;
-	}
-
-	if (len == 0) {
-		(void)memset(output, 0, outlen);
-	} else {
-		memcpy(output, str, len);
-		output[len] = '\0';
-	}
-
-	return output;
-}
-
-static void http_server_cb(struct http_ctx *entry, void *user_data)
-{
-	struct net_shell_user_data *data = user_data;
-	const struct shell *shell = data->shell;
-	int *count = data->user_data;
-	static char output[MAX_HTTP_OUTPUT_LEN];
-	int i;
-
-	/* +7 for []:port */
-	char addr_local[ADDR_LEN + 7];
-	char addr_remote[ADDR_LEN + 7] = "";
-
-	if (*count == 0) {
-		PR("        HTTP ctx    Local           \t"
-		   "Remote          \tURL\n");
-	}
-
-	(*count)++;
-
-	for (i = 0; i < CONFIG_NET_APP_SERVER_NUM_CONN; i++) {
-		if (!entry->app_ctx.server.net_ctxs[i] ||
-		    !net_context_is_used(entry->app_ctx.server.net_ctxs[i])) {
-			continue;
-		}
-
-		get_addresses(entry->app_ctx.server.net_ctxs[i],
-			      addr_local, sizeof(addr_local),
-			      addr_remote, sizeof(addr_remote));
-
-		PR("[%2d] %c%c %p  %16s\t%16s\t%s\n",
-		   *count,
-		   entry->app_ctx.is_enabled ? 'E' : 'D',
-		   entry->is_tls ? 'S' : ' ',
-		   entry, addr_local, addr_remote,
-		   http_str_output(output, sizeof(output) - 1,
-				   entry->http.url, entry->http.url_len));
-	}
-}
-#endif /* CONFIG_NET_DEBUG_HTTP_CONN && CONFIG_HTTP_SERVER */
-
-#if defined(CONFIG_NET_DEBUG_HTTP_CONN) && defined(CONFIG_HTTP_SERVER)
-static int http_monitor_count;
-#endif
-
-static int cmd_net_http_monitor(const struct shell *shell, size_t argc,
-				char *argv[])
-{
-#if defined(CONFIG_NET_DEBUG_HTTP_CONN) && defined(CONFIG_HTTP_SERVER)
-	PR_INFO("Activating HTTP monitor. Type \"net http\" "
-		"to disable HTTP connection monitoring.\n");
-	http_server_conn_monitor(http_server_cb, &http_monitor_count);
-#else
-	ARG_UNUSED(argc);
-	ARG_UNUSED(argv);
-
-	PR_INFO("Enable CONFIG_NET_DEBUG_HTTP_CONN and CONFIG_HTTP_SERVER "
-		"to get HTTP server connection information\n");
-#endif
-
-	return 0;
-}
-
-static int cmd_net_http(const struct shell *shell, size_t argc, char *argv[])
-{
-#if defined(CONFIG_NET_DEBUG_HTTP_CONN) && defined(CONFIG_HTTP_SERVER)
-	struct net_shell_user_data user_data;
-	int arg = 2;
-#endif
-
-#if defined(CONFIG_NET_DEBUG_HTTP_CONN) && defined(CONFIG_HTTP_SERVER)
-	http_monitor_count = 0;
-
-	/* Turn off monitoring if it was enabled */
-	http_server_conn_monitor(NULL, NULL);
-
-	user_data.shell = shell;
-	user_data.user_data = &http_monitor_count;
-
-	http_server_conn_foreach(http_server_cb, &user_data);
-#else
-	ARG_UNUSED(argc);
-	ARG_UNUSED(argv);
-
-	PR_INFO("Enable CONFIG_NET_DEBUG_HTTP_CONN and CONFIG_HTTP_SERVER "
-		"to get HTTP server connection information\n");
-#endif
-
-	return 0;
-}
-
 static int get_iface_idx(const struct shell *shell, char *index_str)
 {
 	char *endptr;
@@ -2992,7 +2654,9 @@ static const struct shell *shell_for_ping;
 
 #if defined(CONFIG_NET_IPV6)
 
-static enum net_verdict _handle_ipv6_echo_reply(struct net_pkt *pkt);
+static enum net_verdict _handle_ipv6_echo_reply(struct net_pkt *pkt,
+						struct net_ipv6_hdr *ip_hdr,
+						struct net_icmp_hdr *icmp_hdr);
 
 static struct net_icmpv6_handler ping6_handler = {
 	.type = NET_ICMPV6_ECHO_REPLY,
@@ -3005,11 +2669,15 @@ static inline void _remove_ipv6_ping_handler(void)
 	net_icmpv6_unregister_handler(&ping6_handler);
 }
 
-static enum net_verdict _handle_ipv6_echo_reply(struct net_pkt *pkt)
+static enum net_verdict _handle_ipv6_echo_reply(struct net_pkt *pkt,
+						struct net_ipv6_hdr *ip_hdr,
+						struct net_icmp_hdr *icmp_hdr)
 {
+	ARG_UNUSED(icmp_hdr);
+
 	PR_SHELL(shell_for_ping, "Received echo reply from %s to %s\n",
-		 net_sprint_ipv6_addr(&NET_IPV6_HDR(pkt)->src),
-		 net_sprint_ipv6_addr(&NET_IPV6_HDR(pkt)->dst));
+		 net_sprint_ipv6_addr(&ip_hdr->src),
+		 net_sprint_ipv6_addr(&ip_hdr->dst));
 	k_sem_give(&ping_timeout);
 	_remove_ipv6_ping_handler();
 
@@ -3065,7 +2733,8 @@ static int _ping_ipv6(const struct shell *shell, char *host)
 
 #if defined(CONFIG_NET_IPV4)
 
-static enum net_verdict _handle_ipv4_echo_reply(struct net_pkt *pkt);
+static enum net_verdict _handle_ipv4_echo_reply(struct net_pkt *pkt,
+						struct net_ipv4_hdr *ip_hdr);
 
 static struct net_icmpv4_handler ping4_handler = {
 	.type = NET_ICMPV4_ECHO_REPLY,
@@ -3078,11 +2747,12 @@ static inline void _remove_ipv4_ping_handler(void)
 	net_icmpv4_unregister_handler(&ping4_handler);
 }
 
-static enum net_verdict _handle_ipv4_echo_reply(struct net_pkt *pkt)
+static enum net_verdict _handle_ipv4_echo_reply(struct net_pkt *pkt,
+						struct net_ipv4_hdr *ip_hdr)
 {
 	PR_SHELL(shell_for_ping, "Received echo reply from %s to %s\n",
-		 net_sprint_ipv4_addr(&NET_IPV4_HDR(pkt)->src),
-		 net_sprint_ipv4_addr(&NET_IPV4_HDR(pkt)->dst));
+		 net_sprint_ipv4_addr(&ip_hdr->src),
+		 net_sprint_ipv4_addr(&ip_hdr->dst));
 	k_sem_give(&ping_timeout);
 	_remove_ipv4_ping_handler();
 
@@ -3122,6 +2792,13 @@ static int _ping_ipv4(const struct shell *shell, char *host)
 
 static int cmd_net_ping(const struct shell *shell, size_t argc, char *argv[])
 {
+#if !defined(CONFIG_NET_IPV4) && !defined(CONFIG_NET_IPV6)
+	ARG_UNUSED(shell);
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
+	return -EOPNOTSUPP;
+#else
 	char *host;
 	int ret;
 
@@ -3170,6 +2847,7 @@ wait_reply:
 	}
 
 	return 0;
+#endif
 }
 
 static int cmd_net_route(const struct shell *shell, size_t argc, char *argv[])
@@ -3933,13 +3611,6 @@ SHELL_CREATE_STATIC_SUBCMD_SET(net_cmd_gptp)
 	SHELL_SUBCMD_SET_END
 };
 
-SHELL_CREATE_STATIC_SUBCMD_SET(net_cmd_http)
-{
-	SHELL_CMD(monitor, NULL, "Start monitoring HTTP connections.",
-		  cmd_net_http_monitor),
-	SHELL_SUBCMD_SET_END
-};
-
 #if !defined(NET_VLAN_MAX_COUNT)
 #define MAX_IFACE_COUNT NET_IF_MAX_CONFIGS
 #else
@@ -4136,9 +3807,6 @@ SHELL_CREATE_STATIC_SUBCMD_SET(net_commands)
 	/* Alphabetically sorted. */
 	SHELL_CMD(allocs, NULL, "Print network memory allocations.",
 		  cmd_net_allocs),
-	SHELL_CMD(app, NULL,
-		  "Print network application API usage information.",
-		  cmd_net_app),
 	SHELL_CMD(arp, &net_cmd_arp, "Print information about IPv4 ARP cache.",
 		  cmd_net_arp),
 	SHELL_CMD(conn, NULL, "Print information about network connections.",
@@ -4147,9 +3815,6 @@ SHELL_CREATE_STATIC_SUBCMD_SET(net_commands)
 		  cmd_net_dns),
 	SHELL_CMD(gptp, &net_cmd_gptp, "Print information about gPTP support.",
 		  cmd_net_gptp),
-	SHELL_CMD(http, &net_cmd_http,
-		  "Print information about active HTTP connections.",
-		  cmd_net_http),
 	SHELL_CMD(iface, &net_cmd_iface,
 		  "Print information about network interfaces.",
 		  cmd_net_iface),

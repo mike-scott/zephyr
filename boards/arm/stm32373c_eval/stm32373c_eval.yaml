@@ -9,3 +9,5 @@ toolchain:
 ram: 32
 supported:
   - rtc
+  - watchdog
+  - counter

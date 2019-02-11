@@ -18,6 +18,7 @@
 		zephyr,uart-mcumgr = &uart0;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
+		zephyr,code-partition = &slot0_partition;
 	};
 
 	leds {
@@ -111,6 +112,12 @@
 	scl-pin = <31>;
 };
 
+&pwm0 {
+	status = "ok";
+	ch0-pin = <13>;
+	ch0-inverted;
+};
+
 &spi0 {
 	status = "ok";
 	sck-pin = <27>;
@@ -127,9 +134,20 @@
 
 &spi2 {
 	status = "ok";
-	sck-pin = <37>;
-	mosi-pin = <38>;
-	miso-pin = <39>;
+	sck-pin = <19>;
+	mosi-pin = <20>;
+	miso-pin = <21>;
+	cs-gpios = <&gpio0 17 0>, <&gpio1 5 0>;
+	mx25r6435f@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <80000000>;
+		label = "MX25R64";
+		jedec-id = <0xc2 0x28 0x17>;
+		size = <67108864>;
+		wp-gpios = <&gpio0 22 0>;
+		hold-gpios = <&gpio0 23 0>;
+	};
 };
 
 &spi3 {
@@ -142,7 +160,7 @@
 &flash0 {
 	/*
 	 * For more information, see:
-	 * http://docs.zephyrproject.org/latest/devices/dts/flash_partitions.html
+	 * http://docs.zephyrproject.org/latest/guides/dts/index.html#flash-partitions
 	 */
 	partitions {
 		compatible = "fixed-partitions";

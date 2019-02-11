@@ -14,13 +14,14 @@ LOG_MODULE_REGISTER(ssd1673);
 #include <init.h>
 #include <gpio.h>
 #include <spi.h>
+#include <misc/byteorder.h>
 
 #include "ssd1673_regs.h"
 #include <display/cfb.h>
 
-#define EPD_PANEL_WIDTH			250
-#define EPD_PANEL_HEIGHT		120
-#define EPD_PANEL_NUMOF_COLUMS		250
+#define EPD_PANEL_WIDTH			DT_SOLOMON_SSD1673FB_0_WIDTH
+#define EPD_PANEL_HEIGHT		DT_SOLOMON_SSD1673FB_0_HEIGHT
+#define EPD_PANEL_NUMOF_COLUMS		EPD_PANEL_WIDTH
 #define EPD_PANEL_NUMOF_ROWS_PER_PAGE	8
 #define EPD_PANEL_NUMOF_PAGES		(EPD_PANEL_HEIGHT / \
 					 EPD_PANEL_NUMOF_ROWS_PER_PAGE)
@@ -28,7 +29,7 @@ LOG_MODULE_REGISTER(ssd1673);
 #define SSD1673_PANEL_FIRST_PAGE	0
 #define SSD1673_PANEL_LAST_PAGE		(EPD_PANEL_NUMOF_PAGES - 1)
 #define SSD1673_PANEL_FIRST_GATE	0
-#define SSD1673_PANEL_LAST_GATE		249
+#define SSD1673_PANEL_LAST_GATE		(EPD_PANEL_NUMOF_COLUMS - 1)
 
 #define SSD1673_PIXELS_PER_BYTE		8
 
@@ -44,23 +45,51 @@ struct ssd1673_data {
 	u8_t scan_mode;
 };
 
-#define SSD1673_LAST_LUT_INITIAL		0
-#define SSD1673_LAST_LUT_DEFAULT		255
-#define SSD1673_LUT_SIZE			29
-
-static u8_t ssd1673_lut_initial[SSD1673_LUT_SIZE] = {
+#if defined(DT_GD_GDE0213B1_0)
+static u8_t ssd1673_lut_initial[] = {
 	0x22, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x11,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x1E, 0x1E, 0x1E, 0x1E, 0x1E, 0x1E, 0x1E, 0x1E,
 	0x01, 0x00, 0x00, 0x00, 0x00
 };
 
-static u8_t ssd1673_lut_default[SSD1673_LUT_SIZE] = {
+static u8_t ssd1673_lut_default[] = {
 	0x18, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x0F, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00
 };
+#elif defined(DT_GD_GDE029A1_0)
+static u8_t ssd1673_lut_initial[] = {
+	0x50, 0xAA, 0x55, 0xAA, 0x11, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x1F, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+static u8_t ssd1673_lut_default[] = {
+	0x10, 0x18, 0x18, 0x08, 0x18, 0x18, 0x08, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x13, 0x14, 0x44, 0x12,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+#elif defined(DT_HINK_E0154A05_0)
+static u8_t ssd1673_lut_initial[] = {
+	0x02, 0x02, 0x01, 0x11, 0x12, 0x12, 0x22, 0x22,
+	0x66, 0x69, 0x69, 0x59, 0x58, 0x99, 0x99, 0x88,
+	0x00, 0x00, 0x00, 0x00, 0xF8, 0xB4, 0x13, 0x51,
+	0x35, 0x51, 0x51, 0x19, 0x01, 0x00
+};
+
+static u8_t ssd1673_lut_default[] = {
+	0x10, 0x18, 0x18, 0x08, 0x18, 0x18, 0x08, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x13, 0x14, 0x44, 0x12,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+#else
+#error "No waveform look up table (LUT) selected!"
+#endif
 
 static inline int ssd1673_write_cmd(struct ssd1673_data *driver,
 				    u8_t cmd, u8_t *data, size_t len)
@@ -99,22 +128,50 @@ static inline void ssd1673_busy_wait(struct ssd1673_data *driver)
 	}
 }
 
+static inline size_t push_x_param(u8_t *data, u16_t x)
+{
+#if DT_SOLOMON_SSD1673FB_0_PP_WIDTH_BITS == 8
+	data[0] = (u8_t)x;
+	return 1;
+#elif DT_SOLOMON_SSD1673FB_0_PP_WIDTH_BITS == 16
+	sys_put_le16(sys_cpu_to_le16(x), data);
+	return 2;
+#else
+#error Unsupported DT_SOLOMON_SSD1673FB_0_PP_WIDTH_BITS value
+#endif
+}
+
+static inline size_t push_y_param(u8_t *data, u16_t y)
+{
+#if DT_SOLOMON_SSD1673FB_0_PP_HEIGHT_BITS == 8
+	data[0] = (u8_t)y;
+	return 1;
+#elif DT_SOLOMON_SSD1673FB_0_PP_HEIGHT_BITS == 16
+	sys_put_le16(sys_cpu_to_le16(y), data);
+	return 2;
+#else
+#error Unsupported DT_SOLOMON_SSD1673FB_0_PP_HEIGHT_BITS value
+#endif
+}
+
+
 static inline int ssd1673_set_ram_param(struct ssd1673_data *driver,
-					u8_t sx, u8_t ex, u8_t sy, u8_t ey)
+					u16_t sx, u16_t ex, u16_t sy, u16_t ey)
 {
 	int err;
-	u8_t tmp[2];
+	u8_t tmp[4];
+	size_t len;
 
-	tmp[0] = sx; tmp[1] = ex;
-	err = ssd1673_write_cmd(driver, SSD1673_CMD_RAM_XPOS_CTRL, tmp,
-				sizeof(tmp));
+	len  = push_x_param(tmp, sx);
+	len += push_x_param(tmp + len, ex);
+	err = ssd1673_write_cmd(driver, SSD1673_CMD_RAM_XPOS_CTRL, tmp, len);
 	if (err < 0) {
 		return err;
 	}
 
-	tmp[0] = sy; tmp[1] = ey;
-	err = ssd1673_write_cmd(driver, SSD1673_CMD_RAM_YPOS_CTRL, tmp,
-				sizeof(tmp));
+	len  = push_y_param(tmp, sy);
+	len += push_y_param(tmp + len, ey);
+	err = ssd1673_write_cmd(driver, SSD1673_CMD_RAM_YPOS_CTRL, tmp,	len);
 	if (err < 0) {
 		return err;
 	}
@@ -123,18 +180,20 @@ static inline int ssd1673_set_ram_param(struct ssd1673_data *driver,
 }
 
 static inline int ssd1673_set_ram_ptr(struct ssd1673_data *driver,
-				       u8_t x, u8_t y)
+				      u16_t x, u16_t y)
 {
 	int err;
+	u8_t tmp[2];
+	size_t len;
 
-	err = ssd1673_write_cmd(driver, SSD1673_CMD_RAM_XPOS_CNTR, &x,
-				sizeof(x));
+	len = push_x_param(tmp, x);
+	err = ssd1673_write_cmd(driver, SSD1673_CMD_RAM_XPOS_CNTR, tmp, len);
 	if (err < 0) {
 		return err;
 	}
 
-	return ssd1673_write_cmd(driver, SSD1673_CMD_RAM_YPOS_CNTR, &y,
-				 sizeof(y));
+	len = push_y_param(tmp, y);
+	return ssd1673_write_cmd(driver, SSD1673_CMD_RAM_YPOS_CNTR, tmp, len);
 }
 
 static void ssd1673_set_orientation_internall(struct ssd1673_data *driver)
@@ -208,13 +267,13 @@ static int ssd1673_write(const struct device *dev, const u16_t x,
 {
 	struct ssd1673_data *driver = dev->driver_data;
 	int err;
-	u8_t x_start;
-	u8_t x_end;
-	u8_t y_start;
-	u8_t y_end;
+	u16_t x_start;
+	u16_t x_end;
+	u16_t y_start;
+	u16_t y_end;
 
 	if (desc->pitch < desc->width) {
-		LOG_ERR("Pitch is smaller then width");
+		LOG_ERR("Pitch is smaller than width");
 		return -EINVAL;
 	}
 
@@ -360,7 +419,7 @@ static int ssd1673_set_pixel_format(const struct device *dev,
 static int ssd1673_clear_and_write_buffer(struct device *dev)
 {
 	int err;
-	u8_t clear_page[SSD1673_RAM_YRES];
+	u8_t clear_page[EPD_PANEL_WIDTH];
 	u8_t page;
 	struct spi_buf sbuf;
 	struct spi_buf_set buf_set = {.buffers = &sbuf, .count = 1};
@@ -416,6 +475,7 @@ static int ssd1673_controller_init(struct device *dev)
 {
 	int err;
 	u8_t tmp[3];
+	size_t len;
 	struct ssd1673_data *driver = dev->driver_data;
 
 	LOG_DBG("");
@@ -432,27 +492,41 @@ static int ssd1673_controller_init(struct device *dev)
 	}
 	ssd1673_busy_wait(driver);
 
-	tmp[0] = (SSD1673_RAM_YRES - 1);
-	tmp[1] = 0U;
-	err = ssd1673_write_cmd(driver, SSD1673_CMD_GDO_CTRL, tmp, 2);
+	len = push_y_param(tmp, SSD1673_PANEL_LAST_GATE);
+	tmp[len++] = 0U;
+	err = ssd1673_write_cmd(driver, SSD1673_CMD_GDO_CTRL, tmp, len);
 	if (err < 0) {
 		return err;
 	}
 
-	tmp[0] = SSD1673_VAL_GDV_CTRL_A;
-	tmp[1] = SSD1673_VAL_GDV_CTRL_B;
+#if defined(DT_SOLOMON_SSD1673FB_0_SOFTSTART_1)
+	tmp[0] = DT_SOLOMON_SSD1673FB_0_SOFTSTART_1;
+	tmp[1] = DT_SOLOMON_SSD1673FB_0_SOFTSTART_2;
+	tmp[2] = DT_SOLOMON_SSD1673FB_0_SOFTSTART_3;
+	err = ssd1673_write_cmd(driver, SSD1673_CMD_SOFTSTART, tmp, 3);
+	if (err < 0) {
+		return err;
+	}
+#endif
+
+	tmp[0] = DT_SOLOMON_SSD1673FB_0_GDV_A;
+#if defined(DT_SOLOMON_SSD1673FB_0_GDV_B)
+	tmp[1] = DT_SOLOMON_SSD1673FB_0_GDV_B;
 	err = ssd1673_write_cmd(driver, SSD1673_CMD_GDV_CTRL, tmp, 2);
+#else
+	err = ssd1673_write_cmd(driver, SSD1673_CMD_GDV_CTRL, tmp, 1);
+#endif
 	if (err < 0) {
 		return err;
 	}
 
-	tmp[0] = SSD1673_VAL_SDV_CTRL;
+	tmp[0] = DT_SOLOMON_SSD1673FB_0_SDV;
 	err = ssd1673_write_cmd(driver, SSD1673_CMD_SDV_CTRL, tmp, 1);
 	if (err < 0) {
 		return err;
 	}
 
-	tmp[0] = SSD1673_VAL_VCOM_VOLTAGE;
+	tmp[0] = DT_SOLOMON_SSD1673FB_0_VCOM;
 	err = ssd1673_write_cmd(driver, SSD1673_CMD_VCOM_VOLTAGE, tmp, 1);
 	if (err < 0) {
 		return err;
@@ -466,6 +540,12 @@ static int ssd1673_controller_init(struct device *dev)
 
 	tmp[0] = SSD1673_VAL_GATE_LWIDTH;
 	err = ssd1673_write_cmd(driver, SSD1673_CMD_GATE_LINE_WIDTH, tmp, 1);
+	if (err < 0) {
+		return err;
+	}
+
+	tmp[0] = DT_SOLOMON_SSD1673FB_0_BORDER_WAVEFORM;
+	err = ssd1673_write_cmd(driver, SSD1673_CMD_BWF_CTRL, tmp, 1);
 	if (err < 0) {
 		return err;
 	}

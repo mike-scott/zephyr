@@ -17,7 +17,11 @@
 #if defined(CONFIG_SCHED_DUMB)
 #define _priq_run_add		_priq_dumb_add
 #define _priq_run_remove	_priq_dumb_remove
-#define _priq_run_best		_priq_dumb_best
+# if defined(CONFIG_SCHED_CPU_MASK)
+#  define _priq_run_best	_priq_dumb_mask_best
+# else
+#  define _priq_run_best	_priq_dumb_best
+# endif
 #elif defined(CONFIG_SCHED_SCALABLE)
 #define _priq_run_add		_priq_rb_add
 #define _priq_run_remove	_priq_rb_remove
@@ -111,7 +115,7 @@ bool _is_t1_higher_prio_than_t2(struct k_thread *t1, struct k_thread *t2)
 	return false;
 }
 
-static bool should_preempt(struct k_thread *th, int preempt_ok)
+static ALWAYS_INLINE bool should_preempt(struct k_thread *th, int preempt_ok)
 {
 	/* Preemption is OK if it's being explicitly allowed by
 	 * software state (e.g. the thread called k_yield())
@@ -120,8 +124,10 @@ static bool should_preempt(struct k_thread *th, int preempt_ok)
 		return true;
 	}
 
+	__ASSERT(_current != NULL, "");
+
 	/* Or if we're pended/suspended/dummy (duh) */
-	if (!_current || _is_thread_prevented_from_running(_current)) {
+	if (_is_thread_prevented_from_running(_current)) {
 		return true;
 	}
 
@@ -146,14 +152,31 @@ static bool should_preempt(struct k_thread *th, int preempt_ok)
 	 * preemptible priorities (this is sort of an API glitch).
 	 * They must always be preemptible.
 	 */
-	if (_is_idle(_current)) {
+	if (!IS_ENABLED(CONFIG_PREEMPT_ENABLED) && _is_idle(_current)) {
 		return true;
 	}
 
 	return false;
 }
 
-static struct k_thread *next_up(void)
+#ifdef CONFIG_SCHED_CPU_MASK
+static ALWAYS_INLINE struct k_thread *_priq_dumb_mask_best(sys_dlist_t *pq)
+{
+	/* With masks enabled we need to be prepared to walk the list
+	 * looking for one we can run
+	 */
+	struct k_thread *t;
+
+	SYS_DLIST_FOR_EACH_CONTAINER(pq, t, base.qnode_dlist) {
+		if ((t->base.cpu_mask & BIT(_current_cpu->id)) != 0) {
+			return t;
+		}
+	}
+	return NULL;
+}
+#endif
+
+static ALWAYS_INLINE struct k_thread *next_up(void)
 {
 #ifndef CONFIG_SMP
 	/* In uniprocessor mode, we can leave the current thread in
@@ -367,8 +390,8 @@ static _wait_q_t *pended_on(struct k_thread *thread)
 	return thread->base.pended_on;
 }
 
-struct k_thread *_find_first_thread_to_unpend(_wait_q_t *wait_q,
-					      struct k_thread *from)
+ALWAYS_INLINE struct k_thread *_find_first_thread_to_unpend(_wait_q_t *wait_q,
+						     struct k_thread *from)
 {
 	ARG_UNUSED(from);
 
@@ -381,7 +404,7 @@ struct k_thread *_find_first_thread_to_unpend(_wait_q_t *wait_q,
 	return ret;
 }
 
-void _unpend_thread_no_timeout(struct k_thread *thread)
+ALWAYS_INLINE void _unpend_thread_no_timeout(struct k_thread *thread)
 {
 	LOCKED(&sched_lock) {
 		_priq_wait_remove(&pended_on(thread)->waitq, thread);
@@ -405,13 +428,23 @@ void z_thread_timeout(struct _timeout *to)
 }
 #endif
 
-int _pend_current_thread(u32_t key, _wait_q_t *wait_q, s32_t timeout)
+int _pend_curr_irqlock(u32_t key, _wait_q_t *wait_q, s32_t timeout)
 {
 #if defined(CONFIG_TIMESLICING) && defined(CONFIG_SWAP_NONATOMIC)
 	pending_current = _current;
 #endif
 	pend(_current, wait_q, timeout);
-	return _Swap(key);
+	return _Swap_irqlock(key);
+}
+
+int _pend_curr(struct k_spinlock *lock, k_spinlock_key_t key,
+	       _wait_q_t *wait_q, s32_t timeout)
+{
+#if defined(CONFIG_TIMESLICING) && defined(CONFIG_SWAP_NONATOMIC)
+	pending_current = _current;
+#endif
+	pend(_current, wait_q, timeout);
+	return _Swap(lock, key);
 }
 
 struct k_thread *_unpend_first_thread(_wait_q_t *wait_q)
@@ -456,37 +489,39 @@ void _thread_priority_set(struct k_thread *thread, int prio)
 	}
 	sys_trace_thread_priority_set(thread);
 
-	if (need_sched) {
-		_reschedule(irq_lock());
+	if (need_sched && _current->base.sched_locked == 0) {
+		_reschedule_unlocked();
 	}
 }
 
-void _reschedule(u32_t key)
+static inline int resched(void)
 {
 #ifdef CONFIG_SMP
 	if (!_current_cpu->swap_ok) {
-		goto noswap;
+		return 0;
 	}
-
 	_current_cpu->swap_ok = 0;
 #endif
 
-	if (_is_in_isr()) {
-		goto noswap;
-	}
+	return !_is_in_isr();
+}
 
-#ifdef CONFIG_SMP
-	(void)_Swap(key);
-	return;
-#else
-	if (_get_next_ready_thread() != _current) {
-		(void)_Swap(key);
-		return;
+void _reschedule(struct k_spinlock *lock, k_spinlock_key_t key)
+{
+	if (resched()) {
+		_Swap(lock, key);
+	} else {
+		k_spin_unlock(lock, key);
 	}
-#endif
+}
 
- noswap:
-	irq_unlock(key);
+void _reschedule_irqlock(u32_t key)
+{
+	if (resched()) {
+		_Swap_irqlock(key);
+	} else {
+		irq_unlock(key);
+	}
 }
 
 void k_sched_lock(void)
@@ -510,7 +545,7 @@ void k_sched_unlock(void)
 	K_DEBUG("scheduler unlocked (%p:%d)\n",
 		_current, _current->base.sched_locked);
 
-	_reschedule(irq_lock());
+	_reschedule_unlocked();
 #endif
 }
 
@@ -565,7 +600,7 @@ void *_get_next_switch_handle(void *interrupted)
 }
 #endif
 
-void _priq_dumb_add(sys_dlist_t *pq, struct k_thread *thread)
+ALWAYS_INLINE void _priq_dumb_add(sys_dlist_t *pq, struct k_thread *thread)
 {
 	struct k_thread *t;
 
@@ -573,8 +608,8 @@ void _priq_dumb_add(sys_dlist_t *pq, struct k_thread *thread)
 
 	SYS_DLIST_FOR_EACH_CONTAINER(pq, t, base.qnode_dlist) {
 		if (_is_t1_higher_prio_than_t2(thread, t)) {
-			sys_dlist_insert_before(pq, &t->base.qnode_dlist,
-						&thread->base.qnode_dlist);
+			sys_dlist_insert(&t->base.qnode_dlist,
+					 &thread->base.qnode_dlist);
 			return;
 		}
 	}
@@ -667,7 +702,7 @@ struct k_thread *_priq_rb_best(struct _priq_rb *pq)
 # endif
 #endif
 
-void _priq_mq_add(struct _priq_mq *pq, struct k_thread *thread)
+ALWAYS_INLINE void _priq_mq_add(struct _priq_mq *pq, struct k_thread *thread)
 {
 	int priority_bit = thread->base.prio - K_HIGHEST_THREAD_PRIO;
 
@@ -675,7 +710,7 @@ void _priq_mq_add(struct _priq_mq *pq, struct k_thread *thread)
 	pq->bitmask |= (1 << priority_bit);
 }
 
-void _priq_mq_remove(struct _priq_mq *pq, struct k_thread *thread)
+ALWAYS_INLINE void _priq_mq_remove(struct _priq_mq *pq, struct k_thread *thread)
 {
 	int priority_bit = thread->base.prio - K_HIGHEST_THREAD_PRIO;
 
@@ -824,13 +859,7 @@ void _impl_k_yield(void)
 		}
 	}
 
-#ifdef CONFIG_SMP
-	(void)_Swap(irq_lock());
-#else
-	if (_get_next_ready_thread() != _current) {
-		(void)_Swap(irq_lock());
-	}
-#endif
+	_Swap_unlocked();
 }
 
 #ifdef CONFIG_USERSPACE
@@ -842,7 +871,6 @@ s32_t _impl_k_sleep(s32_t duration)
 #ifdef CONFIG_MULTITHREADING
 	u32_t expected_wakeup_time;
 	s32_t ticks;
-	unsigned int key;
 
 	__ASSERT(!_is_in_isr(), "");
 	__ASSERT(duration != K_FOREVER, "");
@@ -857,12 +885,18 @@ s32_t _impl_k_sleep(s32_t duration)
 
 	ticks = _TICK_ALIGN + _ms_to_ticks(duration);
 	expected_wakeup_time = ticks + z_tick_get_32();
-	key = irq_lock();
+
+	/* Spinlock purely for local interrupt locking to prevent us
+	 * from being interrupted while _current is in an intermediate
+	 * state.  Should unify this implementation with pend().
+	 */
+	struct k_spinlock local_lock = {};
+	k_spinlock_key_t key = k_spin_lock(&local_lock);
 
 	_remove_thread_from_ready_q(_current);
 	_add_thread_timeout(_current, ticks);
 
-	(void)_Swap(key);
+	(void)_Swap(&local_lock, key);
 
 	ticks = expected_wakeup_time - z_tick_get_32();
 	if (ticks > 0) {
@@ -888,25 +922,18 @@ Z_SYSCALL_HANDLER(k_sleep, duration)
 
 void _impl_k_wakeup(k_tid_t thread)
 {
-	unsigned int key = irq_lock();
-
-	/* verify first if thread is not waiting on an object */
 	if (_is_thread_pending(thread)) {
-		irq_unlock(key);
 		return;
 	}
 
 	if (_abort_thread_timeout(thread) < 0) {
-		irq_unlock(key);
 		return;
 	}
 
 	_ready_thread(thread);
 
-	if (_is_in_isr()) {
-		irq_unlock(key);
-	} else {
-		_reschedule(key);
+	if (!_is_in_isr()) {
+		_reschedule_unlocked();
 	}
 }
 
@@ -931,3 +958,47 @@ int _impl_k_is_preempt_thread(void)
 #ifdef CONFIG_USERSPACE
 Z_SYSCALL_HANDLER0_SIMPLE(k_is_preempt_thread);
 #endif
+
+#ifdef CONFIG_SCHED_CPU_MASK
+# ifdef CONFIG_SMP
+/* Right now we use a single byte for this mask */
+BUILD_ASSERT_MSG(CONFIG_MP_NUM_CPUS <= 8, "Too many CPUs for mask word");
+# endif
+
+
+static int cpu_mask_mod(k_tid_t t, u32_t enable_mask, u32_t disable_mask)
+{
+	int ret = 0;
+
+	LOCKED(&sched_lock) {
+		if (_is_thread_prevented_from_running(t)) {
+			t->base.cpu_mask |= enable_mask;
+			t->base.cpu_mask  &= ~disable_mask;
+		} else {
+			ret = -EINVAL;
+		}
+	}
+	return ret;
+}
+
+int k_thread_cpu_mask_clear(k_tid_t thread)
+{
+	return cpu_mask_mod(thread, 0, 0xffffffff);
+}
+
+int k_thread_cpu_mask_enable_all(k_tid_t thread)
+{
+	return cpu_mask_mod(thread, 0xffffffff, 0);
+}
+
+int k_thread_cpu_mask_enable(k_tid_t thread, int cpu)
+{
+	return cpu_mask_mod(thread, BIT(cpu), 0);
+}
+
+int k_thread_cpu_mask_disable(k_tid_t thread, int cpu)
+{
+	return cpu_mask_mod(thread, 0, BIT(cpu));
+}
+
+#endif /* CONFIG_SCHED_CPU_MASK */

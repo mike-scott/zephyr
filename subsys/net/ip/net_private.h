@@ -43,8 +43,8 @@ extern void net_if_init(void);
 extern void net_if_post_init(void);
 extern void net_if_carrier_down(struct net_if *iface);
 extern void net_context_init(void);
-enum net_verdict net_ipv4_process_pkt(struct net_pkt *pkt);
-enum net_verdict net_ipv6_process_pkt(struct net_pkt *pkt, bool is_loopback);
+enum net_verdict net_ipv4_input(struct net_pkt *pkt);
+enum net_verdict net_ipv6_input(struct net_pkt *pkt, bool is_loopback);
 extern void net_tc_tx_init(void);
 extern void net_tc_rx_init(void);
 extern void net_tc_submit_to_tx_queue(u8_t tc, struct net_pkt *pkt);
@@ -81,7 +81,7 @@ int net_ipv6_send_fragmented_pkt(struct net_if *iface, struct net_pkt *pkt,
 				 u16_t pkt_len);
 #endif
 
-extern const char *net_proto2str(enum net_ip_protocol proto);
+extern const char *net_proto2str(int family, int proto);
 extern char *net_byte_to_hex(char *ptr, u8_t byte, char base, bool pad);
 extern char *net_sprint_ll_addr_buf(const u8_t *ll, u8_t ll_len,
 				    char *buf, int buflen);
@@ -147,6 +147,8 @@ void net_pkt_set_appdata_values(struct net_pkt *pkt,
 
 enum net_verdict net_context_packet_received(struct net_conn *conn,
 					     struct net_pkt *pkt,
+					     union net_ip_header *ip_hdr,
+					     union net_proto_header *proto_hdr,
 					     void *user_data);
 
 #if defined(CONFIG_NET_IPV4)

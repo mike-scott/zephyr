@@ -144,7 +144,7 @@ void _bss_zero(void)
 {
 	(void)memset(&__bss_start, 0,
 		     ((u32_t) &__bss_end - (u32_t) &__bss_start));
-#ifdef CONFIG_CCM_BASE_ADDRESS
+#ifdef DT_CCM_BASE_ADDRESS
 	(void)memset(&__ccm_bss_start, 0,
 		     ((u32_t) &__ccm_bss_end - (u32_t) &__ccm_bss_start));
 #endif
@@ -153,10 +153,6 @@ void _bss_zero(void)
 
 	bss_zeroing_relocation();
 #endif	/* CONFIG_CODE_DATA_RELOCATION */
-#ifdef CONFIG_APPLICATION_MEMORY
-	(void)memset(&__app_bss_start, 0,
-		     ((u32_t) &__app_bss_end - (u32_t) &__app_bss_start));
-#endif
 #ifdef CONFIG_COVERAGE_GCOV
 	(void)memset(&__gcov_bss_start, 0,
 		 ((u32_t) &__gcov_bss_end - (u32_t) &__gcov_bss_start));
@@ -177,7 +173,7 @@ void _data_copy(void)
 {
 	(void)memcpy(&__data_ram_start, &__data_rom_start,
 		 ((u32_t) &__data_ram_end - (u32_t) &__data_ram_start));
-#ifdef CONFIG_CCM_BASE_ADDRESS
+#ifdef DT_CCM_BASE_ADDRESS
 	(void)memcpy(&__ccm_data_start, &__ccm_data_rom_start,
 		 ((u32_t) &__ccm_data_end - (u32_t) &__ccm_data_start));
 #endif
@@ -189,10 +185,6 @@ void _data_copy(void)
 #ifdef CONFIG_APP_SHARED_MEM
 	(void)memcpy(&_app_smem_start, &_app_smem_rom_start,
 		 ((u32_t) &_app_smem_end - (u32_t) &_app_smem_start));
-#endif
-#ifdef CONFIG_APPLICATION_MEMORY
-	(void)memcpy(&__app_data_ram_start, &__app_data_rom_start,
-		 ((u32_t) &__app_data_ram_end - (u32_t) &__app_data_ram_start));
 #endif
 }
 #endif
@@ -306,7 +298,6 @@ static void prepare_multithreading(struct k_thread *dummy_thread)
 #ifdef CONFIG_TRACING
 	sys_trace_thread_switched_out();
 #endif
-	_current = dummy_thread;
 #ifdef CONFIG_TRACING
 	sys_trace_thread_switched_in();
 #endif
@@ -399,8 +390,7 @@ static void switch_to_main_thread(void)
 	 * current fake thread is not on a wait queue or ready queue, so it
 	 * will never be rescheduled in.
 	 */
-
-	(void)_Swap(irq_lock());
+	_Swap_unlocked();
 #endif
 }
 #endif /* CONFIG_MULTITHREADING */
@@ -464,26 +454,23 @@ FUNC_NORETURN void _Cstart(void)
 	/* gcov hook needed to get the coverage report.*/
 	gcov_static_init();
 
-#ifdef CONFIG_MULTITHREADING
-#ifdef CONFIG_ARCH_HAS_CUSTOM_SWAP_TO_MAIN
-	struct k_thread *dummy_thread = NULL;
-#else
-	/* Normally, kernel objects are not allowed on the stack, special case
-	 * here since this is just being used to bootstrap the first _Swap()
-	 */
-	char dummy_thread_memory[sizeof(struct k_thread)];
-	struct k_thread *dummy_thread = (struct k_thread *)&dummy_thread_memory;
-
-	(void)memset(dummy_thread_memory, 0, sizeof(dummy_thread_memory));
-#endif
-#endif
-
 	if (IS_ENABLED(CONFIG_LOG)) {
 		log_core_init();
 	}
 
 	/* perform any architecture-specific initialization */
 	kernel_arch_init();
+
+#ifdef CONFIG_MULTITHREADING
+	struct k_thread dummy_thread = {
+		 .base.thread_state = _THREAD_DUMMY,
+# ifdef CONFIG_SCHED_CPU_MASK
+		 .base.cpu_mask = -1,
+# endif
+	};
+
+	_current = &dummy_thread;
+#endif
 
 	/* perform basic hardware initialization */
 	_sys_device_do_config_level(_SYS_INIT_LEVEL_PRE_KERNEL_1);
@@ -494,7 +481,7 @@ FUNC_NORETURN void _Cstart(void)
 #endif
 
 #ifdef CONFIG_MULTITHREADING
-	prepare_multithreading(dummy_thread);
+	prepare_multithreading(&dummy_thread);
 	switch_to_main_thread();
 #else
 	bg_thread_main(NULL, NULL, NULL);

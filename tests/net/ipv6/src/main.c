@@ -119,7 +119,6 @@ static const unsigned char ipv6_hbho[] = {
 };
 
 static bool expecting_ra;
-static bool expecting_dad;
 static u32_t dad_time[3];
 static bool test_failed;
 static struct k_sem wait_data;
@@ -233,29 +232,23 @@ static int tester_send(struct device *dev, struct net_pkt *pkt)
 	}
 
 	if (icmp->type == NET_ICMPV6_NS) {
-		if (expecting_dad) {
-			if (dad_time[0] == 0) {
-				dad_time[0] = k_uptime_get_32();
-			} else if (dad_time[1] == 0) {
-				dad_time[1] = k_uptime_get_32();
-			} else if (dad_time[2] == 0) {
-				dad_time[2] = k_uptime_get_32();
-			}
-
-			goto out;
+		if (dad_time[0] == 0) {
+			dad_time[0] = k_uptime_get_32();
+		} else if (dad_time[1] == 0) {
+			dad_time[1] = k_uptime_get_32();
+		} else if (dad_time[2] == 0) {
+			dad_time[2] = k_uptime_get_32();
 		}
-	}
 
-	/* Feed this data back to us */
-	if (net_recv_data(net_pkt_iface(pkt), pkt) < 0) {
-		TC_ERROR("Data receive failed.");
 		goto out;
 	}
 
-	/* L2 will unref pkt, so since it got to rx path we need to ref it again
-	 * or it will be freed.
-	 */
-	net_pkt_ref(pkt);
+	/* Feed this data back to us */
+	if (net_recv_data(net_pkt_iface(pkt),
+			  net_pkt_clone(pkt, K_NO_WAIT)) < 0) {
+		TC_ERROR("Data receive failed.");
+		goto out;
+	}
 
 	return 0;
 
@@ -1079,7 +1072,7 @@ static void test_dad_timeout(void)
 
 	struct net_if_addr *ifaddr;
 
-	expecting_dad = true;
+	dad_time[0] = dad_time[1] = dad_time[2] = 0;
 
 	ifaddr = net_if_ipv6_addr_add(iface, &addr1, NET_ADDR_AUTOCONF, 0xffff);
 	zassert_not_null(ifaddr, "Address 1 cannot be added");
@@ -1104,8 +1097,6 @@ static void test_dad_timeout(void)
 	zassert_true((dad_time[2] - dad_time[0]) < 100,
 		     "DAD timers took too long time [%u] [%u] [%u]",
 		     dad_time[0], dad_time[1], dad_time[2]);
-
-	expecting_dad = false;
 #endif
 }
 
@@ -1166,10 +1157,12 @@ static enum net_verdict recv_msg(struct in6_addr *src, struct in6_addr *dst)
 
 	setup_ipv6_udp(pkt, src, dst, 4242, 4321);
 
+	net_pkt_cursor_init(pkt);
+
 	/* We by-pass the normal packet receiving flow in this case in order
 	 * to simplify the testing.
 	 */
-	return net_ipv6_process_pkt(pkt, false);
+	return net_ipv6_input(pkt, false);
 }
 
 static int send_msg(struct in6_addr *src, struct in6_addr *dst)
@@ -1297,11 +1290,15 @@ static void net_ctx_listen(struct net_context *ctx)
 
 static void recv_cb(struct net_context *context,
 		    struct net_pkt *pkt,
+		    union net_ip_header *ip_hdr,
+		    union net_proto_header *proto_hdr,
 		    int status,
 		    void *user_data)
 {
 	ARG_UNUSED(context);
 	ARG_UNUSED(pkt);
+	ARG_UNUSED(ip_hdr);
+	ARG_UNUSED(proto_hdr);
 	ARG_UNUSED(status);
 	ARG_UNUSED(user_data);
 
