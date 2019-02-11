@@ -160,17 +160,6 @@ int boot_swap_type(void);
 int boot_request_upgrade(int permanent);
 
 /**
- * @brief Resets the image in slot 1 as not confirmed and erases the magic
- * header to avoid a boot of the slot 1 image on the next reboot.
- *
- * Use this to reset and image which was previously marked as requested without
- * needing to erase the entire slot.
- *
- * @return 0 on success, negative errno code on fail.
- */
-int boot_request_erase(void);
-
-/**
  * @brief Erase the image Bank.
  *
  * @param bank_offset address of the image bank
