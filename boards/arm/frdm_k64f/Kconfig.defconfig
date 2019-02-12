@@ -10,6 +10,9 @@ if BOARD_FRDM_K64F
 config BOARD
 	default "frdm_k64f"
 
+config BUILD_OUTPUT_HEX
+	default y
+
 config OSC_XTAL0_FREQ
 	default 50000000
 
