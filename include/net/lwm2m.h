@@ -63,6 +63,7 @@ struct lwm2m_ctx {
 
 	/** Packet Flow Settings */
 	bool handle_separate_response;
+	bool connected;
 
 	/** Socket File Descriptor */
 	int sock_fd;
