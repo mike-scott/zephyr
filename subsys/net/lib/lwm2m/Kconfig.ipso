@@ -46,9 +46,4 @@ config LWM2M_IPSO_LIGHT_CONTROL_INSTANCE_COUNT
 	  This setting establishes the total count of IPSO Light Control
 	  instances available to the LWM2M client.
 
-config LWM2M_IPSO_DISPLAY
-	bool "IPSO Display Support"
-	help
-	  This IPSO object should be used with a display.
-
 endif # LWM2M_LWM2M_IPSO_SUPPORT
