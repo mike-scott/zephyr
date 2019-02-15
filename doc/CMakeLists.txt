@@ -123,6 +123,22 @@ add_custom_target(
     -P ${ZEPHYR_BASE}/cmake/util/execute_process.cmake
 )
 
+# Doxygen doesn't support incremental builds.
+# It could be ok because it's pretty fast.
+# But it's not because it has a cascade effect on sphinx:
+# https://sourceforge.net/p/doxygen/mailman/message/36580807/
+# For now this optimization speeds-up non-doxygen documentation work
+# only (by one order of magnitude).
+add_custom_target(
+  doxy_real_modified_times
+  COMMAND ${CMAKE_COMMAND} -E env
+    ${PYTHON_EXECUTABLE} scripts/restore_modification_times.py
+      --loglevel ERROR  _build/doxygen/xml
+  WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
+)
+
+add_dependencies(doxy_real_modified_times doxy)
+
 add_custom_target(
   pristine
   COMMAND ${CMAKE_COMMAND} -P ${ZEPHYR_BASE}/cmake/pristine.cmake
@@ -147,6 +163,7 @@ add_custom_target(
   SOC_DIR=soc/
   SRCARCH=x86
   PROJECT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+  GENERATED_DTS_BOARD_CONF=not_applicable
   KCONFIG_TURBO_MODE=${KCONFIG_TURBO_MODE}
   KCONFIG_DOC_MODE=1
   ${PYTHON_EXECUTABLE} scripts/genrest.py Kconfig ${RST_OUT}/doc/reference/kconfig/
@@ -261,14 +278,14 @@ endif()
 #
 # Dependencies and final targets
 #
-add_dependencies(html content doxy kconfig)
+add_dependencies(html content doxy_real_modified_times kconfig)
 
 add_custom_target(
   htmldocs
 )
 add_dependencies(htmldocs html)
 
-add_dependencies(latex content doxy kconfig)
+add_dependencies(latex content doxy_real_modified_times kconfig)
 
 add_custom_target(
   latexdocs

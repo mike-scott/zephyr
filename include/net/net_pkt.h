@@ -115,16 +115,6 @@ struct net_pkt {
 
 	u16_t appdatalen;
 	u8_t ip_hdr_len;	/* pre-filled in order to avoid func call */
-	u8_t transport_proto;	/* Transport protol of data, like
-				 * IPPROTO_TCP or IPPROTO_UDP. This value is
-				 * saved so that we do not need to traverse
-				 * through extension headers (this is mainly
-				 * issue in IPv6).
-				 */
-
-#if defined(CONFIG_NET_TCP)
-	sys_snode_t sent_list;
-#endif
 
 	u8_t overwrite  : 1;	/* Is packet content being overwritten? */
 
@@ -164,6 +154,10 @@ struct net_pkt {
 					     * AF_UNSPEC.
 					     */
 	};
+
+#if defined(CONFIG_NET_TCP)
+	sys_snode_t sent_list;
+#endif
 
 	union {
 		/* IPv6 hop limit or IPv4 ttl for this network packet.
@@ -312,16 +306,6 @@ static inline u8_t net_pkt_ip_hdr_len(struct net_pkt *pkt)
 static inline void net_pkt_set_ip_hdr_len(struct net_pkt *pkt, u8_t len)
 {
 	pkt->ip_hdr_len = len;
-}
-
-static inline u8_t net_pkt_transport_proto(struct net_pkt *pkt)
-{
-	return pkt->transport_proto;
-}
-
-static inline void net_pkt_set_transport_proto(struct net_pkt *pkt, u8_t proto)
-{
-	pkt->transport_proto = proto;
 }
 
 static inline u8_t net_pkt_sent(struct net_pkt *pkt)
@@ -1256,47 +1240,6 @@ void net_pkt_frag_insert(struct net_pkt *pkt, struct net_buf *frag);
 #endif /* CONFIG_NET_PKT_LOG_LEVEL >= LOG_LEVEL_DBG */
 
 /**
- * @brief Copy a packet fragment list while reserving some extra space
- * in destination buffer before a copy.
- *
- * @param pkt Network packet.
- * @param amount Max amount of data to be copied.
- * @param reserve Amount of extra data in the first data fragment that is
- * returned. The function will copy the original buffer right after the
- * reserved bytes in the first destination fragment.
- * @param timeout Affects the action taken should the net buf pool be empty.
- *        If K_NO_WAIT, then return immediately. If K_FOREVER, then
- *        wait as long as necessary. Otherwise, wait up to the specified
- *        number of milliseconds before timing out.
- *
- * @return New fragment list if successful, NULL otherwise.
- */
-struct net_buf *net_pkt_copy(struct net_pkt *pkt, size_t amount,
-			     size_t reserve, s32_t timeout);
-
-/**
- * @brief Copy a packet fragment list while reserving some extra space
- * in destination buffer before a copy.
- *
- * @param pkt Network packet.
- * @param reserve Amount of extra data in the first data fragment that is
- * returned. The function will copy the original buffer right after the
- * reserved bytes in the first destination fragment.
- * @param timeout Affects the action taken should the net buf pool be empty.
- *        If K_NO_WAIT, then return immediately. If K_FOREVER, then
- *        wait as long as necessary. Otherwise, wait up to the specified
- *        number of milliseconds before timing out.
- *
- * @return New fragment list if successful, NULL otherwise.
- */
-static inline struct net_buf *net_pkt_copy_all(struct net_pkt *pkt,
-					       size_t reserve, s32_t timeout)
-{
-	return net_pkt_copy(pkt, net_buf_frags_len(pkt->frags),
-			    reserve, timeout);
-}
-
-/**
  * @brief Copy len bytes from src starting from	offset to dst
  *
  * This routine assumes that dst is formed of one fragment with enough space
@@ -1311,21 +1254,6 @@ static inline struct net_buf *net_pkt_copy_all(struct net_pkt *pkt,
  */
 int net_frag_linear_copy(struct net_buf *dst, struct net_buf *src,
 			 u16_t offset, u16_t len);
-
-/**
- * @brief Copy bytes from src packet starting at offset to linear buffer
- *
- * This routine behaves is a convenience wrapper for @ref net_buf_linearize .
- *
- * @param dst Destination buffer
- * @param dst_len Destination buffer length
- * @param src Source packet with fragmented net_buf chain
- * @param offset Starting offset to copy from
- * @param len Number of bytes to copy
- * @return number of bytes actually copied
- */
-size_t net_frag_linearize(void *dst, size_t dst_len,
-			  struct net_pkt *src, size_t offset, size_t len);
 
 /**
  * @brief Compact the fragment list of a packet.
@@ -1384,28 +1312,6 @@ static inline bool net_pkt_append_all(struct net_pkt *pkt, u16_t len,
 {
 	return net_pkt_append(pkt, len, data, timeout) == len;
 }
-
-/**
- * @brief Append fixed bytes of data to fragment list of a packet
- *
- * @details Append data to last fragment. If there is not enough space in
- * last fragment then more data fragments will be added, unless there are
- * no free fragments and timeout occurs.
- *
- * @param pkt Network packet.
- * @param len Total length of input data
- * @param data Byte to initialize fragment with
- * @param timeout Affects the action taken should the net buf pool be empty.
- *        If K_NO_WAIT, then return immediately. If K_FOREVER, then
- *        wait as long as necessary. Otherwise, wait up to the specified
- *        number of milliseconds before timing out.
- *
- * @return Length of data actually added. This may be less than input
- *         length if other timeout than K_FOREVER was used, and there
- *         were no free fragments in a pool to accommodate all data.
- */
-u16_t net_pkt_append_memset(struct net_pkt *pkt, u16_t len, const u8_t data,
-			    s32_t timeout);
 
 /**
  * @brief Append u8_t data to last fragment in fragment list of a packet
@@ -1937,43 +1843,6 @@ static inline bool net_pkt_insert_be32_timeout(struct net_pkt *pkt,
 }
 
 /**
- * @brief Split a fragment into two parts at arbitrary offset.
- *
- * @details This will split packet into two parts. Original packet will be
- * modified. Offset is relative position with input fragment. Input fragment
- * contains first part of the split. Rest of the fragment chain is in "rest"
- * parameter provided by caller.
- *
- * @param pkt Network packet
- * @param frag Original network buffer fragment which is to be split.
- * @param offset Offset relative to input fragment.
- * @param rest Rest of the fragment chain after split.
- * @param timeout Affects the action taken should the net buf pool be empty.
- * If K_NO_WAIT, then return immediately. If K_FOREVER, then wait as long as
- * necessary. Otherwise, wait up to the specified number of milliseconds before
- * timing out.
- *
- * @return 0 on success, <0 otherwise.
- */
-int net_pkt_split(struct net_pkt *pkt, struct net_buf *frag, u16_t offset,
-		  struct net_buf **rest, s32_t timeout);
-
-/**
- * @brief Remove data from the packet at arbitrary offset.
- *
- * @details This will remove the data from arbitrary offset. Original packet
- * will be modified.
- *
- * @param pkt Network packet
- * @param offset Arbitrary offset to packet
- * @param len Number of bytes to be removed
- *
- * @return 0 on success, <0 otherwise
- *
- */
-int net_pkt_pull(struct net_pkt *pkt, u16_t offset, u16_t len);
-
-/**
  * @brief Return the fragment and offset within it according to network
  * packet offset.
  *
@@ -2000,16 +1869,6 @@ struct net_buf *net_frag_get_pos(struct net_pkt *pkt,
 				 u16_t *pos);
 
 /**
- * @brief Clone pkt and its fragment chain.
- *
- * @param pkt Original pkt to be cloned
- * @param timeout Timeout to wait for free net_buf
- *
- * @return NULL if error, clone fragment chain otherwise.
- */
-struct net_pkt *net_pkt_clone(struct net_pkt *pkt, s32_t timeout);
-
-/**
  * @brief Get information about predefined RX, TX and DATA pools.
  *
  * @param rx Pointer to RX pool is returned.
@@ -2021,32 +1880,6 @@ void net_pkt_get_info(struct k_mem_slab **rx,
 		      struct k_mem_slab **tx,
 		      struct net_buf_pool **rx_data,
 		      struct net_buf_pool **tx_data);
-
-/**
- * @brief Get source socket address.
- *
- * @param pkt Network packet
- * @param addr Source socket address
- * @param addrlen The length of source socket address
- * @return 0 on success, <0 otherwise.
- */
-
-int net_pkt_get_src_addr(struct net_pkt *pkt,
-			 struct sockaddr *addr,
-			 socklen_t addrlen);
-
-/**
- * @brief Get destination socket address.
- *
- * @param pkt Network packet
- * @param addr Destination socket address
- * @param addrlen The length of destination socket address
- * @return 0 on success, <0 otherwise.
- */
-
-int net_pkt_get_dst_addr(struct net_pkt *pkt,
-			 struct sockaddr *addr,
-			 socklen_t addrlen);
 
 #if defined(CONFIG_NET_DEBUG_NET_PKT_ALLOC)
 /**
@@ -2242,6 +2075,31 @@ void net_pkt_append_buffer(struct net_pkt *pkt, struct net_buf *buffer);
 size_t net_pkt_available_buffer(struct net_pkt *pkt);
 
 /**
+ * @brief Get available buffer space for payload from a pkt
+ *
+ * Note: Unlike net_pkt_available_buffer(), this will take into account the
+ *       headers space.
+ *
+ * @param pkt   The net_pkt which payload buffer availability should
+ *              be evaluated
+ * @param proto The IP protocol type (can be 0 for none).
+ *
+ * @return the amount of buffer available for payload
+ */
+size_t net_pkt_available_payload_buffer(struct net_pkt *pkt,
+					enum net_ip_protocol proto);
+
+/**
+ * @brief Trim net_pkt buffer
+ *
+ * Note: This will basically check for unused net_buf buffer and
+ *       deallocates them relevantly
+ *
+ * @param pkt The net_pkt which buffer will be trimmed
+ */
+void net_pkt_trim_buffer(struct net_pkt *pkt);
+
+/**
  * @brief Initialize net_pkt cursor
  *
  * Note: This will inialize the net_pkt cursor from its buffer.
@@ -2334,19 +2192,19 @@ int net_pkt_memset(struct net_pkt *pkt, int byte, size_t length);
  *
  * @return 0 on success, negative errno code otherwise.
  */
-int net_pkt_copy_new(struct net_pkt *pkt_dst,
-		     struct net_pkt *pkt_src,
-		     size_t length);
+int net_pkt_copy(struct net_pkt *pkt_dst,
+		 struct net_pkt *pkt_src,
+		 size_t length);
 
 /**
- * @brief Clone pkt and its fragment chain.
+ * @brief Clone pkt and its buffer.
  *
  * @param pkt Original pkt to be cloned
  * @param timeout Timeout to wait for free buffer
  *
  * @return NULL if error, cloned packet otherwise.
  */
-struct net_pkt *net_pkt_clone_new(struct net_pkt *pkt, s32_t timeout);
+struct net_pkt *net_pkt_clone(struct net_pkt *pkt, s32_t timeout);
 
 /**
  * @brief Read some data from a net_pkt
@@ -2442,9 +2300,18 @@ static inline int net_pkt_write_le32_new(struct net_pkt *pkt, u32_t data)
 }
 
 /**
+ * @brief Get the amount of data which can be read from current cursor position
+ *
+ * @param pkt Network packet
+ *
+ * @return Amount of data which can be read from current pkt cursor
+ */
+size_t net_pkt_remaining_data(struct net_pkt *pkt);
+
+/**
  * @brief Update the overall length of a packet
  *
- * Note: Unlike net_pkt_pull_new() below, this does not take packet cursor
+ * Note: Unlike net_pkt_pull() below, this does not take packet cursor
  *       into account. It's mainly a helper dedicated for ipv4 and ipv6
  *       input functions. It shrinks the overall length by given parameter.
  *
@@ -2466,7 +2333,7 @@ int net_pkt_update_length(struct net_pkt *pkt, size_t length);
  *
  * @return 0 on success, negative errno code otherwise.
  */
-int net_pkt_pull_new(struct net_pkt *pkt, size_t length);
+int net_pkt_pull(struct net_pkt *pkt, size_t length);
 
 /**
  * @brief Get the actual offset in the packet from its cursor

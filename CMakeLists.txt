@@ -269,12 +269,6 @@ endif()
 # 'cmake -DEXTRA_CFLAGS="-Werror -Wno-deprecated-declarations" ..'
 include(cmake/extra_flags.cmake)
 
-if(CONFIG_READABLE_ASM)
-  zephyr_cc_option(-fno-reorder-blocks)
-  zephyr_cc_option(-fno-ipa-cp-clone)
-  zephyr_cc_option(-fno-partial-inlining)
-endif()
-
 zephyr_cc_option(-fno-asynchronous-unwind-tables)
 zephyr_cc_option(-fno-pie)
 zephyr_cc_option(-fno-pic)
@@ -1396,14 +1390,5 @@ if(CONFIG_BOARD_DEPRECATED)
   message(WARNING "
       WARNING:  The board '${BOARD}' is deprecated and will be
       removed in version ${CONFIG_BOARD_DEPRECATED}"
-  )
-endif()
-
-if(CONFIG_X86 AND CONFIG_USERSPACE AND NOT CONFIG_X86_NO_MELTDOWN)
-  message(WARNING "
-      WARNING: You have enabled CONFIG_USERSPACE on an x86-based target.
-      If your CPU is vulnerable to the Meltdown CPU bug, security of
-      supervisor-only memory pages is not guaranteed. This version of Zephyr
-      does not contain a fix for this issue."
   )
 endif()

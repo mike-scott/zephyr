@@ -411,17 +411,6 @@ bool net_tcp_validate_seq(struct net_tcp *tcp, struct net_tcp_hdr *tcp_hdr);
 int net_tcp_finalize(struct net_pkt *pkt);
 
 /**
- * @brief Set TCP checksum in network packet.
- *
- * @param pkt Network packet
- * @param frag Fragment where to start calculating the offset.
- * Typically this is set to pkt->frags by the caller.
- *
- * @return Return the actual fragment where the checksum was written.
- */
-struct net_buf *net_tcp_set_chksum(struct net_pkt *pkt, struct net_buf *frag);
-
-/**
  * @brief Parse TCP options from network packet.
  *
  * Parse TCP options, returning MSS value (as that the only one we
@@ -437,15 +426,6 @@ struct net_buf *net_tcp_set_chksum(struct net_pkt *pkt, struct net_buf *frag);
  */
 int net_tcp_parse_opts(struct net_pkt *pkt, int opt_totlen,
 		       struct net_tcp_options *opts);
-
-/**
- * @brief Get TCP header length
- *
- * @param pkt Network packet
- *
- * @return TCP header length
- */
-int tcp_hdr_len(struct net_pkt *pkt);
 
 /**
  * @brief TCP receive function
@@ -667,37 +647,6 @@ static inline bool net_tcp_validate_seq(struct net_tcp *tcp,
 static inline int net_tcp_finalize(struct net_pkt *pkt)
 {
 	ARG_UNUSED(pkt);
-	return 0;
-}
-
-static inline struct net_buf *net_tcp_set_chksum(struct net_pkt *pkt,
-						 struct net_buf *frag)
-{
-	ARG_UNUSED(pkt);
-	ARG_UNUSED(frag);
-	return NULL;
-}
-
-static inline struct net_tcp_hdr *net_tcp_get_hdr(struct net_pkt *pkt,
-						  struct net_tcp_hdr *hdr)
-{
-	ARG_UNUSED(pkt);
-	ARG_UNUSED(hdr);
-	return NULL;
-}
-
-static inline struct net_tcp_hdr *net_tcp_set_hdr(struct net_pkt *pkt,
-						  struct net_tcp_hdr *hdr)
-{
-	ARG_UNUSED(pkt);
-	ARG_UNUSED(hdr);
-	return NULL;
-}
-
-static inline int tcp_hdr_len(struct net_pkt *pkt)
-{
-	ARG_UNUSED(pkt);
-
 	return 0;
 }
 
