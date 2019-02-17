@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Basic connection test: a central connects to a peripheral and expects a
-# notification, using the split controller (ULL LLL)
-SIMULATION_ID="basic_conn_split"
+# notification
+SIMULATION_ID="basic_conn_encr"
 VERBOSITY_LEVEL=2
 PROCESS_IDS=""; EXIT_CODE=0
 
@@ -24,13 +24,13 @@ BOARD="${BOARD:-nrf52_bsim}"
 
 cd ${BSIM_OUT_PATH}/bin
 
-Execute ./bs_${BOARD}_tests_bluetooth_bsim_bt_bsim_test_app_prj_split_conf \
-  -v=${VERBOSITY_LEVEL} -s=${SIMULATION_ID} -d=0 -RealEncryption=0 \
+Execute ./bs_${BOARD}_tests_bluetooth_bsim_bt_bsim_test_app_prj_conf \
+  -v=${VERBOSITY_LEVEL} -s=${SIMULATION_ID} -d=0 -RealEncryption=1 \
   -testid=peripheral -rs=23
 
-Execute ./bs_${BOARD}_tests_bluetooth_bsim_bt_bsim_test_app_prj_split_conf\
-  -v=${VERBOSITY_LEVEL} -s=${SIMULATION_ID} -d=1 -RealEncryption=0 \
-  -testid=central -rs=6
+Execute ./bs_${BOARD}_tests_bluetooth_bsim_bt_bsim_test_app_prj_conf \
+  -v=${VERBOSITY_LEVEL} -s=${SIMULATION_ID} -d=1 -RealEncryption=1 \
+  -testid=central_encrypted -rs=6
 
 Execute ./bs_2G4_phy_v1 -v=${VERBOSITY_LEVEL} -s=${SIMULATION_ID} \
   -D=2 -sim_length=20e6 $@
