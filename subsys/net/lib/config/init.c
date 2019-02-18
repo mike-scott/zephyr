@@ -283,9 +283,7 @@ static void setup_ipv6(struct net_if *iface, u32_t flags)
 
 int net_config_init(const char *app_info, u32_t flags, s32_t timeout)
 {
-#define LOOP_DIVIDER 10
 	struct net_if *iface = net_if_get_default();
-	int loop = timeout / LOOP_DIVIDER;
 	int count = 0;
 
 	if (app_info) {
@@ -318,14 +316,14 @@ int net_config_init(const char *app_info, u32_t flags, s32_t timeout)
 	} else if (timeout == 0) {
 		count = 0;
 	} else {
-		count = timeout / 1000 + 1;
+		count = timeout / MSEC_PER_SEC + 1;
 	}
 
 	/* Loop here until we are ready to continue. As we might need
 	 * to wait multiple events, sleep smaller amounts of data.
 	 */
 	while (count--) {
-		if (k_sem_take(&waiter, loop)) {
+		if (k_sem_take(&waiter, K_SECONDS(1))) {
 			if (!k_sem_count_get(&counter)) {
 				break;
 			}
