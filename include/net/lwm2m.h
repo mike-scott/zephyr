@@ -9,7 +9,7 @@
 #define ZEPHYR_INCLUDE_NET_LWM2M_H_
 
 #include <kernel.h>
-#include <net/coap.h>
+#include <net/net_ip.h>
 
 /**
  * @brief LwM2M high-level API
@@ -46,9 +46,7 @@ struct lwm2m_ctx {
 	/** destination address storage */
 	struct sockaddr remote_addr;
 
-	/** Private CoAP and networking structures */
-	struct coap_pending pendings[CONFIG_LWM2M_ENGINE_MAX_PENDING];
-	struct coap_reply replies[CONFIG_LWM2M_ENGINE_MAX_REPLIES];
+	/** Private networking structures */
 	struct k_delayed_work retransmit_work;
 
 #if defined(CONFIG_LWM2M_DTLS_SUPPORT)

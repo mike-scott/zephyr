@@ -57,26 +57,6 @@ config LWM2M_ENGINE_MESSAGE_HEADER_SIZE
 	help
 	  Extra room allocated to handle CoAP header data
 
-config LWM2M_ENGINE_MAX_PENDING
-	int "LWM2M engine max. pending objects"
-	default 5
-	help
-	  Set the maximum pending objects for the LWM2M library client
-
-config LWM2M_ENGINE_MAX_REPLIES
-	int "LWM2M engine max. reply objects"
-	default 5
-	help
-	  Set the maximum reply objects for the LWM2M library client
-
-config LWM2M_ENGINE_MAX_OBSERVER
-	int "Maximum # of observable LWM2M resources"
-	default 10
-	range 5 200
-	help
-	  This value sets the maximum number of resources which can be
-	  added to the observe notification list.
-
 config LWM2M_ENGINE_DEFAULT_LIFETIME
 	int "LWM2M engine default server connection lifetime"
 	default 30
