@@ -1024,6 +1024,8 @@ cleanup:
 
 int lwm2m_send_message(struct lwm2m_message *msg)
 {
+	int ret;
+
 	if (!msg || !msg->ctx) {
 		LOG_ERR("LwM2M message is invalid.");
 		return -EINVAL;
@@ -1035,12 +1037,13 @@ int lwm2m_send_message(struct lwm2m_message *msg)
 
 	msg->send_attempts++;
 
-	if (send(msg->ctx->sock_fd, msg->cpkt.data, msg->cpkt.offset, 0) < 0) {
+	ret = send(msg->ctx->sock_fd, msg->cpkt.data, msg->cpkt.offset, 0);
+	if (ret < 0) {
 		if (msg->type == COAP_TYPE_CON) {
 			coap_pending_clear(msg->pending);
 		}
 
-		return -errno;
+		return ret;
 	}
 
 	if (msg->type == COAP_TYPE_CON) {
@@ -1063,7 +1066,7 @@ int lwm2m_send_message(struct lwm2m_message *msg)
 	 */
 	lwm2m_socket_add(msg->ctx);
 
-	return 0;
+	return ret;
 }
 
 u16_t lwm2m_get_rd_data(u8_t *client_data, u16_t size)
@@ -3565,6 +3568,7 @@ static void retransmit_request(struct k_work *work)
 	struct lwm2m_ctx *client_ctx;
 	struct lwm2m_message *msg;
 	struct coap_pending *pending;
+	int r;
 
 	client_ctx = CONTAINER_OF(work, struct lwm2m_ctx, retransmit_work);
 	pending = coap_pending_next_to_expire(client_ctx->pendings,
@@ -3595,8 +3599,9 @@ static void retransmit_request(struct k_work *work)
 
 	LOG_DBG("Resending message: %p", msg);
 	msg->send_attempts++;
-	if (send(msg->ctx->sock_fd, msg->cpkt.data, msg->cpkt.offset, 0) < 0) {
-		LOG_ERR("Error sending lwm2m message: %d", -errno);
+	r = send(msg->ctx->sock_fd, msg->cpkt.data, msg->cpkt.offset, 0);
+	if (r < 0) {
+		LOG_ERR("Error sending lwm2m message: %d", r);
 		/* don't error here, retry until timeout */
 	}
 
