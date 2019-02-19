@@ -974,7 +974,7 @@ struct lwm2m_message *lwm2m_get_message(struct lwm2m_ctx *client_ctx)
 	return NULL;
 }
 
-void lwm2m_reset_message(struct lwm2m_message *msg, bool release)
+void lwm2m_free_message(struct lwm2m_message *msg)
 {
 	if (!msg) {
 		return;
@@ -982,14 +982,7 @@ void lwm2m_reset_message(struct lwm2m_message *msg, bool release)
 
 	k_delayed_work_cancel(&msg->retransmit_work);
 
-	if (release) {
-		(void)memset(msg, 0, sizeof(*msg));
-	} else {
-		msg->message_timeout_cb = NULL;
-		(void)memset(&msg->pending, 0, sizeof(msg->pending));
-		(void)memset(&msg->reply, 0, sizeof(msg->reply));
-		(void)memset(&msg->cpkt, 0, sizeof(msg->cpkt));
-	}
+	(void)memset(msg, 0, sizeof(*msg));
 }
 
 int lwm2m_init_message(struct lwm2m_message *msg)
@@ -1040,7 +1033,7 @@ int lwm2m_init_message(struct lwm2m_message *msg)
 	return 0;
 
 cleanup:
-	lwm2m_reset_message(msg, true);
+	lwm2m_free_message(msg);
 
 	return r;
 }
@@ -1063,7 +1056,7 @@ int lwm2m_send_message(struct lwm2m_message *msg)
 	}
 
 	if (msg->type != COAP_TYPE_CON) {
-		lwm2m_reset_message(msg, true);
+		lwm2m_free_message(msg);
 		return 0;
 	}
 
@@ -3427,7 +3420,12 @@ static int handle_request(struct coap_packet *request,
 	return 0;
 
 error:
-	lwm2m_reset_message(msg, false);
+	/* clear out previous message information */
+	msg->message_timeout_cb = NULL;
+	(void)memset(&msg->pending, 0, sizeof(msg->pending));
+	(void)memset(&msg->reply, 0, sizeof(msg->reply));
+	(void)memset(&msg->cpkt, 0, sizeof(msg->cpkt));
+
 	if (r == -ENOENT) {
 		msg->code = COAP_RESPONSE_CODE_NOT_FOUND;
 	} else if (r == -EPERM) {
@@ -3521,7 +3519,7 @@ static void lwm2m_udp_receive(struct lwm2m_ctx *client_ctx,
 		LOG_DBG("msg reply %p handled and removed", msg);
 
 		/* free up msg resources */
-		lwm2m_reset_message(msg, true);
+		lwm2m_free_message(msg);
 		return;
 	}
 
@@ -3548,13 +3546,14 @@ static void lwm2m_udp_receive(struct lwm2m_ctx *client_ctx,
 		/* process the response to this request */
 		r = udp_request_handler(&response, msg);
 		if (r < 0) {
+			lwm2m_free_message(msg);
 			return;
 		}
 
 		r = lwm2m_send_message(msg);
 		if (r < 0) {
 			LOG_ERR("Err sending response: %d", r);
-			lwm2m_reset_message(msg, true);
+			lwm2m_free_message(msg);
 		}
 	} else {
 		LOG_ERR("No handler for response");
@@ -3577,7 +3576,7 @@ static void retransmit_request(struct k_work *work)
 			msg->message_timeout_cb(msg);
 		}
 
-		lwm2m_reset_message(msg, true);
+		lwm2m_free_message(msg);
 		return;
 	}
 
@@ -3706,7 +3705,7 @@ static int generate_notify_message(struct observe_node *obs,
 	return 0;
 
 cleanup:
-	lwm2m_reset_message(msg, true);
+	lwm2m_free_message(msg);
 	return ret;
 }
 

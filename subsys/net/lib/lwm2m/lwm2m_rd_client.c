@@ -539,7 +539,7 @@ static int sm_do_bootstrap_reg(void)
 	return 0;
 
 cleanup:
-	lwm2m_reset_message(msg, true);
+	lwm2m_free_message(msg);
 cleanup_engine:
 	lwm2m_engine_context_close(client.ctx);
 	return ret;
@@ -663,7 +663,7 @@ static int sm_send_registration(bool send_obj_support_data,
 	return 0;
 
 cleanup:
-	lwm2m_reset_message(msg, true);
+	lwm2m_free_message(msg);
 	return ret;
 }
 
@@ -783,7 +783,7 @@ static int sm_do_deregister(void)
 	return 0;
 
 cleanup:
-	lwm2m_reset_message(msg, true);
+	lwm2m_free_message(msg);
 	lwm2m_engine_context_close(client.ctx);
 	return ret;
 }
