@@ -46,9 +46,6 @@ struct lwm2m_ctx {
 	/** destination address storage */
 	struct sockaddr remote_addr;
 
-	/** Private networking structures */
-	struct k_delayed_work retransmit_work;
-
 #if defined(CONFIG_LWM2M_DTLS_SUPPORT)
 	/** DTLS settings */
 	int tls_tag;

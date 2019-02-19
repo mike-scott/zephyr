@@ -171,6 +171,7 @@ static struct k_delayed_work periodic_work;
 static struct lwm2m_engine_obj *get_engine_obj(int obj_id);
 static struct lwm2m_engine_obj_inst *get_engine_obj_inst(int obj_id,
 							 int obj_inst_id);
+static void retransmit_request(struct k_work *work);
 
 /* Shared set of in-flight LwM2M messages */
 static struct lwm2m_message messages[CONFIG_LWM2M_ENGINE_MAX_MESSAGES];
@@ -979,6 +980,8 @@ void lwm2m_reset_message(struct lwm2m_message *msg, bool release)
 		return;
 	}
 
+	k_delayed_work_cancel(&msg->retransmit_work);
+
 	if (release) {
 		(void)memset(msg, 0, sizeof(*msg));
 	} else {
@@ -1032,6 +1035,8 @@ int lwm2m_init_message(struct lwm2m_message *msg)
 		msg->reply.reply = msg->reply_cb;
 	}
 
+	k_delayed_work_init(&msg->retransmit_work, retransmit_request);
+
 	return 0;
 
 cleanup:
@@ -1067,7 +1072,7 @@ int lwm2m_send_message(struct lwm2m_message *msg)
 		return 0;
 	}
 
-	k_delayed_work_submit(&msg->ctx->retransmit_work, msg->pending.timeout);
+	k_delayed_work_submit(&msg->retransmit_work, msg->pending.timeout);
 
 	return 0;
 }
@@ -3558,18 +3563,8 @@ static void lwm2m_udp_receive(struct lwm2m_ctx *client_ctx,
 
 static void retransmit_request(struct k_work *work)
 {
-	struct lwm2m_ctx *client_ctx;
-	struct lwm2m_message *msg = NULL;
-	size_t i;
-
-	client_ctx = CONTAINER_OF(work, struct lwm2m_ctx, retransmit_work);
-	for (i = 0; i < CONFIG_LWM2M_ENGINE_MAX_MESSAGES; i++) {
-		if (messages[i].pending.timeout &&
-		    (!msg ||
-		     msg->pending.timeout < messages[i].pending.timeout)) {
-			msg = &messages[i];
-		}
-	}
+	struct lwm2m_message *msg = CONTAINER_OF(work, struct lwm2m_message,
+						 retransmit_work);
 
 	if (!msg) {
 		LOG_ERR("pending has no valid LwM2M message!");
@@ -3582,10 +3577,6 @@ static void retransmit_request(struct k_work *work)
 			msg->message_timeout_cb(msg);
 		}
 
-		/*
-		 * coap_pending_clear() is called in lwm2m_reset_message()
-		 * which balances the ref we made in coap_pending_cycle()
-		 */
 		lwm2m_reset_message(msg, true);
 		return;
 	}
@@ -3597,8 +3588,7 @@ static void retransmit_request(struct k_work *work)
 		/* don't error here, retry until timeout */
 	}
 
-	k_delayed_work_submit(&client_ctx->retransmit_work,
-			      msg->pending.timeout);
+	k_delayed_work_submit(&msg->retransmit_work, msg->pending.timeout);
 }
 
 static int notify_message_reply_cb(const struct coap_packet *response,
@@ -3853,11 +3843,6 @@ int lwm2m_engine_context_close(struct lwm2m_ctx *client_ctx)
 	} else {
 		return 0;
 	}
-}
-
-void lwm2m_engine_context_init(struct lwm2m_ctx *client_ctx)
-{
-	k_delayed_work_init(&client_ctx->retransmit_work, retransmit_request);
 }
 
 /* LwM2M Socket Integration */
@@ -4187,7 +4172,6 @@ int lwm2m_engine_start(struct lwm2m_ctx *client_ctx)
 		return ret;
 	}
 
-	lwm2m_engine_context_init(client_ctx);
 	return lwm2m_socket_start(client_ctx);
 }
 

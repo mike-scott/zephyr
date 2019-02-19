@@ -67,7 +67,6 @@ int  lwm2m_get_or_create_engine_obj(struct lwm2m_message *msg,
 
 /* LwM2M context functions */
 int lwm2m_engine_context_close(struct lwm2m_ctx *client_ctx);
-void lwm2m_engine_context_init(struct lwm2m_ctx *client_ctx);
 
 /* Message buffer functions */
 u8_t *lwm2m_get_message_buf(void);
