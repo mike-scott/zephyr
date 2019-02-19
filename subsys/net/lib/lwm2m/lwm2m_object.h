@@ -324,8 +324,9 @@ struct lwm2m_message {
 	/** Incoming message action */
 	u8_t operation;
 
-	/** Counter for message re-send / abort handling */
+	/** Counter / delay_work for message re-send / abort handling */
 	u8_t send_attempts;
+	struct k_delayed_work retransmit_work;
 };
 
 /* LWM2M format writer for the various formats supported */
