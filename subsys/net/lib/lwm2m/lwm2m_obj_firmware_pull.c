@@ -189,7 +189,7 @@ static int transfer_request(struct coap_block_context *ctx,
 	return 0;
 
 cleanup:
-	lwm2m_reset_message(msg, true);
+	lwm2m_free_message(msg);
 	return ret;
 }
 
@@ -222,7 +222,7 @@ static int transfer_empty_ack(u16_t mid)
 	return 0;
 
 cleanup:
-	lwm2m_reset_message(msg, true);
+	lwm2m_free_message(msg);
 	return ret;
 }
 
