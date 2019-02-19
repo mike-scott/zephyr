@@ -1058,14 +1058,6 @@ int lwm2m_send_message(struct lwm2m_message *msg)
 		lwm2m_reset_message(msg, true);
 	}
 
-	/*
-	 * Due to the way DTLS was implemented in the socket APIs we have
-	 * to add the socket to the listening fds *after* the first successful
-	 * send -- lwm2m_socket_add() will check to make sure it's not added
-	 * more than once.
-	 */
-	lwm2m_socket_add(msg->ctx);
-
 	return ret;
 }
 
@@ -3605,14 +3597,6 @@ static void retransmit_request(struct k_work *work)
 		/* don't error here, retry until timeout */
 	}
 
-	/*
-	 * Due to the way DTLS was implemented in the socket APIs we have
-	 * to add the socket to the listening fds *after* the first successful
-	 * send -- lwm2m_socket_add() will check to make sure it's not added
-	 * more than once.
-	 */
-	lwm2m_socket_add(msg->ctx);
-
 	k_delayed_work_submit(&client_ctx->retransmit_work, pending->timeout);
 }
 
@@ -3868,11 +3852,6 @@ int lwm2m_socket_add(struct lwm2m_ctx *ctx)
 {
 	int i;
 
-	if (ctx->connected) {
-		return 0;
-	}
-
-	ctx->connected = true;
 	if (sock_nfds < MAX_POLL_FD) {
 		i = sock_nfds++;
 	} else {
@@ -3894,11 +3873,6 @@ found:
 
 void lwm2m_socket_del(struct lwm2m_ctx *ctx)
 {
-	if (!ctx->connected) {
-		return;
-	}
-
-	ctx->connected = true;
 	for (int i = 0; i < sock_nfds; i++) {
 		if (sock_ctx[i] == ctx) {
 			sock_ctx[i] = NULL;
@@ -4069,6 +4043,7 @@ int lwm2m_socket_start(struct lwm2m_ctx *client_ctx)
 		return -errno;
 	}
 
+	lwm2m_socket_add(client_ctx);
 	return 0;
 }
 
