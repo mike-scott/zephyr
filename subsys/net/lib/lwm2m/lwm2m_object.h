@@ -309,8 +309,8 @@ struct lwm2m_message {
 	u8_t msg_data[MAX_PACKET_SIZE];
 
 	/** Message transmission handling for TYPE_CON */
-	struct coap_pending *pending;
-	struct coap_reply *reply;
+	struct coap_pending pending;
+	struct coap_reply reply;
 
 	/** Message configuration */
 	u8_t *token;
