@@ -509,12 +509,6 @@ int boot_erase_img_bank(u8_t area_id)
 #ifdef CONFIG_FLASH_PAGE_LAYOUT
 int boot_invalidate_slot1(void)
 {
-	static const u32_t zero_magic[4] = {
-		0x00000000,
-		0x00000000,
-		0x00000000,
-		0x00000000,
-	};
 	struct flash_pages_info magic_info;
 	const struct flash_area *fa;
 	struct device *dev;
@@ -543,8 +537,6 @@ int boot_invalidate_slot1(void)
 	if (rc != 0) {
 		goto out;
 	}
-
-	rc = flash_area_write(fa, magic_off, zero_magic, sizeof(zero_magic));
 
 out:
 	flash_area_close(fa);
