@@ -241,6 +241,11 @@ typedef void (*lwm2m_ctx_event_cb_t)(struct lwm2m_ctx *ctx,
 void lwm2m_rd_client_start(struct lwm2m_ctx *client_ctx, const char *ep_name,
 			   lwm2m_ctx_event_cb_t event_cb);
 
+#if defined(CONFIG_LWM2M_PERSIST_SETTINGS)
+/* Persist settings */
+int lwm2m_engine_set_persist(char *pathstr);
+#endif
+
 /**
  * @}
  */

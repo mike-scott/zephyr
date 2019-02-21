@@ -31,6 +31,11 @@ zephyr_library_sources_ifdef(CONFIG_LWM2M_RW_JSON_SUPPORT
     lwm2m_rw_json.c
     )
 
+# Persistence settings
+zephyr_library_sources_ifdef(CONFIG_LWM2M_PERSIST_SETTINGS
+    lwm2m_settings.c
+    )
+
 # IPSO Objects
 zephyr_library_sources_ifdef(CONFIG_LWM2M_IPSO_TEMP_SENSOR
     ipso_temp_sensor.c

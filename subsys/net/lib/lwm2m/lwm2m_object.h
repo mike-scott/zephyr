@@ -68,6 +68,7 @@
 #define LWM2M_OP_CREATE		2
 #define LWM2M_OP_DELETE		3
 #define LWM2M_OP_EXECUTE	4
+#define LWM2M_FLAG_PERSIST	6
 #define LWM2M_FLAG_OPTIONAL	7
 /* values >7 aren't used for permission checks */
 #define LWM2M_OP_DISCOVER	8
