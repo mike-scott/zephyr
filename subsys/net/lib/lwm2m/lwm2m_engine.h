@@ -80,6 +80,13 @@ int lwm2m_send_message(struct lwm2m_message *msg);
 
 u16_t lwm2m_get_rd_data(u8_t *client_data, u16_t size);
 
+int lwm2m_path_to_objs(const struct lwm2m_obj_path *path,
+		       struct lwm2m_engine_obj_inst **obj_inst,
+		       struct lwm2m_engine_obj_field **obj_field,
+		       struct lwm2m_engine_res_inst **res);
+int lwm2m_string_to_path(char *pathstr, struct lwm2m_obj_path *path,
+			 char delim);
+
 int lwm2m_perform_read_op(struct lwm2m_engine_obj *obj,
 			  struct lwm2m_message *msg, u16_t content_format);
 
