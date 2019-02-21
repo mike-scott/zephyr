@@ -1195,8 +1195,8 @@ static int select_reader(struct lwm2m_input_context *in, u16_t format)
 
 /* user data setter functions */
 
-static int string_to_path(char *pathstr, struct lwm2m_obj_path *path,
-			  char delim)
+int lwm2m_string_to_path(char *pathstr, struct lwm2m_obj_path *path,
+			 char delim)
 {
 	u16_t value, len;
 	int i, tokstart = -1, toklen;
@@ -1260,10 +1260,10 @@ static int string_to_path(char *pathstr, struct lwm2m_obj_path *path,
 	return 0;
 }
 
-static int path_to_objs(const struct lwm2m_obj_path *path,
-			struct lwm2m_engine_obj_inst **obj_inst,
-			struct lwm2m_engine_obj_field **obj_field,
-			struct lwm2m_engine_res_inst **res)
+int lwm2m_path_to_objs(const struct lwm2m_obj_path *path,
+		       struct lwm2m_engine_obj_inst **obj_inst,
+		       struct lwm2m_engine_obj_field **obj_field,
+		       struct lwm2m_engine_res_inst **res)
 {
 	struct lwm2m_engine_obj_inst *oi;
 	struct lwm2m_engine_obj_field *of;
@@ -1328,7 +1328,7 @@ int lwm2m_engine_create_obj_inst(char *pathstr)
 	LOG_DBG("path:%s", pathstr);
 
 	/* translate path -> path_obj */
-	ret = string_to_path(pathstr, &path, '/');
+	ret = lwm2m_string_to_path(pathstr, &path, '/');
 	if (ret < 0) {
 		return ret;
 	}
@@ -1349,7 +1349,7 @@ int lwm2m_engine_set_res_data(char *pathstr, void *data_ptr, u16_t data_len,
 	int ret = 0;
 
 	/* translate path -> path_obj */
-	ret = string_to_path(pathstr, &path, '/');
+	ret = lwm2m_string_to_path(pathstr, &path, '/');
 	if (ret < 0) {
 		return ret;
 	}
@@ -1360,7 +1360,7 @@ int lwm2m_engine_set_res_data(char *pathstr, void *data_ptr, u16_t data_len,
 	}
 
 	/* look up resource obj */
-	ret = path_to_objs(&path, NULL, NULL, &res);
+	ret = lwm2m_path_to_objs(&path, NULL, NULL, &res);
 	if (ret < 0) {
 		return ret;
 	}
@@ -1387,7 +1387,7 @@ static int lwm2m_engine_set(char *pathstr, void *value, u16_t len)
 	LOG_DBG("path:%s, value:%p, len:%d", pathstr, value, len);
 
 	/* translate path -> path_obj */
-	ret = string_to_path(pathstr, &path, '/');
+	ret = lwm2m_string_to_path(pathstr, &path, '/');
 	if (ret < 0) {
 		return ret;
 	}
@@ -1398,7 +1398,7 @@ static int lwm2m_engine_set(char *pathstr, void *value, u16_t len)
 	}
 
 	/* look up resource obj */
-	ret = path_to_objs(&path, &obj_inst, &obj_field, &res);
+	ret = lwm2m_path_to_objs(&path, &obj_inst, &obj_field, &res);
 	if (ret < 0) {
 		return ret;
 	}
@@ -1596,7 +1596,7 @@ int lwm2m_engine_get_res_data(char *pathstr, void **data_ptr, u16_t *data_len,
 	int ret = 0;
 
 	/* translate path -> path_obj */
-	ret = string_to_path(pathstr, &path, '/');
+	ret = lwm2m_string_to_path(pathstr, &path, '/');
 	if (ret < 0) {
 		return ret;
 	}
@@ -1607,7 +1607,7 @@ int lwm2m_engine_get_res_data(char *pathstr, void **data_ptr, u16_t *data_len,
 	}
 
 	/* look up resource obj */
-	ret = path_to_objs(&path, NULL, NULL, &res);
+	ret = lwm2m_path_to_objs(&path, NULL, NULL, &res);
 	if (ret < 0) {
 		return ret;
 	}
@@ -1632,7 +1632,7 @@ static int lwm2m_engine_get(char *pathstr, void *buf, u16_t buflen)
 	LOG_DBG("path:%s, buf:%p, buflen:%d", pathstr, buf, buflen);
 
 	/* translate path -> path_obj */
-	ret = string_to_path(pathstr, &path, '/');
+	ret = lwm2m_string_to_path(pathstr, &path, '/');
 	if (ret < 0) {
 		return ret;
 	}
@@ -1643,7 +1643,7 @@ static int lwm2m_engine_get(char *pathstr, void *buf, u16_t buflen)
 	}
 
 	/* look up resource obj */
-	ret = path_to_objs(&path, &obj_inst, &obj_field, &res);
+	ret = lwm2m_path_to_objs(&path, &obj_inst, &obj_field, &res);
 	if (ret < 0) {
 		return ret;
 	}
@@ -1819,7 +1819,7 @@ int lwm2m_engine_get_resource(char *pathstr, struct lwm2m_engine_res_inst **res)
 	int ret;
 	struct lwm2m_obj_path path;
 
-	ret = string_to_path(pathstr, &path, '/');
+	ret = lwm2m_string_to_path(pathstr, &path, '/');
 	if (ret < 0) {
 		return ret;
 	}
@@ -1829,7 +1829,7 @@ int lwm2m_engine_get_resource(char *pathstr, struct lwm2m_engine_res_inst **res)
 		return -EINVAL;
 	}
 
-	return path_to_objs(&path, NULL, NULL, res);
+	return lwm2m_path_to_objs(&path, NULL, NULL, res);
 }
 
 int lwm2m_engine_register_read_callback(char *pathstr,
@@ -2315,7 +2315,7 @@ static int lwm2m_write_attr_handler(struct lwm2m_engine_obj *obj,
 
 	/* get lwm2m_attr slist */
 	if (msg->path.level == 3U) {
-		ret = path_to_objs(&msg->path, NULL, NULL, &res);
+		ret = lwm2m_path_to_objs(&msg->path, NULL, NULL, &res);
 		if (ret < 0) {
 			return ret;
 		}
@@ -2585,8 +2585,8 @@ static int lwm2m_write_attr_handler(struct lwm2m_engine_obj *obj,
 			}
 
 			if (!res || res->res_id != obs->path.res_id) {
-				ret = path_to_objs(&obs->path, NULL, NULL,
-						   &res);
+				ret = lwm2m_path_to_objs(&obs->path, NULL, NULL,
+							 &res);
 				if (ret < 0) {
 					return ret;
 				}
@@ -2622,7 +2622,7 @@ static int lwm2m_exec_handler(struct lwm2m_engine_obj *obj,
 		return -EINVAL;
 	}
 
-	ret = path_to_objs(&msg->path, &obj_inst, NULL, &res);
+	ret = lwm2m_path_to_objs(&msg->path, &obj_inst, NULL, &res);
 	if (ret < 0) {
 		return ret;
 	}
