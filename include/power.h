@@ -27,26 +27,26 @@ enum power_states {
 	SYS_POWER_STATE_AUTO	= (-2),
 	SYS_POWER_STATE_ACTIVE	= (-1),
 #ifdef CONFIG_SYS_POWER_LOW_POWER_STATES
-# ifdef CONFIG_SYS_POWER_STATE_CPU_LPS_SUPPORTED
-	SYS_POWER_STATE_CPU_LPS,
-# endif
 # ifdef CONFIG_SYS_POWER_STATE_CPU_LPS_1_SUPPORTED
 	SYS_POWER_STATE_CPU_LPS_1,
 # endif
 # ifdef CONFIG_SYS_POWER_STATE_CPU_LPS_2_SUPPORTED
 	SYS_POWER_STATE_CPU_LPS_2,
 # endif
+# ifdef CONFIG_SYS_POWER_STATE_CPU_LPS_3_SUPPORTED
+	SYS_POWER_STATE_CPU_LPS_3,
+# endif
 #endif /* CONFIG_SYS_POWER_LOW_POWER_STATES */
 
 #ifdef CONFIG_SYS_POWER_DEEP_SLEEP_STATES
-# ifdef CONFIG_SYS_POWER_STATE_DEEP_SLEEP_SUPPORTED
-	SYS_POWER_STATE_DEEP_SLEEP,
-# endif
 # ifdef CONFIG_SYS_POWER_STATE_DEEP_SLEEP_1_SUPPORTED
 	SYS_POWER_STATE_DEEP_SLEEP_1,
 # endif
 # ifdef CONFIG_SYS_POWER_STATE_DEEP_SLEEP_2_SUPPORTED
 	SYS_POWER_STATE_DEEP_SLEEP_2,
+# endif
+# ifdef CONFIG_SYS_POWER_STATE_DEEP_SLEEP_3_SUPPORTED
+	SYS_POWER_STATE_DEEP_SLEEP_3,
 # endif
 #endif /* CONFIG_SYS_POWER_DEEP_SLEEP_STATES */
 	SYS_POWER_STATE_MAX
@@ -73,16 +73,16 @@ static inline bool sys_pm_is_low_power_state(enum power_states state)
 {
 	switch (state) {
 #ifdef CONFIG_SYS_POWER_LOW_POWER_STATES
-# ifdef CONFIG_SYS_POWER_STATE_CPU_LPS_SUPPORTED
-	case SYS_POWER_STATE_CPU_LPS:
-		/* FALLTHROUGH */
-# endif
 # ifdef CONFIG_SYS_POWER_STATE_CPU_LPS_1_SUPPORTED
 	case SYS_POWER_STATE_CPU_LPS_1:
 		/* FALLTHROUGH */
 # endif
 # ifdef CONFIG_SYS_POWER_STATE_CPU_LPS_2_SUPPORTED
 	case SYS_POWER_STATE_CPU_LPS_2:
+		/* FALLTHROUGH */
+# endif
+# ifdef CONFIG_SYS_POWER_STATE_CPU_LPS_3_SUPPORTED
+	case SYS_POWER_STATE_CPU_LPS_3:
 		/* FALLTHROUGH */
 # endif
 		return true;
@@ -102,16 +102,16 @@ static inline bool sys_pm_is_deep_sleep_state(enum power_states state)
 {
 	switch (state) {
 #ifdef CONFIG_SYS_POWER_DEEP_SLEEP_STATES
-# ifdef CONFIG_SYS_POWER_STATE_DEEP_SLEEP_SUPPORTED
-	case SYS_POWER_STATE_DEEP_SLEEP:
-		/* FALLTHROUGH */
-# endif
 # ifdef CONFIG_SYS_POWER_STATE_DEEP_SLEEP_1_SUPPORTED
 	case SYS_POWER_STATE_DEEP_SLEEP_1:
 		/* FALLTHROUGH */
 # endif
 # ifdef CONFIG_SYS_POWER_STATE_DEEP_SLEEP_2_SUPPORTED
 	case SYS_POWER_STATE_DEEP_SLEEP_2:
+		/* FALLTHROUGH */
+# endif
+# ifdef CONFIG_SYS_POWER_STATE_DEEP_SLEEP_3_SUPPORTED
+	case SYS_POWER_STATE_DEEP_SLEEP_3:
 		/* FALLTHROUGH */
 # endif
 		return true;
@@ -150,7 +150,7 @@ static inline void sys_pm_idle_exit_notification_disable(void)
  */
 extern void sys_pm_force_power_state(enum power_states state);
 
-#ifdef CONFIG_PM_CONTROL_OS_DEBUG
+#ifdef CONFIG_SYS_PM_DEBUG
 /**
  * @brief Dump Low Power states related debug info
  *
@@ -158,9 +158,9 @@ extern void sys_pm_force_power_state(enum power_states state);
  */
 extern void sys_pm_dump_debug_info(void);
 
-#endif /* CONFIG_PM_CONTROL_OS_DEBUG */
+#endif /* CONFIG_SYS_PM_DEBUG */
 
-#ifdef CONFIG_PM_CONTROL_STATE_LOCK
+#ifdef CONFIG_SYS_PM_STATE_LOCK
 /**
  * @brief Disable particular power state
  *
@@ -195,7 +195,7 @@ extern void sys_pm_ctrl_enable_state(enum power_states state);
  */
 extern bool sys_pm_ctrl_is_state_enabled(enum power_states state);
 
-#endif /* CONFIG_PM_CONTROL_STATE_LOCK */
+#endif /* CONFIG_SYS_PM_STATE_LOCK */
 
 /**
  * @}
@@ -273,6 +273,40 @@ void sys_resume(void);
  * @return Power state which was selected and entered.
  */
 extern enum power_states sys_suspend(s32_t ticks);
+
+/**
+ * @brief Put processor into low power state
+ *
+ * This function implements the SoC specific details necessary
+ * to put the processor into available power states.
+ */
+extern void sys_set_power_state(enum power_states state);
+
+/**
+ * @brief Do any SoC or architecture specific post ops after low power states.
+ *
+ * This function is a place holder to do any operations that may
+ * be needed to be done after deep sleep exits. Currently it enables
+ * interrupts after resuming from deep sleep. In future, the enabling
+ * of interrupts may be moved into the kernel.
+ */
+extern void sys_power_state_post_ops(enum power_states state);
+
+/**
+ * @brief Application defined function for Lower Power entry
+ *
+ * Application defined function for doing any target specific operations
+ * for low power entry.
+ */
+extern void sys_pm_notify_lps_entry(enum power_states state);
+
+/**
+ * @brief Application defined function for Lower Power exit
+ *
+ * Application defined function for doing any target specific operations
+ * for low power exit.
+ */
+extern void sys_pm_notify_lps_exit(enum power_states state);
 
 /**
  * @}

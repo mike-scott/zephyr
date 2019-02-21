@@ -68,7 +68,7 @@ void _arch_configure_static_mpu_regions(void)
 #if defined(CONFIG_COVERAGE_GCOV) && defined(CONFIG_USERSPACE)
 		{
 		.start = (u32_t)&__gcov_bss_start,
-		.size = (u32_t)&__gcov_bss_size
+		.size = (u32_t)&__gcov_bss_size,
 		.attr = K_MEM_PARTITION_P_RW_U_RW,
 		},
 #endif /* CONFIG_COVERAGE_GCOV && CONFIG_USERSPACE */
@@ -189,13 +189,22 @@ void _arch_configure_dynamic_mpu_regions(struct k_thread *thread)
 
 #if defined(CONFIG_MPU_STACK_GUARD)
 	/* Privileged stack guard */
+	u32_t guard_start;
 #if defined(CONFIG_USERSPACE)
-	u32_t guard_start = thread->arch.priv_stack_start ?
-	    (u32_t)thread->arch.priv_stack_start :
-	    (u32_t)thread->stack_obj;
+	if (thread->arch.priv_stack_start) {
+		guard_start = thread->arch.priv_stack_start;
+	} else {
+		guard_start = thread->stack_info.start -
+			MPU_GUARD_ALIGN_AND_SIZE;
+		__ASSERT((u32_t)thread->stack_obj == guard_start,
+		"Guard start (0x%x) not beginning at stack object (0x%x)\n",
+		guard_start, (u32_t)thread->stack_obj);
+	}
 #else
-	u32_t guard_start = thread->stack_info.start;
-#endif
+	guard_start = thread->stack_info.start -
+		MPU_GUARD_ALIGN_AND_SIZE;
+#endif /* CONFIG_USERSPACE */
+
 	__ASSERT(region_num < _MAX_DYNAMIC_MPU_REGIONS_NUM,
 		"Out-of-bounds error for dynamic region map.");
 	dynamic_regions[region_num] = (const struct k_mem_partition)

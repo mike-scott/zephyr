@@ -273,6 +273,9 @@ static u32_t _MpuFault(NANO_ESF *esf, int fromHardFault)
 	}
 #endif /* !defined(CONFIG_ARMV7_M_ARMV8_M_FP) */
 
+	/* clear MMFSR sticky bits */
+	SCB->CFSR |= SCB_CFSR_MEMFAULTSR_Msk;
+
 	/* Assess whether system shall ignore/recover from this MPU fault. */
 	if (_MemoryFaultIsRecoverable(esf)) {
 		reason = _NANO_ERR_RECOVERABLE;
@@ -359,10 +362,8 @@ static int _BusFault(NANO_ESF *esf, int fromHardFault)
 	}
 #endif /* defined(CONFIG_ARM_MPU) && defined(CONFIG_CPU_HAS_NXP_MPU) */
 
-#if defined(CONFIG_ARMV8_M_MAINLINE)
-	/* clear BSFR sticky bits */
+	/* clear BFSR sticky bits */
 	SCB->CFSR |= SCB_CFSR_BUSFAULTSR_Msk;
-#endif /* CONFIG_ARMV8_M_MAINLINE */
 
 	if (_MemoryFaultIsRecoverable(esf)) {
 		return _NANO_ERR_RECOVERABLE;
@@ -416,7 +417,7 @@ static u32_t _UsageFault(const NANO_ESF *esf)
 		PR_FAULT_INFO("  Attempt to execute undefined instruction\n");
 	}
 
-	/* clear USFR sticky bits */
+	/* clear UFSR sticky bits */
 	SCB->CFSR |= SCB_CFSR_USGFAULTSR_Msk;
 
 	return reason;
@@ -715,9 +716,32 @@ void _Fault(NANO_ESF *esf, u32_t exc_return)
 			}
 		}
 	}
+#elif defined(CONFIG_ARM_NONSECURE_FIRMWARE)
+	if ((exc_return & EXC_RETURN_INDICATOR_PREFIX) !=
+			EXC_RETURN_INDICATOR_PREFIX) {
+		/* Invalid EXC_RETURN value */
+		goto _exit_fatal;
+	}
+	if (exc_return & EXC_RETURN_EXCEPTION_SECURE_Secure) {
+		/* Non-Secure Firmware shall only handle Non-Secure Exceptions.
+		 * This is a fatal error.
+		 */
+		goto _exit_fatal;
+	}
+
+	if (exc_return & EXC_RETURN_RETURN_STACK_Secure) {
+		/* Exception entry occurred in Secure stack.
+		 *
+		 * Note that Non-Secure firmware cannot inspect the Secure
+		 * stack to determine the root cause of the fault. Fault
+		 * inspection will indicate the Non-Secure instruction
+		 * that performed the branch to the Secure domain.
+		 */
+		PR_FAULT_INFO("Exception occurred in Secure State\n");
+	}
 #else
 	(void) exc_return;
-#endif /* CONFIG_ARM_SECURE_FIRMWARE*/
+#endif /* CONFIG_ARM_SECURE_FIRMWARE */
 
 	reason = _FaultHandle(esf, fault);
 
@@ -725,7 +749,8 @@ void _Fault(NANO_ESF *esf, u32_t exc_return)
 		return;
 	}
 
-#if defined(CONFIG_ARM_SECURE_FIRMWARE)
+#if defined(CONFIG_ARM_SECURE_FIRMWARE) || \
+	defined(CONFIG_ARM_NONSECURE_FIRMWARE)
 _exit_fatal:
 	reason = _NANO_ERR_HW_EXCEPTION;
 #endif

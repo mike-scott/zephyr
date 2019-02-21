@@ -190,9 +190,8 @@ config PRIVILEGED_STACK_SIZE
 
 config PRIVILEGED_STACK_TEXT_AREA
 	int "Privileged stacks text area"
-	default 256 if (DEBUG || STACK_CANARIES || CODE_DATA_RELOCATION)
 	default 512 if COVERAGE_GCOV
-	default 128
+	default 256
 	depends on ARCH_HAS_USERSPACE
 	help
 	  Stack text area size for privileged stacks.
@@ -200,9 +199,7 @@ config PRIVILEGED_STACK_TEXT_AREA
 config KOBJECT_TEXT_AREA
 	int "Size if kobject text area"
 	default 512 if COVERAGE_GCOV
-	default 256 if (!SIZE_OPTIMIZATIONS || STACK_CANARIES || ARC)
-	default 256 if CODE_DATA_RELOCATION
-	default 128
+	default 256
 	depends on ARCH_HAS_USERSPACE
 	help
 	  Size of kernel object text area. Used in linker script.
@@ -357,13 +354,6 @@ config SYS_POWER_LOW_POWER_STATES_SUPPORTED
 	  This option signifies that the target supports the SYS_POWER_LOW_POWER_STATES
 	  configuration option.
 
-config SYS_POWER_STATE_CPU_LPS_SUPPORTED
-	# Hidden
-	bool
-	help
-	  This option signifies that the target supports the SYS_POWER_STATE_CPU_LPS
-	  configuration option.
-
 config SYS_POWER_STATE_CPU_LPS_1_SUPPORTED
 	# Hidden
 	bool
@@ -378,18 +368,18 @@ config SYS_POWER_STATE_CPU_LPS_2_SUPPORTED
 	  This option signifies that the target supports the SYS_POWER_STATE_CPU_LPS_2
 	  configuration option.
 
+config SYS_POWER_STATE_CPU_LPS_3_SUPPORTED
+	# Hidden
+	bool
+	help
+	  This option signifies that the target supports the SYS_POWER_STATE_CPU_LPS_3
+	  configuration option.
+
 config SYS_POWER_DEEP_SLEEP_STATES_SUPPORTED
 	# Hidden
 	bool
 	help
 	  This option signifies that the target supports the SYS_POWER_DEEP_SLEEP_STATES
-	  configuration option.
-
-config SYS_POWER_STATE_DEEP_SLEEP_SUPPORTED
-	# Hidden
-	bool
-	help
-	  This option signifies that the target supports the SYS_POWER_STATE_DEEP_SLEEP
 	  configuration option.
 
 config SYS_POWER_STATE_DEEP_SLEEP_1_SUPPORTED
@@ -404,6 +394,13 @@ config SYS_POWER_STATE_DEEP_SLEEP_2_SUPPORTED
 	bool
 	help
 	  This option signifies that the target supports the SYS_POWER_STATE_DEEP_SLEEP_2
+	  configuration option.
+
+config SYS_POWER_STATE_DEEP_SLEEP_3_SUPPORTED
+	# Hidden
+	bool
+	help
+	  This option signifies that the target supports the SYS_POWER_STATE_DEEP_SLEEP_3
 	  configuration option.
 
 config BOOTLOADER_CONTEXT_RESTORE_SUPPORTED

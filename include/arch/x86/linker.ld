@@ -290,7 +290,7 @@ SECTIONS
 
 	z_interrupt_vectors_allocated = .;
 #ifdef LINKER_PASS2
-	KEEP(*(irq_vectors_alloc_data))
+	KEEP(*(irq_vectors_alloc))
 #else
 	. += (CONFIG_IDT_NUM_VECTORS + 7) / 8;
 #endif /* LINKER_PASS2 */
@@ -331,7 +331,7 @@ SECTIONS
 	. = ALIGN(8);
 	_gdt = .;
 #ifdef LINKER_PASS2
-	KEEP(*(gdt_ram_data))
+	KEEP(*(gdt))
 #else /* LINKER_PASS2 */
 
 #ifdef CONFIG_USERSPACE
@@ -378,10 +378,10 @@ SECTIONS
 	MMU_PAGE_ALIGN
 	__mmu_tables_start = .;
 	z_x86_kernel_pdpt = .;
-	KEEP(*(.mmu_data));
+	KEEP(*(mmu_tables));
 #ifdef CONFIG_X86_KPTI
 	z_x86_user_pdpt = .;
-	KEEP(*(.user_mmu_data));
+	KEEP(*(user_mmu_tables));
 #endif /* CONFIG_X86_KPTI */
 	__mmu_tables_end = .;
 	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
