@@ -41,6 +41,10 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #if defined(CONFIG_DNS_RESOLVER)
 #include <net/dns_resolve.h>
 #endif
+#if defined(CONFIG_LWM2M_PERSIST_SETTINGS)
+#include <settings/settings.h>
+#include "lwm2m_settings.h"
+#endif
 
 #include "lwm2m_object.h"
 #include "lwm2m_engine.h"
@@ -1343,6 +1347,70 @@ int lwm2m_engine_create_obj_inst(char *pathstr)
 	return lwm2m_create_obj_inst(path.obj_id, path.obj_inst_id, &obj_inst);
 }
 
+#if defined(CONFIG_LWM2M_PERSIST_SETTINGS)
+/* Mark an object field as persist */
+int lwm2m_engine_set_persist(char *pathstr)
+{
+	struct lwm2m_obj_path path;
+	struct lwm2m_engine_obj_field *obj_field;
+	int ret = 0;
+
+	/* translate path -> path_obj */
+	ret = lwm2m_string_to_path(pathstr, &path, '/');
+	if (ret < 0) {
+		return ret;
+	}
+
+	if (path.level < 3) {
+		LOG_ERR("path must have 3 parts");
+		return -EINVAL;
+	}
+
+	/* look up obj field */
+	ret = lwm2m_path_to_objs(&path, NULL, &obj_field, NULL);
+	if (ret < 0) {
+		return ret;
+	}
+
+	obj_field->permissions |= BIT(LWM2M_FLAG_PERSIST);
+	return 0;
+}
+
+
+void lwm2m_finalize_persist_resource_changes(void)
+{
+	struct lwm2m_engine_obj_inst *obj_inst;
+	int i;
+
+	SYS_SLIST_FOR_EACH_CONTAINER(&engine_obj_inst_list, obj_inst,
+				     node) {
+		if (!obj_inst->resources || obj_inst->resource_count == 0) {
+			continue;
+		}
+
+		for (i = 0; i < obj_inst->resource_count; i++) {
+			if (!LWM2M_HAS_RES_FLAG(&obj_inst->resources[i],
+						LWM2M_RES_DATA_FLAG_CHANGED) ||
+			    !obj_inst->resources[i].post_write_cb) {
+				continue;
+			}
+
+			obj_inst->resources[i].data_flags &=
+					~LWM2M_RES_DATA_FLAG_CHANGED;
+
+			/* send out notifications for changed data */
+			if (obj_inst->resources[i].post_write_cb) {
+				obj_inst->resources[i].post_write_cb(
+					obj_inst->obj_inst_id,
+					obj_inst->resources[i].data_ptr,
+					obj_inst->resources[i].last_len,
+					false, 0);
+			}
+		}
+	}
+}
+#endif
+
 int lwm2m_engine_set_res_data(char *pathstr, void *data_ptr, u16_t data_len,
 			      u8_t data_flags)
 {
@@ -1370,6 +1438,7 @@ int lwm2m_engine_set_res_data(char *pathstr, void *data_ptr, u16_t data_len,
 	/* assign data elements */
 	res->data_ptr = data_ptr;
 	res->data_len = data_len;
+	res->last_len = data_len;
 	res->data_flags = data_flags;
 
 	return ret;
@@ -1509,10 +1578,17 @@ static int lwm2m_engine_set(char *pathstr, void *value, u16_t len)
 
 	}
 
+	res->last_len = len;
 	if (res->post_write_cb) {
 		ret = res->post_write_cb(obj_inst->obj_inst_id, data_ptr, len,
 					 false, 0);
 	}
+
+#if defined(CONFIG_LWM2M_PERSIST_SETTINGS)
+	ret = lwm2m_try_persist_setting(path.obj_id, path.obj_inst_id,
+					path.res_id, obj_field,
+					data_ptr, data_len);
+#endif
 
 	if (changed) {
 		NOTIFY_OBSERVER_PATH(&path);
@@ -2269,11 +2345,18 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst,
 		return -ENOENT;
 	}
 
+	res->last_len = len;
 	if (res->post_write_cb &&
 	    obj_field->data_type != LWM2M_RES_TYPE_OPAQUE) {
 		ret = res->post_write_cb(obj_inst->obj_inst_id, data_ptr, len,
 					 last_block, total_size);
 	}
+
+#if defined(CONFIG_LWM2M_PERSIST_SETTINGS)
+	ret = lwm2m_try_persist_setting(obj_inst->obj->obj_id,
+					obj_inst->obj_inst_id, res->res_id,
+					obj_field, data_ptr, data_len);
+#endif
 
 	NOTIFY_OBSERVER_PATH(&msg->path);
 
@@ -4201,6 +4284,14 @@ static int lwm2m_engine_init(struct device *dev)
 	} else {
 		LOG_DBG("LWM2M engine periodic work started");
 	}
+
+#if defined(CONFIG_LWM2M_PERSIST_SETTINGS)
+	ret = lwm2m_settings_init();
+	if (ret < 0) {
+		LOG_ERR("Error initializing persistence settings: %d", ret);
+		return ret;
+	}
+#endif
 
 	return 0;
 }

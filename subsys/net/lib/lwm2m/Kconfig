@@ -193,6 +193,14 @@ config LWM2M_NUM_ATTR
 	  This value sets up the maximum number of LwM2M attributes that
 	  we can handle at the same time.
 
+config LWM2M_PERSIST_SETTINGS
+	bool "support for FCB-based persistence of LwM2M values"
+	select FCB
+	select SETTINGS
+	help
+	  Enable this if your application needs to store LwM2M object values
+	  across reboots.  This uses the "storage" partition defined in DTS.
+
 menu "IPSO Alliance Smart Object Support"
 
 source "subsys/net/lib/lwm2m/Kconfig.ipso"

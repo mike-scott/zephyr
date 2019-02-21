@@ -723,14 +723,24 @@ int lwm2m_engine_register_delete_callback(u16_t obj_id,
 #define LWM2M_RES_DATA_READ_ONLY	0
 
 /**
+ * @brief Resource data changed value bit
+ */
+#define LWM2M_RES_DATA_CHANGED		1
+
+/**
  * @brief Resource read-only flag
  */
 #define LWM2M_RES_DATA_FLAG_RO		BIT(LWM2M_RES_DATA_READ_ONLY)
 
 /**
+ * @brief Resource data changed flag
+ */
+#define LWM2M_RES_DATA_FLAG_CHANGED	BIT(LWM2M_RES_DATA_CHANGED)
+
+/**
  * @brief Read resource flags helper macro
  */
-#define LWM2M_HAS_RES_FLAG(res, f)	((res->data_flags & f) == f)
+#define LWM2M_HAS_RES_FLAG(res, f)	(((res)->data_flags & f) == f)
 
 /**
  * @brief Set data buffer for a resource
@@ -765,6 +775,17 @@ int lwm2m_engine_set_res_data(char *pathstr, void *data_ptr, u16_t data_len,
  */
 int lwm2m_engine_get_res_data(char *pathstr, void **data_ptr, u16_t *data_len,
 			      u8_t *data_flags);
+
+#if defined(CONFIG_LWM2M_PERSIST_SETTINGS)
+/**
+ * @brief Enable persistent of resource value
+ *
+ * @param[in] pathstr LwM2M resource path string (obj/obj-instance/resource)
+ *
+ * @return 0 for success or negative in case of error.
+ */
+int lwm2m_engine_set_persist(char *pathstr);
+#endif /* CONFIG_LWM2M_PERSIST_SETTINGS */
 
 /**
  * @brief Start the LwM2M engine
