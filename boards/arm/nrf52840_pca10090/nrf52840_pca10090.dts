@@ -72,11 +72,21 @@
 		};
 		scratch_partition: partition@de000 {
 			label = "image-scratch";
-			reg = <0x000de000 0x0001e000>;
+			reg = <0x000de000 0x00012000>;
 		};
-		storage_partition: partition@fc000 {
+
+		/*
+		 * The flash starting at 0x000f0000 and ending at
+		 * 0x000fffff is reserved for use by the application.
+		 */
+
+		/*
+		 * If enabled, partition for FCB/NFFS/NVS will be created in
+		 * this area.
+		 */
+		storage_partition: partition@f0000 {
 			label = "storage";
-			reg = <0x000fc000 0x00004000>;
+			reg = <0x000f0000 0x00004000>;
 		};
 	};
 };
