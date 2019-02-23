@@ -98,21 +98,25 @@ static int set(int argc, char **argv, void *val_ctx)
 
 	/* This actually sets the data buffer */
 	ret = settings_val_read_cb(val_ctx, data_ptr, data_len);
-	if (ret < 0) {
-		return ret;
+	if (ret >= 0) {
+		res->last_len = ret;
+		res->data_flags |= LWM2M_RES_DATA_FLAG_CHANGED;
 	}
 
-	if (res->post_write_cb) {
-		ret = res->post_write_cb(path.obj_inst_id, data_ptr, len,
-					 false, 0);
-	}
+	return ret;
+}
 
-	return (len < 0) ? len : 0;
+int commit(void)
+{
+	/* send out notifications for all of the changed resources */
+	lwm2m_finalize_persist_resource_changes();
+	return 0;
 }
 
 static struct settings_handler lwm2m_settings = {
 	.name = "lwm2m",
 	.h_set = set,
+	.h_commit = commit,
 };
 
 int lwm2m_settings_init(void)

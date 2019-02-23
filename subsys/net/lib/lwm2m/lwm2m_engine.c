@@ -1375,6 +1375,40 @@ int lwm2m_engine_set_persist(char *pathstr)
 	obj_field->permissions |= BIT(LWM2M_FLAG_PERSIST);
 	return 0;
 }
+
+
+void lwm2m_finalize_persist_resource_changes(void)
+{
+	struct lwm2m_engine_obj_inst *obj_inst;
+	int i;
+
+	SYS_SLIST_FOR_EACH_CONTAINER(&engine_obj_inst_list, obj_inst,
+				     node) {
+		if (!obj_inst->resources || obj_inst->resource_count == 0) {
+			continue;
+		}
+
+		for (i = 0; i < obj_inst->resource_count; i++) {
+			if (!LWM2M_HAS_RES_FLAG(&obj_inst->resources[i],
+						LWM2M_RES_DATA_FLAG_CHANGED) ||
+			    !obj_inst->resources[i].post_write_cb) {
+				continue;
+			}
+
+			obj_inst->resources[i].data_flags &=
+					~LWM2M_RES_DATA_FLAG_CHANGED;
+
+			/* send out notifications for changed data */
+			if (obj_inst->resources[i].post_write_cb) {
+				obj_inst->resources[i].post_write_cb(
+					obj_inst->obj_inst_id,
+					obj_inst->resources[i].data_ptr,
+					obj_inst->resources[i].last_len,
+					false, 0);
+			}
+		}
+	}
+}
 #endif
 
 int lwm2m_engine_set_res_data(char *pathstr, void *data_ptr, u16_t data_len,
@@ -1404,6 +1438,7 @@ int lwm2m_engine_set_res_data(char *pathstr, void *data_ptr, u16_t data_len,
 	/* assign data elements */
 	res->data_ptr = data_ptr;
 	res->data_len = data_len;
+	res->last_len = data_len;
 	res->data_flags = data_flags;
 
 	return ret;
@@ -1543,6 +1578,7 @@ static int lwm2m_engine_set(char *pathstr, void *value, u16_t len)
 
 	}
 
+	res->last_len = len;
 	if (res->post_write_cb) {
 		ret = res->post_write_cb(obj_inst->obj_inst_id, data_ptr, len,
 					 false, 0);
@@ -2309,6 +2345,7 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst,
 		return -ENOENT;
 	}
 
+	res->last_len = len;
 	if (res->post_write_cb &&
 	    obj_field->data_type != LWM2M_RES_TYPE_OPAQUE) {
 		ret = res->post_write_cb(obj_inst->obj_inst_id, data_ptr, len,
