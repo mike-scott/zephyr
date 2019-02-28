@@ -187,9 +187,8 @@ if(NOT CONFIG_RTTI)
   )
 endif()
 
-if(NOT CONFIG_NATIVE_APPLICATION)
-  set(NOSTDINC_F -nostdinc)
-endif()
+# @Intent: Obtain compiler specific flags for standard C includes
+toolchain_cc_nostdinc()
 
 zephyr_compile_options(
   -g # TODO: build configuration enough?
@@ -201,12 +200,17 @@ zephyr_compile_options(
   -ffreestanding
   -Wno-main
   -fno-common
-  ${NOSTDINC_F}
   ${TOOLCHAIN_C_FLAGS}
 )
 
+# @Intent: Obtain compiler specific flags related to assembly
+toolchain_cc_asm_base_flags(ASM_BASE_FLAG)
 zephyr_compile_options(
-  $<$<COMPILE_LANGUAGE:ASM>:-xassembler-with-cpp>
+  $<$<COMPILE_LANGUAGE:ASM>:${ASM_BASE_FLAG}>
+)
+
+# Common toolchain-agnostic assembly flags
+zephyr_compile_options(
   $<$<COMPILE_LANGUAGE:ASM>:-D_ASMLANGUAGE>
 )
 
@@ -356,9 +360,7 @@ zephyr_cc_option(-Wpointer-arith)
 # Declare MPU userspace dependencies before the linker scripts to make
 # sure the order of dependencies are met
 if(CONFIG_USERSPACE)
-  if(CONFIG_APP_SHARED_MEM)
-    set(APP_SMEM_DEP app_smem_linker)
-  endif()
+  set(APP_SMEM_DEP app_smem_linker)
   if(CONFIG_ARM)
     set(PRIV_STACK_DEP priv_stacks_prebuilt)
   endif()
@@ -474,7 +476,6 @@ function(construct_add_custom_command_for_linker_pass linker_output_name output_
     ${linker_script_dep}
     COMMAND ${CMAKE_C_COMPILER}
     -x assembler-with-cpp
-    ${NOSTDINC_F}
     ${NOSYSDEF_CFLAG}
     -MD -MF ${linker_cmd_file_name}.dep -MT ${base_name}/${linker_cmd_file_name}
     ${current_includes}
@@ -560,7 +561,6 @@ add_subdirectory(boards)
 add_subdirectory(ext)
 add_subdirectory(subsys)
 add_subdirectory(drivers)
-add_subdirectory(tests)
 
 # Add all zephyr modules subdirectories.
 message("Including module(s): ${ZEPHYR_MODULES_NAME}")
@@ -1147,7 +1147,7 @@ configure_file(
      $ENV{ZEPHYR_BASE}/include/arch/arm/cortex_m/scripts/app_smem.ld
      ${PROJECT_BINARY_DIR}/include/generated/app_smem.ld)
 
-if(CONFIG_APP_SHARED_MEM AND CONFIG_USERSPACE)
+if(CONFIG_USERSPACE)
   set(APP_SMEM_LD "${PROJECT_BINARY_DIR}/include/generated/app_smem.ld")
   set(OBJ_FILE_DIR "${PROJECT_BINARY_DIR}/../")
 
@@ -1158,7 +1158,7 @@ if(CONFIG_APP_SHARED_MEM AND CONFIG_USERSPACE)
     )
 
   if(CONFIG_NEWLIB_LIBC)
-    set(NEWLIB_PART -l libc.a z_newlib_partition)
+    set(NEWLIB_PART -l libc.a z_libc_partition)
   endif()
   add_custom_command(
     OUTPUT ${APP_SMEM_LD}

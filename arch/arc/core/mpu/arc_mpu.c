@@ -446,8 +446,8 @@ void arc_core_mpu_configure_user_context(struct k_thread *thread)
 
 	/* for kernel threads, no need to configure user context */
 	if (!(thread->base.user_options & K_USER)) {
-#if defined(CONFIG_APP_SHARED_MEM) && CONFIG_ARC_MPU_VER == 3
-		/* APP_SHARED_MEM is handled here, all privileged threads have
+#if defined(CONFIG_USERSPACE) && CONFIG_ARC_MPU_VER == 3
+		/* USERSPACE is handled here, all privileged threads have
 		 * the right to access it.
 		 */
 		base = (u32_t)&_app_smem_start;
@@ -460,6 +460,17 @@ void arc_core_mpu_configure_user_context(struct k_thread *thread)
 	}
 
 	arc_core_mpu_configure(THREAD_STACK_USER_REGION, base, size);
+
+#if defined(CONFIG_USERSPACE) && CONFIG_ARC_MPU_VER == 3
+	/*
+	 * here, need to clear THREAD_APP_DATA_REGION for user thread as it will
+	 * be set by kernel thread to to access app_shared mem. For user thread
+	 * the handling of app_shared mem is done by
+	 * THREAD_DOMAIN_PARTITION_REGION
+	 */
+	_region_init(_get_region_index_by_type(THREAD_APP_DATA_REGION)
+		     , 0, 0, 0);
+#endif
 }
 
 /**
