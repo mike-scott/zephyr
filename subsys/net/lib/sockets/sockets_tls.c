@@ -82,8 +82,8 @@ struct tls_context {
 	/** Information whether TLS context was initialized. */
 	bool is_initialized;
 
-	/** Information whether TLS handshake is complete or not. */
-	struct k_sem tls_established;
+	/** Information whether TLS handshake is complete or not */
+	bool tls_established;
 
 	/** TLS specific option values. */
 	struct {
@@ -294,11 +294,6 @@ static int tls_init(struct device *unused)
 
 SYS_INIT(tls_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
 
-static inline bool is_handshake_complete(struct net_context *ctx)
-{
-	return k_sem_count_get(&ctx->tls->tls_established) != 0;
-}
-
 /* Allocate TLS context. */
 static struct tls_context *tls_alloc(void)
 {
@@ -322,8 +317,6 @@ static struct tls_context *tls_alloc(void)
 	k_mutex_unlock(&context_lock);
 
 	if (tls) {
-		k_sem_init(&tls->tls_established, 0, 1);
-
 		mbedtls_ssl_init(&tls->ssl);
 		mbedtls_ssl_config_init(&tls->config);
 #if defined(CONFIG_NET_SOCKETS_ENABLE_DTLS)
@@ -762,8 +755,7 @@ static int tls_mbedtls_reset(struct net_context *context)
 		return ret;
 	}
 
-	k_sem_init(&context->tls->tls_established, 0, 1);
-
+	context->tls->tls_established = false;
 #if defined(CONFIG_NET_SOCKETS_ENABLE_DTLS)
 	(void)memset(&context->tls->dtls_peer_addr, 0,
 		     sizeof(context->tls->dtls_peer_addr));
@@ -804,7 +796,7 @@ static int tls_mbedtls_handshake(struct net_context *context, bool block)
 	}
 
 	if (ret == 0) {
-		k_sem_give(&context->tls->tls_established);
+		context->tls->tls_established = true;
 	}
 
 	return ret;
@@ -1384,7 +1376,7 @@ static ssize_t sendto_dtls_client(struct net_context *ctx, const void *buf,
 		}
 	}
 
-	if (!is_handshake_complete(ctx)) {
+	if (!ctx->tls->tls_established) {
 		/* TODO For simplicity, TLS handshake blocks the socket even for
 		 * non-blocking socket.
 		 */
@@ -1409,7 +1401,7 @@ static ssize_t sendto_dtls_server(struct net_context *ctx, const void *buf,
 	/* For DTLS server, require to have established DTLS connection
 	 * in order to send data.
 	 */
-	if (!is_handshake_complete(ctx)) {
+	if (!ctx->tls->tls_established) {
 		errno = ENOTCONN;
 		return -1;
 	}
@@ -1496,7 +1488,7 @@ static ssize_t recvfrom_dtls_client(struct net_context *ctx, void *buf,
 {
 	int ret;
 
-	if (!is_handshake_complete(ctx)) {
+	if (!ctx->tls->tls_established) {
 		ret = -ENOTCONN;
 		goto error;
 	}
@@ -1557,7 +1549,7 @@ static ssize_t recvfrom_dtls_server(struct net_context *ctx, void *buf,
 	do {
 		repeat = false;
 
-		if (!is_handshake_complete(ctx)) {
+		if (!ctx->tls->tls_established) {
 			ret = tls_mbedtls_handshake(ctx, is_block);
 			if (ret < 0) {
 				/* In case of EAGAIN, just exit. */
