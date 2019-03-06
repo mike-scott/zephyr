@@ -14,8 +14,8 @@
 #ifndef ZEPHYR_INCLUDE_DRIVERS_MODEM_MODEM_RECEIVER_H_
 #define ZEPHYR_INCLUDE_DRIVERS_MODEM_MODEM_RECEIVER_H_
 
+#include <stdlib.h>
 #include <kernel.h>
-#include <ring_buffer.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,7 +25,9 @@ struct mdm_receiver_context {
 	struct device *uart_dev;
 
 	/* rx data */
-	struct ring_buf rx_rb;
+	u8_t *uart_pipe_buf;
+	size_t uart_pipe_size;
+	struct k_pipe uart_pipe;
 	struct k_sem rx_sem;
 
 	/* modem data */
