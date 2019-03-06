@@ -251,7 +251,6 @@ struct lwm2m_engine_res_inst {
 	void  *data_ptr;
 	u16_t data_len;
 	u16_t res_id;
-	u16_t last_len;
 	u8_t  data_flags;
 };
 

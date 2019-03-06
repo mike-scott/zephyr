@@ -204,14 +204,12 @@ int lwm2m_engine_register_delete_callback(u16_t obj_id,
 
 /* resource data bit values */
 #define LWM2M_RES_DATA_READ_ONLY	0
-#define LWM2M_RES_DATA_CHANGED		1
 
 /* resource data flags */
 #define LWM2M_RES_DATA_FLAG_RO		BIT(LWM2M_RES_DATA_READ_ONLY)
-#define LWM2M_RES_DATA_FLAG_CHANGED	BIT(LWM2M_RES_DATA_CHANGED)
 
 /* helper macro to read resource flag */
-#define LWM2M_HAS_RES_FLAG(res, f)	(((res)->data_flags & f) == f)
+#define LWM2M_HAS_RES_FLAG(res, f)	((res->data_flags & f) == f)
 
 int lwm2m_engine_set_res_data(char *pathstr, void *data_ptr, u16_t data_len,
 			      u8_t data_flags);
