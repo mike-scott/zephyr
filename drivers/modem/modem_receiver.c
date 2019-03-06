@@ -83,8 +83,9 @@ static void mdm_receiver_flush(struct mdm_receiver_context *ctx)
 {
 	u8_t c;
 
-	__ASSERT(ctx, "invalid ctx");
-	__ASSERT(ctx->uart_dev, "invalid ctx device");
+	if (!ctx) {
+		return;
+	}
 
 	while (uart_fifo_read(ctx->uart_dev, &c, 1) > 0) {
 		continue;
@@ -141,7 +142,9 @@ static void mdm_receiver_isr(struct device *uart_dev)
  */
 static void mdm_receiver_setup(struct mdm_receiver_context *ctx)
 {
-	__ASSERT(ctx, "invalid ctx");
+	if (!ctx) {
+		return;
+	}
 
 	uart_irq_rx_disable(ctx->uart_dev);
 	uart_irq_tx_disable(ctx->uart_dev);
