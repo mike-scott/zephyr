@@ -119,6 +119,23 @@
         ((NRF_SPIM_Type *)DT_NORDIC_NRF_SPI_SPI_3_BASE_ADDRESS)
 #endif
 
+#ifdef DT_NORDIC_NRF_SPIS_SPI_0_BASE_ADDRESS
+#define NRF_SPIS0 \
+        ((NRF_SPIS_Type *)DT_NORDIC_NRF_SPIS_SPI_0_BASE_ADDRESS)
+#endif
+#ifdef DT_NORDIC_NRF_SPIS_SPI_1_BASE_ADDRESS
+#define NRF_SPIS1 \
+        ((NRF_SPIS_Type *)DT_NORDIC_NRF_SPIS_SPI_1_BASE_ADDRESS)
+#endif
+#ifdef DT_NORDIC_NRF_SPIS_SPI_2_BASE_ADDRESS
+#define NRF_SPIS2 \
+        ((NRF_SPIS_Type *)DT_NORDIC_NRF_SPIS_SPI_2_BASE_ADDRESS)
+#endif
+#ifdef DT_NORDIC_NRF_SPIS_SPI_3_BASE_ADDRESS
+#define NRF_SPIS3 \
+        ((NRF_SPIS_Type *)DT_NORDIC_NRF_SPIS_SPI_3_BASE_ADDRESS)
+#endif
+
 #ifdef DT_NORDIC_NRF_SPU_SPU_BASE_ADDRESS
 #define NRF_SPU \
         ((NRF_SPU_Type *)DT_NORDIC_NRF_SPU_SPU_BASE_ADDRESS)
@@ -989,21 +1006,21 @@
 
 // <e> NRFX_RTC_ENABLED - nrfx_rtc - RTC peripheral driver
 //==========================================================
-#ifndef NRFX_RTC_ENABLED
-#define NRFX_RTC_ENABLED 0
+#ifdef CONFIG_NRFX_RTC
+#define NRFX_RTC_ENABLED 1
 #endif
 // <q> NRFX_RTC0_ENABLED  - Enable RTC0 instance
 
 
-#ifndef NRFX_RTC0_ENABLED
-#define NRFX_RTC0_ENABLED 0
+#ifdef CONFIG_NRFX_RTC0
+#define NRFX_RTC0_ENABLED 1
 #endif
 
 // <q> NRFX_RTC1_ENABLED  - Enable RTC1 instance
 
 
-#ifndef NRFX_RTC1_ENABLED
-#define NRFX_RTC1_ENABLED 0
+#ifdef CONFIG_NRFX_RTC1
+#define NRFX_RTC1_ENABLED 1
 #endif
 
 // <o> NRFX_RTC_MAXIMUM_LATENCY_US - Maximum possible time[us] in highest priority interrupt
