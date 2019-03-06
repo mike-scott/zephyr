@@ -156,7 +156,6 @@ ssize_t read(int fd, void *buf, size_t sz)
 
 	return fdtable[fd].vtable->read(fdtable[fd].obj, buf, sz);
 }
-FUNC_ALIAS(read, _read, ssize_t);
 
 ssize_t write(int fd, const void *buf, size_t sz)
 {
@@ -166,7 +165,6 @@ ssize_t write(int fd, const void *buf, size_t sz)
 
 	return fdtable[fd].vtable->write(fdtable[fd].obj, buf, sz);
 }
-FUNC_ALIAS(write, _write, ssize_t);
 
 int close(int fd)
 {
@@ -181,7 +179,6 @@ int close(int fd)
 
 	return res;
 }
-FUNC_ALIAS(close, _close, int);
 
 int fsync(int fd)
 {
@@ -201,7 +198,6 @@ off_t lseek(int fd, off_t offset, int whence)
 	return z_fdtable_call_ioctl(fdtable[fd].vtable, fdtable[fd].obj, ZFD_IOCTL_LSEEK,
 			  offset, whence);
 }
-FUNC_ALIAS(lseek, _lseek, off_t);
 
 int ioctl(int fd, unsigned long request, ...)
 {
