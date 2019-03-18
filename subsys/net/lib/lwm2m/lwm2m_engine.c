@@ -2250,13 +2250,13 @@ int lwm2m_write_handler(struct lwm2m_engine_obj_inst *obj_inst,
 		case LWM2M_RES_TYPE_FLOAT32:
 			engine_get_float32fix(&msg->in,
 					      (float32_value_t *)data_ptr);
-			len = sizeof(float32_value_t);
+			len = 4;
 			break;
 
 		case LWM2M_RES_TYPE_FLOAT64:
 			engine_get_float64fix(&msg->in,
 					      (float64_value_t *)data_ptr);
-			len = sizeof(float64_value_t);
+			len = 8;
 			break;
 
 		default:
