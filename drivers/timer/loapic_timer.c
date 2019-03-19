@@ -151,7 +151,7 @@ static u32_t reg_timer_cfg_save;
 #endif
 
 #ifdef CONFIG_JAILHOUSE_X2APIC
-void _jailhouse_eoi(void)
+void z_jailhouse_eoi(void)
 {
 	write_x2apic(LOAPIC_EOI >> 4, 0);
 }
@@ -420,7 +420,7 @@ void _set_time(u32_t time)
 	initial_count_register_set(programmed_cycles);
 }
 
-void _enable_sys_clock(void)
+void z_enable_sys_clock(void)
 {
 	if (!programmed_full_ticks) {
 		program_max_cycles();
@@ -737,20 +737,25 @@ static int sys_clock_resume(struct device *dev)
 * the *context may include IN data or/and OUT data
 */
 int z_clock_device_ctrl(struct device *port, u32_t ctrl_command,
-			  void *context)
+			  void *context, device_pm_cb cb, void *arg)
 {
+	int ret = 0;
+
 	if (ctrl_command == DEVICE_PM_SET_POWER_STATE) {
 		if (*((u32_t *)context) == DEVICE_PM_SUSPEND_STATE) {
-			return sys_clock_suspend(port);
+			ret = sys_clock_suspend(port);
 		} else if (*((u32_t *)context) == DEVICE_PM_ACTIVE_STATE) {
-			return sys_clock_resume(port);
+			ret = sys_clock_resume(port);
 		}
 	} else if (ctrl_command == DEVICE_PM_GET_POWER_STATE) {
 		*((u32_t *)context) = loapic_timer_device_power_state;
-		return 0;
 	}
 
-	return 0;
+	if (cb) {
+		cb(dev, ret, context, arg);
+	}
+
+	return ret;
 }
 #endif
 
@@ -764,13 +769,13 @@ int z_clock_device_ctrl(struct device *port, u32_t ctrl_command,
  *
  * @return up counter of elapsed clock cycles
  */
-u32_t _timer_cycle_get_32(void)
+u32_t z_timer_cycle_get_32(void)
 {
 #if CONFIG_TSC_CYCLES_PER_SEC != 0
 	u64_t tsc;
 
 	/* 64-bit math to avoid overflows */
-	tsc = _tsc_read() * (u64_t)sys_clock_hw_cycles_per_sec() /
+	tsc = z_tsc_read() * (u64_t)sys_clock_hw_cycles_per_sec() /
 		(u64_t) CONFIG_TSC_CYCLES_PER_SEC;
 	return (u32_t)tsc;
 #else

@@ -133,7 +133,7 @@ int _ioapic_init(struct device *unused)
  *
  * @return N/A
  */
-void _ioapic_irq_enable(unsigned int irq)
+void z_ioapic_irq_enable(unsigned int irq)
 {
 	_IoApicRedUpdateLo(irq, 0, IOAPIC_INT_MASK);
 }
@@ -147,7 +147,7 @@ void _ioapic_irq_enable(unsigned int irq)
  *
  * @return N/A
  */
-void _ioapic_irq_disable(unsigned int irq)
+void z_ioapic_irq_disable(unsigned int irq)
 {
 	_IoApicRedUpdateLo(irq, IOAPIC_INT_MASK, IOAPIC_INT_MASK);
 }
@@ -254,19 +254,25 @@ int ioapic_resume_from_suspend(struct device *port)
 * the *context may include IN data or/and OUT data
 */
 static int ioapic_device_ctrl(struct device *device, u32_t ctrl_command,
-			      void *context)
+			      void *context, device_pm_cb cb, void *arg)
 {
+	int ret = 0;
+
 	if (ctrl_command == DEVICE_PM_SET_POWER_STATE) {
 		if (*((u32_t *)context) == DEVICE_PM_SUSPEND_STATE) {
-			return ioapic_suspend(device);
+			ret = ioapic_suspend(device);
 		} else if (*((u32_t *)context) == DEVICE_PM_ACTIVE_STATE) {
-			return ioapic_resume_from_suspend(device);
+			ret = ioapic_resume_from_suspend(device);
 		}
 	} else if (ctrl_command == DEVICE_PM_GET_POWER_STATE) {
 		*((u32_t *)context) = ioapic_device_power_state;
-		return 0;
 	}
-	return 0;
+
+	if (cb) {
+		cb(device, ret, context, arg);
+	}
+
+	return ret;
 }
 
 
@@ -283,7 +289,7 @@ static int ioapic_device_ctrl(struct device *device, u32_t ctrl_command,
  *
  * @return N/A
  */
-void _ioapic_irq_set(unsigned int irq, unsigned int vector, u32_t flags)
+void z_ioapic_irq_set(unsigned int irq, unsigned int vector, u32_t flags)
 {
 	u32_t rteValue;   /* value to copy into redirection table entry */
 
@@ -304,7 +310,7 @@ void _ioapic_irq_set(unsigned int irq, unsigned int vector, u32_t flags)
  * @param vector Vector number
  * @return N/A
  */
-void _ioapic_int_vec_set(unsigned int irq, unsigned int vector)
+void z_ioapic_int_vec_set(unsigned int irq, unsigned int vector)
 {
 	_IoApicRedUpdateLo(irq, vector, IOAPIC_VEC_MASK);
 }

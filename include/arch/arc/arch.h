@@ -83,23 +83,23 @@ extern "C" {
 
 #if CONFIG_ARC_MPU_VER == 2
 
-#define _ARCH_THREAD_STACK_DEFINE(sym, size) \
+#define Z_ARCH_THREAD_STACK_DEFINE(sym, size) \
 	struct _k_thread_stack_element __noinit \
 		__aligned(POW2_CEIL(STACK_SIZE_ALIGN(size))) \
 		sym[POW2_CEIL(STACK_SIZE_ALIGN(size)) + \
 		+  STACK_GUARD_SIZE + CONFIG_PRIVILEGED_STACK_SIZE]
 
-#define _ARCH_THREAD_STACK_LEN(size) \
+#define Z_ARCH_THREAD_STACK_LEN(size) \
 	    (POW2_CEIL(STACK_SIZE_ALIGN(size)) + \
 	     MAX(POW2_CEIL(STACK_SIZE_ALIGN(size)), \
 		 POW2_CEIL(STACK_GUARD_SIZE + CONFIG_PRIVILEGED_STACK_SIZE)))
 
-#define _ARCH_THREAD_STACK_ARRAY_DEFINE(sym, nmemb, size) \
+#define Z_ARCH_THREAD_STACK_ARRAY_DEFINE(sym, nmemb, size) \
 	struct _k_thread_stack_element __noinit \
 		__aligned(POW2_CEIL(STACK_SIZE_ALIGN(size))) \
-		sym[nmemb][_ARCH_THREAD_STACK_LEN(size)]
+		sym[nmemb][Z_ARCH_THREAD_STACK_LEN(size)]
 
-#define _ARCH_THREAD_STACK_MEMBER(sym, size) \
+#define Z_ARCH_THREAD_STACK_MEMBER(sym, size) \
 	struct _k_thread_stack_element \
 		__aligned(POW2_CEIL(STACK_SIZE_ALIGN(size))) \
 		sym[POW2_CEIL(size) + \
@@ -107,50 +107,50 @@ extern "C" {
 
 #elif CONFIG_ARC_MPU_VER == 3
 
-#define _ARCH_THREAD_STACK_DEFINE(sym, size) \
+#define Z_ARCH_THREAD_STACK_DEFINE(sym, size) \
 	struct _k_thread_stack_element __noinit __aligned(STACK_ALIGN) \
 		sym[size + \
 		+ STACK_GUARD_SIZE + CONFIG_PRIVILEGED_STACK_SIZE]
 
-#define _ARCH_THREAD_STACK_LEN(size) \
+#define Z_ARCH_THREAD_STACK_LEN(size) \
 		((size) + STACK_GUARD_SIZE + CONFIG_PRIVILEGED_STACK_SIZE)
 
-#define _ARCH_THREAD_STACK_ARRAY_DEFINE(sym, nmemb, size) \
+#define Z_ARCH_THREAD_STACK_ARRAY_DEFINE(sym, nmemb, size) \
 	struct _k_thread_stack_element __noinit __aligned(STACK_ALIGN) \
-		sym[nmemb][_ARCH_THREAD_STACK_LEN(size)]
+		sym[nmemb][Z_ARCH_THREAD_STACK_LEN(size)]
 
-#define _ARCH_THREAD_STACK_MEMBER(sym, size) \
+#define Z_ARCH_THREAD_STACK_MEMBER(sym, size) \
 	struct _k_thread_stack_element __aligned(STACK_ALIGN) \
 		sym[size + \
 		+ STACK_GUARD_SIZE + CONFIG_PRIVILEGED_STACK_SIZE]
 
 #endif /* CONFIG_ARC_MPU_VER */
 
-#define _ARCH_THREAD_STACK_SIZEOF(sym) \
+#define Z_ARCH_THREAD_STACK_SIZEOF(sym) \
 		(sizeof(sym) - CONFIG_PRIVILEGED_STACK_SIZE - STACK_GUARD_SIZE)
 
-#define _ARCH_THREAD_STACK_BUFFER(sym) \
+#define Z_ARCH_THREAD_STACK_BUFFER(sym) \
 		((char *)(sym))
 
 #else /* CONFIG_USERSPACE */
 
-#define _ARCH_THREAD_STACK_DEFINE(sym, size) \
+#define Z_ARCH_THREAD_STACK_DEFINE(sym, size) \
 	struct _k_thread_stack_element __noinit __aligned(STACK_ALIGN) \
 		sym[size + STACK_GUARD_SIZE]
 
-#define _ARCH_THREAD_STACK_LEN(size) ((size) + STACK_GUARD_SIZE)
+#define Z_ARCH_THREAD_STACK_LEN(size) ((size) + STACK_GUARD_SIZE)
 
-#define _ARCH_THREAD_STACK_ARRAY_DEFINE(sym, nmemb, size) \
+#define Z_ARCH_THREAD_STACK_ARRAY_DEFINE(sym, nmemb, size) \
 	struct _k_thread_stack_element __noinit __aligned(STACK_ALIGN) \
-		sym[nmemb][_ARCH_THREAD_STACK_LEN(size)]
+		sym[nmemb][Z_ARCH_THREAD_STACK_LEN(size)]
 
-#define _ARCH_THREAD_STACK_MEMBER(sym, size) \
+#define Z_ARCH_THREAD_STACK_MEMBER(sym, size) \
 	struct _k_thread_stack_element __aligned(STACK_ALIGN) \
 		sym[size + STACK_GUARD_SIZE]
 
-#define _ARCH_THREAD_STACK_SIZEOF(sym) (sizeof(sym) - STACK_GUARD_SIZE)
+#define Z_ARCH_THREAD_STACK_SIZEOF(sym) (sizeof(sym) - STACK_GUARD_SIZE)
 
-#define _ARCH_THREAD_STACK_BUFFER(sym) ((char *)(sym + STACK_GUARD_SIZE))
+#define Z_ARCH_THREAD_STACK_BUFFER(sym) ((char *)(sym + STACK_GUARD_SIZE))
 
 #endif /* CONFIG_USERSPACE */
 
@@ -159,34 +159,34 @@ extern "C" {
 #ifndef _ASMLANGUAGE
 #include <arch/arc/v2/mpu/arc_mpu.h>
 
-#define K_MEM_PARTITION_P_NA_U_NA	AUX_MPU_RDP_N
-#define K_MEM_PARTITION_P_RW_U_RW	(AUX_MPU_RDP_UW | AUX_MPU_RDP_UR | \
-					 AUX_MPU_RDP_KW | AUX_MPU_RDP_KR)
-#define K_MEM_PARTITION_P_RW_U_RO	(AUX_MPU_RDP_UR | \
-					 AUX_MPU_RDP_KW | AUX_MPU_RDP_KR)
-#define K_MEM_PARTITION_P_RW_U_NA	(AUX_MPU_RDP_KW | AUX_MPU_RDP_KR)
-#define K_MEM_PARTITION_P_RO_U_RO	(AUX_MPU_RDP_UR | AUX_MPU_RDP_KR)
-#define K_MEM_PARTITION_P_RO_U_NA	(AUX_MPU_RDP_KR)
+#define K_MEM_PARTITION_P_NA_U_NA	AUX_MPU_ATTR_N
+#define K_MEM_PARTITION_P_RW_U_RW	(AUX_MPU_ATTR_UW | AUX_MPU_ATTR_UR | \
+					 AUX_MPU_ATTR_KW | AUX_MPU_ATTR_KR)
+#define K_MEM_PARTITION_P_RW_U_RO	(AUX_MPU_ATTR_UR | \
+					 AUX_MPU_ATTR_KW | AUX_MPU_ATTR_KR)
+#define K_MEM_PARTITION_P_RW_U_NA	(AUX_MPU_ATTR_KW | AUX_MPU_ATTR_KR)
+#define K_MEM_PARTITION_P_RO_U_RO	(AUX_MPU_ATTR_UR | AUX_MPU_ATTR_KR)
+#define K_MEM_PARTITION_P_RO_U_NA	(AUX_MPU_ATTR_KR)
 
 /* Execution-allowed attributes */
-#define K_MEM_PARTITION_P_RWX_U_RWX	(AUX_MPU_RDP_UW | AUX_MPU_RDP_UR | \
-					 AUX_MPU_RDP_KW | AUX_MPU_RDP_KR | \
-					 AUX_MPU_RDP_KE | AUX_MPU_RDP_UE)
-#define K_MEM_PARTITION_P_RWX_U_RX	(AUX_MPU_RDP_UR | \
-					 AUX_MPU_RDP_KW | AUX_MPU_RDP_KR | \
-					 AUX_MPU_RDP_KE | AUX_MPU_RDP_UE)
-#define K_MEM_PARTITION_P_RX_U_RX	(AUX_MPU_RDP_UR | \
-					 AUX_MPU_RDP_KR | \
-					 AUX_MPU_RDP_KE | AUX_MPU_RDP_UE)
+#define K_MEM_PARTITION_P_RWX_U_RWX	(AUX_MPU_ATTR_UW | AUX_MPU_ATTR_UR | \
+					 AUX_MPU_ATTR_KW | AUX_MPU_ATTR_KR | \
+					 AUX_MPU_ATTR_KE | AUX_MPU_ATTR_UE)
+#define K_MEM_PARTITION_P_RWX_U_RX	(AUX_MPU_ATTR_UR | \
+					 AUX_MPU_ATTR_KW | AUX_MPU_ATTR_KR | \
+					 AUX_MPU_ATTR_KE | AUX_MPU_ATTR_UE)
+#define K_MEM_PARTITION_P_RX_U_RX	(AUX_MPU_ATTR_UR | \
+					 AUX_MPU_ATTR_KR | \
+					 AUX_MPU_ATTR_KE | AUX_MPU_ATTR_UE)
 
 #define K_MEM_PARTITION_IS_WRITABLE(attr) \
 	({ \
 		int __is_writable__; \
-		attr &= (AUX_MPU_RDP_UW | AUX_MPU_RDP_KW); \
+		attr &= (AUX_MPU_ATTR_UW | AUX_MPU_ATTR_KW); \
 		switch (attr) { \
-		case (AUX_MPU_RDP_UW | AUX_MPU_RDP_KW): \
-		case AUX_MPU_RDP_UW: \
-		case AUX_MPU_RDP_KW: \
+		case (AUX_MPU_ATTR_UW | AUX_MPU_ATTR_KW): \
+		case AUX_MPU_ATTR_UW: \
+		case AUX_MPU_ATTR_KW: \
 			__is_writable__ = 1; \
 			break; \
 		default: \
@@ -196,7 +196,7 @@ extern "C" {
 		__is_writable__; \
 	})
 #define K_MEM_PARTITION_IS_EXECUTABLE(attr) \
-	((attr) & (AUX_MPU_RDP_KE | AUX_MPU_RDP_UE))
+	((attr) & (AUX_MPU_ATTR_KE | AUX_MPU_ATTR_UE))
 
 #endif /* _ASMLANGUAGE */
 

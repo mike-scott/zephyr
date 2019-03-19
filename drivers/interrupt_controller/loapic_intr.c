@@ -275,7 +275,7 @@ static int _loapic_init(struct device *unused)
 
 	/* discard a pending interrupt if any */
 #if CONFIG_EOI_FORWARDING_BUG
-	_lakemont_eoi();
+	z_lakemont_eoi();
 #else
 	LOAPIC_WRITE(LOAPIC_EOI, 0);
 #endif
@@ -292,7 +292,7 @@ static int _loapic_init(struct device *unused)
  * @return N/A
  */
 
-void _loapic_int_vec_set(unsigned int irq, /* IRQ number of the interrupt */
+void z_loapic_int_vec_set(unsigned int irq, /* IRQ number of the interrupt */
 				  unsigned int vector /* vector to copy into the LVT */
 				  )
 {
@@ -331,7 +331,7 @@ void _loapic_int_vec_set(unsigned int irq, /* IRQ number of the interrupt */
  * @return N/A
  */
 
-void _loapic_irq_enable(unsigned int irq)
+void z_loapic_irq_enable(unsigned int irq)
 {
 	unsigned int oldLevel;   /* previous interrupt lock level */
 
@@ -360,7 +360,7 @@ void _loapic_irq_enable(unsigned int irq)
  * @return N/A
  */
 
-void _loapic_irq_disable(unsigned int irq)
+void z_loapic_irq_disable(unsigned int irq)
 {
 	unsigned int oldLevel;   /* previous interrupt lock level */
 
@@ -467,12 +467,12 @@ int loapic_resume(struct device *port)
 
 		if (_irq_to_interrupt_vector[LOAPIC_IRQ_BASE + loapic_irq]) {
 			/* Configure vector and enable the required ones*/
-			_loapic_int_vec_set(loapic_irq,
+			z_loapic_int_vec_set(loapic_irq,
 				_irq_to_interrupt_vector[LOAPIC_IRQ_BASE + loapic_irq]);
 
 			if (sys_bitfield_test_bit((mem_addr_t) loapic_suspend_buf,
 							loapic_irq)) {
-				_loapic_irq_enable(loapic_irq);
+				z_loapic_irq_enable(loapic_irq);
 			}
 		}
 	}
@@ -486,20 +486,25 @@ int loapic_resume(struct device *port)
 * the *context may include IN data or/and OUT data
 */
 static int loapic_device_ctrl(struct device *port, u32_t ctrl_command,
-			      void *context)
+			      void *context, device_pm_cb cb, void *arg)
 {
+	int ret = 0;
+
 	if (ctrl_command == DEVICE_PM_SET_POWER_STATE) {
 		if (*((u32_t *)context) == DEVICE_PM_SUSPEND_STATE) {
-			return loapic_suspend(port);
+			ret = loapic_suspend(port);
 		} else if (*((u32_t *)context) == DEVICE_PM_ACTIVE_STATE) {
-			return loapic_resume(port);
+			ret = loapic_resume(port);
 		}
 	} else if (ctrl_command == DEVICE_PM_GET_POWER_STATE) {
 		*((u32_t *)context) = loapic_device_power_state;
-		return 0;
 	}
 
-	return 0;
+	if (cb) {
+		cb(port, ret, context, arg);
+	}
+
+	return ret;
 }
 
 SYS_DEVICE_DEFINE("loapic", _loapic_init, loapic_device_ctrl, PRE_KERNEL_1,

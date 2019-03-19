@@ -21,8 +21,7 @@ prepare() {
   fi
 
   pushd src
-  git checkout grub-2.02
-  git cherry-pick c36c2a86404f373100775305f532c09d46f3c6ce
+  git checkout grub-2.02-285-g5bc41db75
   git clean -fdx
   popd
 }
@@ -30,6 +29,7 @@ prepare() {
 build() {
   pushd src
 
+  ./bootstrap
   ./autogen.sh
   ./configure --with-platform=efi --target=${TARGET_ARCH}
 

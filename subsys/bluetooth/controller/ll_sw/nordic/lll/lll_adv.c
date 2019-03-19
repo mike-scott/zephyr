@@ -8,6 +8,7 @@
 #include <stddef.h>
 
 #include <zephyr/types.h>
+#include <misc/byteorder.h>
 
 #include <toolchain.h>
 #include <bluetooth/hci.h>
@@ -116,7 +117,7 @@ static int init_reset(void)
 static int prepare_cb(struct lll_prepare_param *prepare_param)
 {
 	struct lll_adv *lll = prepare_param->param;
-	u32_t aa = 0x8e89bed6;
+	u32_t aa = sys_cpu_to_le32(0x8e89bed6);
 	u32_t ticks_at_event;
 	struct evt_hdr *evt;
 	u32_t remainder_us;
@@ -141,7 +142,7 @@ static int prepare_cb(struct lll_prepare_param *prepare_param)
 
 	radio_reset();
 	/* TODO: other Tx Power settings */
-	radio_tx_power_set(0);
+	radio_tx_power_set(RADIO_TXP_DEFAULT);
 
 #if defined(CONFIG_BT_CTLR_ADV_EXT)
 	/* TODO: if coded we use S8? */

@@ -32,12 +32,9 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <ptp_clock.h>
 #include <net/gptp.h>
+#include <net/lldp.h>
 
 #include "eth_native_posix_priv.h"
-
-#if defined(CONFIG_NET_L2_ETHERNET)
-#define _ETH_MTU 1500
-#endif
 
 #define NET_BUF_TIMEOUT K_MSEC(100)
 
@@ -47,38 +44,9 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define ETH_HDR_LEN sizeof(struct net_eth_hdr)
 #endif
 
-#if defined(CONFIG_NET_LLDP)
-static const struct net_lldpdu lldpdu = {
-	.chassis_id = {
-		.type_length = htons((LLDP_TLV_CHASSIS_ID << 9) |
-			NET_LLDP_CHASSIS_ID_TLV_LEN),
-		.subtype = CONFIG_NET_LLDP_CHASSIS_ID_SUBTYPE,
-		.value = NET_LLDP_CHASSIS_ID_VALUE
-	},
-	.port_id = {
-		.type_length = htons((LLDP_TLV_PORT_ID << 9) |
-			NET_LLDP_PORT_ID_TLV_LEN),
-		.subtype = CONFIG_NET_LLDP_PORT_ID_SUBTYPE,
-		.value = NET_LLDP_PORT_ID_VALUE
-	},
-	.ttl = {
-		.type_length = htons((LLDP_TLV_TTL << 9) |
-			NET_LLDP_TTL_TLV_LEN),
-		.ttl = htons(NET_LLDP_TTL)
-	},
-#if defined(CONFIG_NET_LLDP_END_LLDPDU_TLV_ENABLED)
-	.end_lldpdu_tlv = NET_LLDP_END_LLDPDU_VALUE
-#endif /* CONFIG_NET_LLDP_END_LLDPDU_TLV_ENABLED */
-};
-
-#define lldpdu_ptr (&lldpdu)
-#else
-#define lldpdu_ptr NULL
-#endif /* CONFIG_NET_LLDP */
-
 struct eth_context {
-	u8_t recv[_ETH_MTU + ETH_HDR_LEN];
-	u8_t send[_ETH_MTU + ETH_HDR_LEN];
+	u8_t recv[NET_ETH_MTU + ETH_HDR_LEN];
+	u8_t send[NET_ETH_MTU + ETH_HDR_LEN];
 	u8_t mac_addr[6];
 	struct net_linkaddr ll_addr;
 	struct net_if *iface;
@@ -363,7 +331,7 @@ static void eth_iface_init(struct net_if *iface)
 		return;
 	}
 
-	net_eth_set_lldpdu(iface, lldpdu_ptr);
+	net_lldp_set_lldpdu(iface);
 
 	ctx->init_done = true;
 
@@ -482,9 +450,9 @@ static int vlan_setup(struct device *dev, struct net_if *iface,
 		      u16_t tag, bool enable)
 {
 	if (enable) {
-		net_eth_set_lldpdu(iface, lldpdu_ptr);
+		net_lldp_set_lldpdu(iface);
 	} else {
-		net_eth_unset_lldpdu(iface);
+		net_lldp_unset_lldpdu(iface);
 	}
 
 	return 0;
@@ -537,7 +505,7 @@ static const struct ethernet_api eth_if_api = {
 ETH_NET_DEVICE_INIT(eth_native_posix, ETH_NATIVE_POSIX_DRV_NAME,
 		    eth_init, &eth_context_data, NULL,
 		    CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, &eth_if_api,
-		    _ETH_MTU);
+		    NET_ETH_MTU);
 
 #if defined(CONFIG_ETH_NATIVE_POSIX_PTP_CLOCK)
 struct ptp_context {

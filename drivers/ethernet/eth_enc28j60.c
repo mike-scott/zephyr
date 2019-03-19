@@ -533,7 +533,7 @@ static int eth_enc28j60_rx(struct device *dev)
 		/* Get the frame length from the rx status vector,
 		 * minus CRC size at the end which is always present
 		 */
-		frm_len = (info[1] << 8) | (info[0] - 4);
+		frm_len = sys_get_le16(info) - 4;
 		lengthfr = frm_len;
 
 		/* Get the frame from the buffer */
@@ -774,6 +774,7 @@ static const struct eth_enc28j60_config eth_enc28j60_0_config = {
 NET_DEVICE_INIT(enc28j60_0, DT_MICROCHIP_ENC28J60_0_LABEL,
 		eth_enc28j60_init, &eth_enc28j60_0_runtime,
 		&eth_enc28j60_0_config, CONFIG_ETH_INIT_PRIORITY, &api_funcs,
-		ETHERNET_L2, NET_L2_GET_CTX_TYPE(ETHERNET_L2), 1500);
+		ETHERNET_L2, NET_L2_GET_CTX_TYPE(ETHERNET_L2),
+		NET_ETH_MTU);
 
 #endif /* CONFIG_ETH_ENC28J60_0 */
