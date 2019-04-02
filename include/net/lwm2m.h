@@ -62,6 +62,9 @@ struct lwm2m_ctx {
 	/** Destination address storage */
 	struct sockaddr remote_addr;
 
+	/** Private networking structures */
+	struct k_delayed_work retransmit_work;
+
 #if defined(CONFIG_LWM2M_DTLS_SUPPORT)
 	/** TLS tag is set by client as a reference used when the
 	 *  LwM2M engine calls tls_credential_(add|delete)
