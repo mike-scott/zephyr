@@ -372,7 +372,7 @@ static void wakeup_on_start_thread(int tnum)
 	for (i = 0; i < tnum; i++) {
 		while (thread_started[i] == 0) {
 		}
-		while (!_is_thread_prevented_from_running(tinfo[i].tid)) {
+		while (!z_is_thread_prevented_from_running(tinfo[i].tid)) {
 		}
 	}
 
@@ -389,6 +389,11 @@ static void wakeup_on_start_thread(int tnum)
 static void check_wokeup_threads(int tnum)
 {
 	int threads_woke_up = 0, i;
+
+	/* k_wakeup() isn't synchronous, give the other CPU time to
+	 * schedule them
+	 */
+	k_busy_wait(200000);
 
 	for (i = 0; i < tnum; i++) {
 		if (tinfo[i].executed == 1 && threads_woke_up <= tnum) {

@@ -181,7 +181,7 @@ static int eth_send(struct device *dev, struct net_pkt *pkt)
 	int count = net_pkt_get_len(pkt);
 	int ret;
 
-	ret = net_pkt_read_new(pkt, ctx->send, count);
+	ret = net_pkt_read(pkt, ctx->send, count);
 	if (ret) {
 		return ret;
 	}
@@ -249,7 +249,7 @@ static int read_data(struct eth_context *ctx, int fd)
 		return -ENOMEM;
 	}
 
-	if (net_pkt_write_new(pkt, ctx->recv, count)) {
+	if (net_pkt_write(pkt, ctx->recv, count)) {
 		return -ENOBUFS;
 	}
 

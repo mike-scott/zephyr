@@ -2256,7 +2256,7 @@ static void address_lifetime_cb(struct net_if *iface, void *user_data)
 				 "infinite");
 		} else {
 			snprintk(remaining_str, sizeof(remaining_str) - 1,
-				 "%u", (u32_t)(remaining / 1000));
+				 "%u", (u32_t)(remaining / 1000U));
 		}
 
 		PR("%s  \t%s\t%s    \t%s/%d\n",
@@ -2602,7 +2602,7 @@ static void nbr_cb(struct net_nbr *nbr, void *user_data)
 	   net_sprint_ll_addr(
 		   net_nbr_get_lladdr(nbr->idx)->addr,
 		   net_nbr_get_lladdr(nbr->idx)->len),
-	   net_nbr_get_lladdr(nbr->idx)->len == 8 ? "" : padding,
+	   net_nbr_get_lladdr(nbr->idx)->len == 8U ? "" : padding,
 	   net_sprint_ipv6_addr(&net_ipv6_nbr_data(nbr)->addr));
 }
 #endif
@@ -3069,7 +3069,7 @@ static void get_my_ipv6_addr(struct net_if *iface,
 
 	memcpy(&net_sin6(myaddr)->sin6_addr, my6addr, sizeof(struct in6_addr));
 
-	net_sin6(myaddr)->sin6_port = 0; /* let the IP stack to select */
+	net_sin6(myaddr)->sin6_port = 0U; /* let the IP stack to select */
 #endif
 }
 
@@ -3082,7 +3082,7 @@ static void get_my_ipv4_addr(struct net_if *iface,
 	       &iface->config.ip.ipv4->unicast[0].address.in_addr,
 	       sizeof(struct in_addr));
 
-	net_sin(myaddr)->sin_port = 0; /* let the IP stack to select */
+	net_sin(myaddr)->sin_port = 0U; /* let the IP stack to select */
 #endif
 }
 
@@ -3230,9 +3230,7 @@ static void tcp_connect(const struct shell *shell, char *host, u16_t port,
 }
 
 static void tcp_sent_cb(struct net_context *context,
-			int status,
-			void *token,
-			void *user_data)
+			int status, void *user_data)
 {
 	PR_SHELL(tcp_shell, "Message sent\n");
 }
@@ -3304,9 +3302,9 @@ static int cmd_net_tcp_send(const struct shell *shell, size_t argc,
 
 	user_data.shell = shell;
 
-	ret = net_context_send_new(tcp_ctx, (u8_t *)argv[arg],
-				   strlen(argv[arg]), tcp_sent_cb,
-				   TCP_TIMEOUT, NULL, &user_data);
+	ret = net_context_send(tcp_ctx, (u8_t *)argv[arg],
+			       strlen(argv[arg]), tcp_sent_cb,
+			       TCP_TIMEOUT, &user_data);
 	if (ret < 0) {
 		PR_WARNING("Cannot send msg (%d)\n", ret);
 		return -ENOEXEC;

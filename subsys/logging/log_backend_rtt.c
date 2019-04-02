@@ -10,39 +10,49 @@
 #include <logging/log_output.h>
 #include <SEGGER_RTT.h>
 
+#ifndef CONFIG_LOG_BACKEND_RTT_BUFFER_SIZE
+#define CONFIG_LOG_BACKEND_RTT_BUFFER_SIZE 0
+#endif
+
+#ifndef CONFIG_LOG_BACKEND_RTT_MESSAGE_SIZE
+#define CONFIG_LOG_BACKEND_RTT_MESSAGE_SIZE 0
+#endif
+
+#ifndef CONFIG_LOG_BACKEND_RTT_OUTPUT_BUFFER_SIZE
+#define CONFIG_LOG_BACKEND_RTT_OUTPUT_BUFFER_SIZE 0
+#endif
+
+#ifndef CONFIG_LOG_BACKEND_RTT_RETRY_DELAY_MS
+/* Long enough to detect host presence */
+#define CONFIG_LOG_BACKEND_RTT_RETRY_DELAY_MS 10
+#endif
+
+#ifndef CONFIG_LOG_BACKEND_RTT_RETRY_CNT
+/* Big enough to detect host presence */
+#define CONFIG_LOG_BACKEND_RTT_RETRY_CNT 10
+#endif
+
 #define DROP_MAX 99
 
-#if CONFIG_LOG_BACKEND_RTT_MODE_DROP
-
 #define DROP_MSG "\nmessages dropped:    \r"
+
 #define DROP_MSG_LEN (sizeof(DROP_MSG) - 1)
+
 #define MESSAGE_SIZE CONFIG_LOG_BACKEND_RTT_MESSAGE_SIZE
-#define CHAR_BUF_SIZE 1
-#define RETRY_DELAY_MS 10 /* Long enough to detect host presence */
-#define RETRY_CNT 10      /* Big enough to detect host presence */
-#else
 
-#define DROP_MSG NULL
-#define DROP_MSG_LEN 0
-#define MESSAGE_SIZE 0
-#define CHAR_BUF_SIZE CONFIG_LOG_BACKEND_RTT_OUTPUT_BUFFER_SIZE
-#define RETRY_DELAY_MS CONFIG_LOG_BACKEND_RTT_RETRY_DELAY_MS
-#define RETRY_CNT CONFIG_LOG_BACKEND_RTT_RETRY_CNT
-#endif /* CONFIG_LOG_BACKEND_RTT_MODE_DROP */
+#define CHAR_BUF_SIZE IS_ENABLED(CONFIG_LOG_BACKEND_RTT_MODE_BLOCK) ? \
+		CONFIG_LOG_BACKEND_RTT_OUTPUT_BUFFER_SIZE : 1
 
-#if CONFIG_LOG_BACKEND_RTT_BUFFER > 0
+#define RTT_LOCK() \
+	COND_CODE_0(CONFIG_LOG_BACKEND_RTT_BUFFER, (SEGGER_RTT_LOCK()), ())
 
-#define RTT_LOCK()
-#define RTT_UNLOCK()
-#define RTT_BUFFER_SIZE CONFIG_LOG_BACKEND_RTT_BUFFER_SIZE
+#define RTT_UNLOCK() \
+	COND_CODE_0(CONFIG_LOG_BACKEND_RTT_BUFFER, (SEGGER_RTT_UNLOCK()), ())
 
-#else
+#define RTT_BUFFER_SIZE \
+	COND_CODE_0(CONFIG_LOG_BACKEND_RTT_BUFFER, \
+		(0), (CONFIG_LOG_BACKEND_RTT_BUFFER_SIZE))
 
-#define RTT_LOCK() SEGGER_RTT_LOCK()
-#define RTT_UNLOCK() SEGGER_RTT_UNLOCK()
-#define RTT_BUFFER_SIZE 0
-
-#endif /* CONFIG_LOG_BACKEND_RTT_BUFFER > 0 */
 
 static const char *drop_msg = DROP_MSG;
 static u8_t rtt_buf[RTT_BUFFER_SIZE];
@@ -51,8 +61,7 @@ static u8_t *line_pos;
 static u8_t char_buf[CHAR_BUF_SIZE];
 static int drop_cnt;
 static int drop_warn;
-static int panic_mode;
-
+static bool sync_mode;
 static bool host_present;
 
 static int data_out_block_mode(u8_t *data, size_t length, void *ctx);
@@ -66,7 +75,7 @@ static int data_out_drop_mode(u8_t *data, size_t length, void *ctx)
 	(void) ctx;
 	u8_t *pos;
 
-	if (panic_mode) {
+	if (sync_mode) {
 		return data_out_block_mode(data, length, ctx);
 	}
 
@@ -142,17 +151,18 @@ static void on_failed_write(int retry_cnt)
 {
 	if (retry_cnt == 0) {
 		host_present = false;
-	} else if (panic_mode) {
-		k_busy_wait(USEC_PER_MSEC * RETRY_DELAY_MS);
+	} else if (sync_mode) {
+		k_busy_wait(USEC_PER_MSEC *
+				CONFIG_LOG_BACKEND_RTT_RETRY_DELAY_MS);
 	} else {
-		k_sleep(RETRY_DELAY_MS);
+		k_sleep(CONFIG_LOG_BACKEND_RTT_RETRY_DELAY_MS);
 	}
 }
 
 static void on_write(int retry_cnt)
 {
 	host_present = true;
-	if (panic_mode) {
+	if (sync_mode) {
 		/* In panic mode block on each write until host reads it. This
 		 * way it is ensured that if system resets all messages are read
 		 * by the host. While pending on data being read by the host we
@@ -169,17 +179,17 @@ static void on_write(int retry_cnt)
 static int data_out_block_mode(u8_t *data, size_t length, void *ctx)
 {
 	int ret;
-	int retry_cnt = RETRY_CNT;
+	int retry_cnt = CONFIG_LOG_BACKEND_RTT_RETRY_CNT;
 
 	do {
-		if (!panic_mode) {
+		if (!sync_mode) {
 			RTT_LOCK();
 		}
 
 		ret = SEGGER_RTT_WriteSkipNoLock(CONFIG_LOG_BACKEND_RTT_BUFFER,
 						 data, length);
 
-		if (!panic_mode) {
+		if (!sync_mode) {
 			RTT_UNLOCK();
 		}
 
@@ -232,14 +242,14 @@ static void log_backend_rtt_init(void)
 	}
 
 	host_present = true;
-	panic_mode = 0;
+	sync_mode = IS_ENABLED(CONFIG_LOG_IMMEDIATE) ? true : false;
 	line_pos = line_buf;
 }
 
 static void panic(struct log_backend const *const backend)
 {
 	log_output_flush(&log_output);
-	panic_mode = 1;
+	sync_mode = true;
 }
 
 static void dropped(const struct log_backend *const backend, u32_t cnt)

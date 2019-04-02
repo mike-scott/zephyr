@@ -409,7 +409,7 @@ static bool add_neighbor(struct net_if *iface, struct in6_addr *addr)
 	llstorage.addr[4] = 0x05;
 	llstorage.addr[5] = 0x06;
 
-	lladdr.len = 6;
+	lladdr.len = 6U;
 	lladdr.addr = llstorage.addr;
 	lladdr.type = NET_LINK_ETHERNET;
 
@@ -454,10 +454,10 @@ static void send_some_data(struct net_if *iface)
 	net_context_set_option(udp_v6_ctx, NET_OPT_TIMESTAMP,
 			       &timestamp, sizeof(timestamp));
 
-	ret = net_context_sendto_new(udp_v6_ctx, test_data, strlen(test_data),
-				     (struct sockaddr *)&dst_addr6,
-				     sizeof(struct sockaddr_in6),
-				     NULL, K_NO_WAIT, NULL, NULL);
+	ret = net_context_sendto(udp_v6_ctx, test_data, strlen(test_data),
+				 (struct sockaddr *)&dst_addr6,
+				 sizeof(struct sockaddr_in6),
+				 NULL, K_NO_WAIT, NULL);
 	zassert_true(ret > 0, "Send UDP pkt failed\n");
 
 	net_context_unref(udp_v6_ctx);

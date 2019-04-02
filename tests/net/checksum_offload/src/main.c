@@ -125,7 +125,7 @@ static u16_t get_udp_chksum(struct net_pkt *pkt)
 		return 0;
 	}
 
-	udp_hdr = (struct net_udp_hdr *)net_pkt_get_data_new(pkt, &udp_access);
+	udp_hdr = (struct net_udp_hdr *)net_pkt_get_data(pkt, &udp_access);
 	if (!udp_hdr) {
 		return 0;
 	}
@@ -441,7 +441,7 @@ static bool add_neighbor(struct net_if *iface, struct in6_addr *addr)
 	llstorage.addr[4] = 0x05;
 	llstorage.addr[5] = 0x06;
 
-	lladdr.len = 6;
+	lladdr.len = 6U;
 	lladdr.addr = llstorage.addr;
 	lladdr.type = NET_LINK_ETHERNET;
 
@@ -493,10 +493,10 @@ static void tx_chksum_offload_disabled_test_v6(void)
 
 	len = strlen(test_data);
 
-	ret = net_context_sendto_new(udp_v6_ctx_1, test_data, len,
-				     (struct sockaddr *)&dst_addr6,
-				     sizeof(struct sockaddr_in6),
-				     NULL, K_FOREVER, NULL, NULL);
+	ret = net_context_sendto(udp_v6_ctx_1, test_data, len,
+				 (struct sockaddr *)&dst_addr6,
+				 sizeof(struct sockaddr_in6),
+				 NULL, K_FOREVER, NULL);
 	zassert_equal(ret, len, "Send UDP pkt failed (%d)\n", ret);
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {
@@ -544,10 +544,10 @@ static void tx_chksum_offload_disabled_test_v4(void)
 	ret = add_neighbor(iface, &dst_addr);
 	zassert_true(ret, "Cannot add neighbor");
 
-	ret = net_context_sendto_new(udp_v4_ctx_1, test_data, len,
-				     (struct sockaddr *)&dst_addr4,
-				     sizeof(struct sockaddr_in),
-				     NULL, K_FOREVER, NULL, NULL);
+	ret = net_context_sendto(udp_v4_ctx_1, test_data, len,
+				 (struct sockaddr *)&dst_addr4,
+				 sizeof(struct sockaddr_in),
+				 NULL, K_FOREVER, NULL);
 	zassert_equal(ret, len, "Send UDP pkt failed (%d)\n", ret);
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {
@@ -595,10 +595,10 @@ static void tx_chksum_offload_enabled_test_v6(void)
 	ret = add_neighbor(iface, &dst_addr);
 	zassert_true(ret, "Cannot add neighbor");
 
-	ret = net_context_sendto_new(udp_v6_ctx_2, test_data, len,
-				     (struct sockaddr *)&dst_addr6,
-				     sizeof(struct sockaddr_in6),
-				     NULL, K_FOREVER, NULL, NULL);
+	ret = net_context_sendto(udp_v6_ctx_2, test_data, len,
+				 (struct sockaddr *)&dst_addr6,
+				 sizeof(struct sockaddr_in6),
+				 NULL, K_FOREVER, NULL);
 	zassert_equal(ret, len, "Send UDP pkt failed (%d)\n", ret);
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {
@@ -646,10 +646,10 @@ static void tx_chksum_offload_enabled_test_v4(void)
 	ret = add_neighbor(iface, &dst_addr);
 	zassert_true(ret, "Cannot add neighbor");
 
-	ret = net_context_sendto_new(udp_v4_ctx_2, test_data, len,
-				     (struct sockaddr *)&dst_addr4,
-				     sizeof(struct sockaddr_in),
-				     NULL, K_FOREVER, NULL, NULL);
+	ret = net_context_sendto(udp_v4_ctx_2, test_data, len,
+				 (struct sockaddr *)&dst_addr4,
+				 sizeof(struct sockaddr_in),
+				 NULL, K_FOREVER, NULL);
 	zassert_equal(ret, len, "Send UDP pkt failed (%d)\n", ret);
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {
@@ -744,10 +744,10 @@ static void rx_chksum_offload_disabled_test_v6(void)
 
 	start_receiving = false;
 
-	ret = net_context_sendto_new(udp_v6_ctx_1, test_data, len,
-				     (struct sockaddr *)&dst_addr6,
-				     sizeof(struct sockaddr_in6),
-				     NULL, K_FOREVER, NULL, NULL);
+	ret = net_context_sendto(udp_v6_ctx_1, test_data, len,
+				 (struct sockaddr *)&dst_addr6,
+				 sizeof(struct sockaddr_in6),
+				 NULL, K_FOREVER, NULL);
 	zassert_equal(ret, len, "Send UDP pkt failed (%d)\n", ret);
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {
@@ -800,10 +800,10 @@ static void rx_chksum_offload_disabled_test_v4(void)
 
 	start_receiving = false;
 
-	ret = net_context_sendto_new(udp_v4_ctx_1, test_data, len,
-				     (struct sockaddr *)&dst_addr4,
-				     sizeof(struct sockaddr_in),
-				     NULL, K_FOREVER, NULL, NULL);
+	ret = net_context_sendto(udp_v4_ctx_1, test_data, len,
+				 (struct sockaddr *)&dst_addr4,
+				 sizeof(struct sockaddr_in),
+				 NULL, K_FOREVER, NULL);
 	zassert_equal(ret, len, "Send UDP pkt failed (%d)\n", ret);
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {
@@ -854,10 +854,10 @@ static void rx_chksum_offload_enabled_test_v6(void)
 			       NULL);
 	zassert_equal(ret, 0, "Recv UDP failed (%d)\n", ret);
 
-	ret = net_context_sendto_new(udp_v6_ctx_2, test_data, len,
-				     (struct sockaddr *)&dst_addr6,
-				     sizeof(struct sockaddr_in6),
-				     NULL, K_FOREVER, NULL, NULL);
+	ret = net_context_sendto(udp_v6_ctx_2, test_data, len,
+				 (struct sockaddr *)&dst_addr6,
+				 sizeof(struct sockaddr_in6),
+				 NULL, K_FOREVER, NULL);
 	zassert_equal(ret, len, "Send UDP pkt failed (%d)\n", ret);
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {
@@ -908,10 +908,10 @@ static void rx_chksum_offload_enabled_test_v4(void)
 			       NULL);
 	zassert_equal(ret, 0, "Recv UDP failed (%d)\n", ret);
 
-	ret = net_context_sendto_new(udp_v4_ctx_2, test_data, len,
-				     (struct sockaddr *)&dst_addr4,
-				     sizeof(struct sockaddr_in),
-				     NULL, K_FOREVER, NULL, NULL);
+	ret = net_context_sendto(udp_v4_ctx_2, test_data, len,
+				 (struct sockaddr *)&dst_addr4,
+				 sizeof(struct sockaddr_in),
+				 NULL, K_FOREVER, NULL);
 	zassert_equal(ret, len, "Send UDP pkt failed (%d)\n", ret);
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {

@@ -370,12 +370,12 @@ static void unref_check(struct _k_object *ko, int index)
 	struct dyn_obj *dyn_obj =
 			CONTAINER_OF(ko, struct dyn_obj, kobj);
 
-	if ((ko->flags & K_OBJ_FLAG_ALLOC) == 0) {
+	if ((ko->flags & K_OBJ_FLAG_ALLOC) == 0U) {
 		goto out;
 	}
 
 	for (int i = 0; i < CONFIG_MAX_THREAD_BYTES; i++) {
-		if (ko->perms[i] != 0) {
+		if (ko->perms[i] != 0U) {
 			goto out;
 		}
 	}
@@ -470,7 +470,7 @@ static int thread_perms_test(struct _k_object *ko)
 {
 	int index;
 
-	if ((ko->flags & K_OBJ_FLAG_PUBLIC) != 0) {
+	if ((ko->flags & K_OBJ_FLAG_PUBLIC) != 0U) {
 		return 1;
 	}
 
@@ -558,19 +558,19 @@ int z_object_validate(struct _k_object *ko, enum k_objects otype,
 	/* Manipulation of any kernel objects by a user thread requires that
 	 * thread be granted access first, even for uninitialized objects
 	 */
-	if (unlikely(!thread_perms_test(ko))) {
+	if (unlikely(thread_perms_test(ko) == 0)) {
 		return -EPERM;
 	}
 
 	/* Initialization state checks. _OBJ_INIT_ANY, we don't care */
 	if (likely(init == _OBJ_INIT_TRUE)) {
 		/* Object MUST be intialized */
-		if (unlikely(!(ko->flags & K_OBJ_FLAG_INITIALIZED))) {
+		if (unlikely((ko->flags & K_OBJ_FLAG_INITIALIZED) == 0U)) {
 			return -EINVAL;
 		}
 	} else if (init < _OBJ_INIT_TRUE) { /* _OBJ_INIT_FALSE case */
 		/* Object MUST NOT be initialized */
-		if (unlikely(ko->flags & K_OBJ_FLAG_INITIALIZED)) {
+		if (unlikely((ko->flags & K_OBJ_FLAG_INITIALIZED) != 0U)) {
 			return -EADDRINUSE;
 		}
 	} else {
@@ -632,7 +632,7 @@ void z_object_uninit(void *obj)
 /*
  * Copy to/from helper functions used in syscall handlers
  */
-void *z_user_alloc_from_copy(void *src, size_t size)
+void *z_user_alloc_from_copy(const void *src, size_t size)
 {
 	void *dst = NULL;
 	k_spinlock_key_t key = k_spin_lock(&ucopy_lock);
@@ -654,7 +654,7 @@ out_err:
 	return dst;
 }
 
-static int user_copy(void *dst, void *src, size_t size, bool to_user)
+static int user_copy(void *dst, const void *src, size_t size, bool to_user)
 {
 	int ret = EFAULT;
 	k_spinlock_key_t key = k_spin_lock(&ucopy_lock);
@@ -672,17 +672,17 @@ out_err:
 	return ret;
 }
 
-int z_user_from_copy(void *dst, void *src, size_t size)
+int z_user_from_copy(void *dst, const void *src, size_t size)
 {
 	return user_copy(dst, src, size, false);
 }
 
-int z_user_to_copy(void *dst, void *src, size_t size)
+int z_user_to_copy(void *dst, const void *src, size_t size)
 {
 	return user_copy(dst, src, size, true);
 }
 
-char *z_user_string_alloc_copy(char *src, size_t maxlen)
+char *z_user_string_alloc_copy(const char *src, size_t maxlen)
 {
 	unsigned long actual_len;
 	int err;
@@ -709,7 +709,7 @@ out:
 	return ret;
 }
 
-int z_user_string_copy(char *dst, char *src, size_t maxlen)
+int z_user_string_copy(char *dst, const char *src, size_t maxlen)
 {
 	unsigned long actual_len;
 	int ret, err;

@@ -9,6 +9,8 @@
 /.known-issues/                           @inakypg @nashif
 /arch/arc/                                @vonhust @ruuddw
 /arch/arm/                                @MaureenHelm @galak
+/arch/arm/core/cortex_m/cmse/             @ioannisg
+/arch/arm/include/cortex_m/cmse/          @ioannisg
 /soc/arm/                                 @MaureenHelm @galak
 /soc/arm/arm/mps2/                        @fvincenzo
 /soc/arm/atmel_sam/sam4s/                 @fallrisk
@@ -103,7 +105,7 @@
 /drivers/bluetooth/                       @sjanc @jhedberg @Vudentz
 /drivers/can/                             @alexanderwachter
 /drivers/clock_control/*stm32f4*          @rsalveti @idlethread
-/drivers/counter/                         @anangl
+/drivers/counter/                         @nordic-krch
 /drivers/display/                         @vanwinkeljan
 /drivers/ethernet/                        @jukkar @tbursztyka @pfalcon
 /drivers/flash/                           @nashif
@@ -116,6 +118,7 @@
 /drivers/led/                             @Mani-Sadhasivam
 /drivers/led_strip/                       @mbolivar
 /drivers/modem/                           @mike-scott
+/drivers/pci/                             @gnuless
 /drivers/pinmux/stm32/                    @rsalveti @idlethread
 /drivers/sensor/                          @bogdan-davidoaia @MaureenHelm
 /drivers/sensor/hts*/                     @avisconti
@@ -136,6 +139,7 @@
 /dts/arm/st/                              @erwango
 /dts/arm/nordic/                          @ioannisg @carlescufi
 /dts/arm/nxp/                             @MaureenHelm
+/dts/bindings/                            @galak
 /dts/bindings/can/                        @alexanderwachter
 /dts/bindings/*/nordic*                   @anangl
 /dts/bindings/*/nxp*                      @MaureenHelm
@@ -167,7 +171,7 @@
 /include/bluetooth/                       @sjanc @jhedberg @Vudentz
 /include/cache.h                          @andrewboie @andyross
 /include/can.h                            @alexanderwachter
-/include/counter.h                        @anangl
+/include/counter.h                        @nordic-krch
 /include/device.h                         @ramakrishnapallala @nashif
 /include/display.h                        @vanwinkeljan
 /include/display/                         @vanwinkeljan
@@ -227,6 +231,8 @@
 /samples/net/sockets/coap_server/         @rveerama1
 /samples/net/sockets/                     @jukkar @tbursztyka @pfalcon
 /samples/sensor/                          @bogdan-davidoaia
+/samples/subsys/logging/                  @nordic-krch @jarz-nordic
+/samples/subsys/shell/                    @jarz-nordic @nordic-krch
 /samples/subsys/usb/                      @jfischer-phytec-iot @finikorg
 /samples/subsys/power/                    @ramakrishnapallala @pizi-nordic
 /scripts/coccicheck                       @himanshujha199640 @JuliaLawall
@@ -247,6 +253,7 @@
 /scripts/series-push-hook.sh              @erwango
 /scripts/west_commands/                   @mbolivar
 /scripts/west-commands.yml                @mbolivar
+/scripts/zephyr_module.py                 @tejlmand
 /subsys/bluetooth/                        @sjanc @jhedberg @Vudentz
 /subsys/bluetooth/controller/             @carlescufi @cvinayak @thoh-ot
 /subsys/fs/                               @nashif
@@ -276,6 +283,7 @@
 /tests/drivers/can/                       @alexanderwachter
 /tests/drivers/hwinfo/                    @alexanderwachter
 /tests/drivers/spi/                       @tbursztyka
+/tests/drivers/uart/uart_async_api/       @Mierunski
 /tests/kernel/                            @andrewboie @andyross @nashif
 /tests/net/                               @jukkar @tbursztyka @pfalcon
 /tests/net/buf/                           @jukkar @jhedberg @tbursztyka @pfalcon

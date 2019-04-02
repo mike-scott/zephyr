@@ -93,7 +93,7 @@ static void eth_rx(struct device *dev)
 		goto error;
 	}
 
-	if (net_pkt_write_new(pkt, (void *)context->rx_buf, frm_len)) {
+	if (net_pkt_write(pkt, (void *)context->rx_buf, frm_len)) {
 		LOG_ERR("Failed to append RX buffer to context buffer");
 		net_pkt_unref(pkt);
 		goto error;
@@ -196,7 +196,7 @@ static void eth_dw_isr(struct device *dev)
 	 * by the shared IRQ driver. So check here if the interrupt
 	 * is coming from the GPIO controller (or somewhere else).
 	 */
-	if ((int_status & STATUS_RX_INT) == 0) {
+	if ((int_status & STATUS_RX_INT) == 0U) {
 		return;
 	}
 #endif

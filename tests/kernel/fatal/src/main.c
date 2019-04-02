@@ -140,10 +140,22 @@ void blow_up_stack(void)
 
 void stack_sentinel_timer(void)
 {
+	u32_t cur_tick;
+
 	/* Test that stack overflow check due to timer interrupt works */
 	blow_up_stack();
-	TC_PRINT("busy waiting...\n");
-	k_busy_wait(1024 * 1024);
+	TC_PRINT("waiting for tick advance...\n");
+
+	/* This test has tickless kernel disabled, z_tick_get_32() returns
+	 * the current tick count without trying to offset it by checking
+	 * time elapsed in the driver since last update
+	 */
+	cur_tick = z_tick_get_32();
+
+	while (cur_tick == z_tick_get_32()) {
+		/* spin */
+	}
+
 	TC_ERROR("should never see this\n");
 	rv = TC_FAIL;
 }
@@ -279,13 +291,11 @@ void test_fatal(void)
 
 #ifdef CONFIG_USERSPACE
 
-#if !defined(CONFIG_ARC) /* FIXME #13341 */
 	TC_PRINT("test stack HW-based overflow - user 1\n");
 	check_stack_overflow(stack_hw_overflow, K_USER);
 
 	TC_PRINT("test stack HW-based overflow - user 2\n");
 	check_stack_overflow(stack_hw_overflow, K_USER);
-#endif
 #endif /* CONFIG_USERSPACE */
 
 #endif /* !CONFIG_ARCH_POSIX */

@@ -61,6 +61,7 @@ SECTION_FUNC(TEXT, __pendsv)
 #elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
     movs.n r0, #_EXC_IRQ_DEFAULT_PRIO
     msr BASEPRI, r0
+    isb /* Make the effect of disabling interrupts be realized immediately */
 #else
 #error Unknown ARM architecture
 #endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
@@ -417,6 +418,14 @@ _do_syscall:
     ldr r6, =K_SYSCALL_BAD
 
 valid_syscall_id:
+    push {r0, r1}
+    ldr r0, =_kernel
+    ldr r0, [r0, #_kernel_offset_to_current]
+    ldr r1, [r0, #_thread_offset_to_mode]
+    bic r1, #1
+    /* Store (privileged) mode in thread's mode state variable */
+    str r1, [r0, #_thread_offset_to_mode]
+    dsb
     /* set mode to privileged, r2 still contains value from CONTROL */
     bic r2, #1
     msr CONTROL, r2
@@ -426,6 +435,7 @@ valid_syscall_id:
      * instructions with the previous privilege.
      */
     isb
+    pop {r0, r1}
 
     /* return from SVC to the modified LR - _arm_do_syscall */
     bx lr

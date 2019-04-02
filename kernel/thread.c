@@ -413,7 +413,7 @@ void z_setup_new_thread(struct k_thread *new_thread,
 					new_thread);
 	}
 
-	if ((options & K_INHERIT_PERMS) != 0) {
+	if ((options & K_INHERIT_PERMS) != 0U) {
 		z_thread_perms_inherit(_current, new_thread);
 	}
 #endif
@@ -451,9 +451,7 @@ Z_SYSCALL_HANDLER(k_thread_create,
 	int prio;
 	u32_t options, delay;
 	u32_t total_size;
-#ifndef CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT
-	u32_t guard_size;
-#endif
+
 	struct _k_object *stack_object;
 	struct k_thread *new_thread = (struct k_thread *)new_thread_p;
 	volatile struct _syscall_10_args *margs =
@@ -468,24 +466,18 @@ Z_SYSCALL_HANDLER(k_thread_create,
 						_OBJ_INIT_FALSE) == 0,
 				    "bad stack object"));
 
-#ifndef CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT
 	/* Verify that the stack size passed in is OK by computing the total
 	 * size and comparing it with the size value in the object metadata
-	 *
-	 * We skip this check for SoCs which utilize MPUs with power of two
-	 * alignment requirements as the guard is allocated out of the stack
-	 * size and not allocated in addition to the stack size
 	 */
-	guard_size = (u32_t)K_THREAD_STACK_BUFFER(stack) - (u32_t)stack;
-	Z_OOPS(Z_SYSCALL_VERIFY_MSG(!__builtin_uadd_overflow(guard_size,
+	Z_OOPS(Z_SYSCALL_VERIFY_MSG(!__builtin_uadd_overflow(K_THREAD_STACK_RESERVED,
 							     stack_size,
 							     &total_size),
 				    "stack size overflow (%u+%u)", stack_size,
-				    guard_size));
-#else
-	total_size = stack_size;
-#endif
-	/* They really ought to be equal, make this more strict? */
+				    K_THREAD_STACK_RESERVED));
+
+	/* Testing less-than-or-equal since additional room may have been
+	 * allocated for alignment constraints
+	 */
 	Z_OOPS(Z_SYSCALL_VERIFY_MSG(total_size <= stack_object->data,
 				    "stack size %u is too big, max is %u",
 				    total_size, stack_object->data));
@@ -686,7 +678,7 @@ void z_init_thread_base(struct _thread_base *thread_base, int priority,
 
 	thread_base->prio = priority;
 
-	thread_base->sched_locked = 0;
+	thread_base->sched_locked = 0U;
 
 	/* swap_data does not need to be initialized */
 
@@ -716,23 +708,23 @@ FUNC_NORETURN void k_thread_user_mode_enter(k_thread_entry_t entry,
  * them in spinlock.h is a giant header ordering headache.
  */
 #ifdef SPIN_VALIDATE
-int z_spin_lock_valid(struct k_spinlock *l)
+bool z_spin_lock_valid(struct k_spinlock *l)
 {
 	if (l->thread_cpu) {
 		if ((l->thread_cpu & 3) == _current_cpu->id) {
-			return 0;
+			return false;
 		}
 	}
-	return 1;
+	return true;
 }
 
-int z_spin_unlock_valid(struct k_spinlock *l)
+bool z_spin_unlock_valid(struct k_spinlock *l)
 {
 	if (l->thread_cpu != (_current_cpu->id | (u32_t)_current)) {
-		return 0;
+		return false;
 	}
 	l->thread_cpu = 0;
-	return 1;
+	return true;
 }
 
 void z_spin_lock_set_owner(struct k_spinlock *l)

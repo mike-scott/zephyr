@@ -1812,9 +1812,10 @@ extern void k_queue_append(struct k_queue *queue, void *data);
 /**
  * @brief Append an element to a queue.
  *
- * This routine appends a data item to @a queue. There is an implicit
- * memory allocation from the calling thread's resource pool, which is
- * automatically freed when the item is removed from the queue.
+ * This routine appends a data item to @a queue. There is an implicit memory
+ * allocation to create an additional temporary bookkeeping data structure from
+ * the calling thread's resource pool, which is automatically freed when the
+ * item is removed. The data itself is not copied.
  *
  * @note Can be called by ISRs.
  *
@@ -1845,9 +1846,10 @@ extern void k_queue_prepend(struct k_queue *queue, void *data);
 /**
  * @brief Prepend an element to a queue.
  *
- * This routine prepends a data item to @a queue. There is an implicit
- * memory allocation from the calling thread's resource pool, which is
- * automatically freed when the item is removed from the queue.
+ * This routine prepends a data item to @a queue. There is an implicit memory
+ * allocation to create an additional temporary bookkeeping data structure from
+ * the calling thread's resource pool, which is automatically freed when the
+ * item is removed. The data itself is not copied.
  *
  * @note Can be called by ISRs.
  *
@@ -2117,9 +2119,10 @@ struct k_fifo {
 /**
  * @brief Add an element to a FIFO queue.
  *
- * This routine adds a data item to @a fifo. There is an implicit
- * memory allocation from the calling thread's resource pool, which is
- * automatically freed when the item is removed.
+ * This routine adds a data item to @a fifo. There is an implicit memory
+ * allocation to create an additional temporary bookkeeping data structure from
+ * the calling thread's resource pool, which is automatically freed when the
+ * item is removed. The data itself is not copied.
  *
  * @note Can be called by ISRs.
  *
@@ -2316,9 +2319,10 @@ struct k_lifo {
 /**
  * @brief Add an element to a LIFO queue.
  *
- * This routine adds a data item to @a lifo. There is an implicit
- * memory allocation from the calling thread's resource pool, which is
- * automatically freed when the item is removed.
+ * This routine adds a data item to @a lifo. There is an implicit memory
+ * allocation to create an additional temporary bookkeeping data structure from
+ * the calling thread's resource pool, which is automatically freed when the
+ * item is removed. The data itself is not copied.
  *
  * @note Can be called by ISRs.
  *
@@ -3098,7 +3102,7 @@ __syscall void k_sem_reset(struct k_sem *sem);
  */
 static inline void z_impl_k_sem_reset(struct k_sem *sem)
 {
-	sem->count = 0;
+	sem->count = 0U;
 }
 
 /**
@@ -3173,8 +3177,8 @@ struct k_msgq {
 #define _K_MSGQ_INITIALIZER(obj, q_buffer, q_msg_size, q_max_msgs) \
 	{ \
 	.wait_q = Z_WAIT_Q_INIT(&obj.wait_q), \
-	.max_msgs = q_max_msgs, \
 	.msg_size = q_msg_size, \
+	.max_msgs = q_max_msgs, \
 	.buffer_start = q_buffer, \
 	.buffer_end = q_buffer + (q_max_msgs * q_msg_size), \
 	.read_ptr = q_buffer, \
@@ -4397,7 +4401,7 @@ __syscall void k_poll_signal_reset(struct k_poll_signal *signal);
 
 static inline void z_impl_k_poll_signal_reset(struct k_poll_signal *signal)
 {
-	signal->signaled = 0;
+	signal->signaled = 0U;
 }
 
 /**
@@ -4580,6 +4584,7 @@ extern void z_timer_expiration_handler(struct _timeout *t);
 #define K_THREAD_STACK_LEN(size) Z_ARCH_THREAD_STACK_LEN(size)
 #define K_THREAD_STACK_MEMBER(sym, size) Z_ARCH_THREAD_STACK_MEMBER(sym, size)
 #define K_THREAD_STACK_SIZEOF(sym) Z_ARCH_THREAD_STACK_SIZEOF(sym)
+#define K_THREAD_STACK_RESERVED Z_ARCH_THREAD_STACK_RESERVED
 static inline char *K_THREAD_STACK_BUFFER(k_thread_stack_t *sym)
 {
 	return Z_ARCH_THREAD_STACK_BUFFER(sym);
@@ -4676,6 +4681,18 @@ static inline char *K_THREAD_STACK_BUFFER(k_thread_stack_t *sym)
  * @req K-TSTACK-001
  */
 #define K_THREAD_STACK_SIZEOF(sym) sizeof(sym)
+
+
+/**
+ * @brief Indicate how much additional memory is reserved for stack objects
+ *
+ * Any given stack declaration may have additional memory in it for guard
+ * areas or supervisor mode stacks. This macro indicates how much space
+ * is reserved for this. The memory reserved may not be contiguous within
+ * the stack object, and does not account for additional space used due to
+ * enforce alignment.
+ */
+#define K_THREAD_STACK_RESERVED		0
 
 /**
  * @brief Get a pointer to the physical stack buffer

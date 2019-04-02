@@ -755,9 +755,11 @@ static inline void usbd_work_process_pwr_events(struct usbd_pwr_event *pwr_evt)
 
 	switch (pwr_evt->state) {
 	case USBD_ATTACHED:
-		LOG_DBG("USB detected");
-		nrfx_usbd_enable();
-		(void) hf_clock_enable(true, false);
+		if (!nrfx_usbd_is_enabled()) {
+			LOG_DBG("USB detected");
+			nrfx_usbd_enable();
+			(void) hf_clock_enable(true, false);
+		}
 
 		/* No callback here.
 		 * Stack will be notified when the peripheral is ready.
@@ -851,7 +853,7 @@ static inline void usbd_work_process_setup(struct nrf_usbd_ep_ctx *ep_ctx)
 		ctx->ctrl_read_len -= usbd_setup->wLength;
 		nrfx_usbd_setup_data_clear();
 	} else {
-		ctx->ctrl_read_len = 0;
+		ctx->ctrl_read_len = 0U;
 	}
 }
 
@@ -1002,7 +1004,7 @@ static void usbd_event_transfer_ctrl(nrfx_usbd_evt_t const *const p_event)
 				ctx->ctrl_read_len -= ep_ctx->buf.len;
 				nrfx_usbd_setup_data_clear();
 			} else {
-				ctx->ctrl_read_len = 0;
+				ctx->ctrl_read_len = 0U;
 			}
 
 			usbd_evt_put(ev);
@@ -1316,6 +1318,17 @@ int usb_dc_attach(void)
 		usbd_work_schedule();
 	}
 
+	if (nrf_power_usbregstatus_vbusdet_get()) {
+		/* USBDETECTED event is be generated on cable attachment and
+		 * when cable is already attached during reset, but not when
+		 * the peripheral is re-enabled.
+		 * When USB-enabled bootloader is used, target application
+		 * will not receive this event and it needs to be generated
+		 * again here.
+		 */
+		usb_dc_nrfx_power_event_callback(NRF_POWER_EVENT_USBDETECTED);
+	}
+
 	return ret;
 }
 
@@ -1437,7 +1450,7 @@ int usb_dc_ep_configure(const struct usb_dc_ep_cfg_data *const ep_cfg)
 	ep_ctx->cfg.type = ep_cfg->ep_type;
 	ep_ctx->cfg.max_sz = ep_cfg->ep_mps;
 
-	if ((ep_cfg->ep_mps & (ep_cfg->ep_mps - 1)) != 0) {
+	if ((ep_cfg->ep_mps & (ep_cfg->ep_mps - 1)) != 0U) {
 		LOG_ERR("EP max packet size must be a power of 2.");
 		return -EINVAL;
 	}

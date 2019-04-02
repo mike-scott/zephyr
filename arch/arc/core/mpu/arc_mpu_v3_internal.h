@@ -320,7 +320,7 @@ static void _mpu_reset_dynamic_regions(void)
 		_region_init(i, 0, 0, 0);
 	}
 
-	for (i = 0; i < dynamic_regions_num; i++) {
+	for (i = 0U; i < dynamic_regions_num; i++) {
 		_region_init(
 			dyn_reg_info[i].index,
 			dyn_reg_info[i].base,
@@ -389,7 +389,7 @@ void arc_core_mpu_configure_thread(struct k_thread *thread)
 	_mpu_reset_dynamic_regions();
 #if defined(CONFIG_MPU_STACK_GUARD)
 #if defined(CONFIG_USERSPACE)
-	if ((thread->thread_base.user_options & K_USER) != 0) {
+	if ((thread->base.user_options & K_USER) != 0U) {
 		/* the areas before and after the user stack of thread is
 		 * kernel only. These area can be used as stack guard.
 		 * -----------------------
@@ -448,7 +448,7 @@ void arc_core_mpu_configure_thread(struct k_thread *thread)
 		num_partitions = mem_domain->num_partitions;
 		pparts = mem_domain->partitions;
 	} else {
-		num_partitions = 0;
+		num_partitions = 0U;
 		pparts = NULL;
 	}
 
@@ -594,7 +594,7 @@ int arc_core_mpu_buffer_validate(void *addr, size_t size, int write)
 	 */
 	r_index = _mpu_probe((u32_t)addr);
 	/*  match and the area is in one region */
-	if (r_index >= 0 && r_index == _mpu_probe((u32_t)addr + size)) {
+	if (r_index >= 0 && r_index == _mpu_probe((u32_t)addr + (size - 1))) {
 		if (_is_user_accessible_region(r_index, write)) {
 			return 0;
 		} else {
