@@ -123,7 +123,7 @@ static struct observe_node observe_node_data[CONFIG_LWM2M_ENGINE_MAX_MESSAGES];
 
 struct service_node {
 	sys_snode_t node;
-	struct k_work service_work;
+	k_work_handler_t service_work;
 	u32_t min_call_period;
 	u64_t last_timestamp;
 };
@@ -169,8 +169,6 @@ static const char * const LWM2M_ATTR_STR[] = { "pmin", "pmax",
 static const u8_t LWM2M_ATTR_LEN[] = { 4, 4, 2, 2, 2 };
 
 static struct lwm2m_attr write_attr_pool[CONFIG_LWM2M_NUM_ATTR];
-
-static struct k_delayed_work periodic_work;
 
 static struct lwm2m_engine_obj *get_engine_obj(int obj_id);
 static struct lwm2m_engine_obj_inst *get_engine_obj_inst(int obj_id,
@@ -3823,7 +3821,7 @@ int lwm2m_engine_add_service(k_work_handler_t service, u32_t period_ms)
 
 	/* find an unused service index node */
 	for (i = 0; i < MAX_PERIODIC_SERVICE; i++) {
-		if (!service_node_data[i].service_work.handler) {
+		if (!service_node_data[i].service_work) {
 			break;
 		}
 	}
@@ -3832,7 +3830,7 @@ int lwm2m_engine_add_service(k_work_handler_t service, u32_t period_ms)
 		return -ENOMEM;
 	}
 
-	k_work_init(&service_node_data[i].service_work, service);
+	service_node_data[i].service_work = service;
 	service_node_data[i].min_call_period = period_ms;
 	service_node_data[i].last_timestamp = 0U;
 
@@ -3842,13 +3840,11 @@ int lwm2m_engine_add_service(k_work_handler_t service, u32_t period_ms)
 	return 0;
 }
 
-static void lwm2m_engine_service(struct k_work *work)
+static int lwm2m_engine_service(void)
 {
 	struct observe_node *obs;
 	struct service_node *srv;
 	s64_t timestamp, service_due_timestamp;
-	s32_t sleep_ms;
-	int ret;
 
 	/*
 	 * 1. scan the observer list
@@ -3888,16 +3884,12 @@ static void lwm2m_engine_service(struct k_work *work)
 		/* service is due */
 		if (timestamp > service_due_timestamp) {
 			srv->last_timestamp = k_uptime_get();
-			k_work_submit(&srv->service_work);
+			srv->service_work(NULL);
 		}
 	}
 
 	/* calculate how long to sleep till the next service */
-	sleep_ms = engine_next_service_timeout_ms(ENGINE_UPDATE_INTERVAL);
-	ret = k_delayed_work_submit(&periodic_work, sleep_ms);
-	if (ret < 0) {
-		LOG_ERR("Work submit error:%d", ret);
-	}
+	return engine_next_service_timeout_ms(ENGINE_UPDATE_INTERVAL);
 }
 
 int lwm2m_engine_context_close(struct lwm2m_ctx *client_ctx)
@@ -3978,7 +3970,7 @@ static void socket_receive_loop(void)
 	while (1) {
 		/* wait for sockets */
 		if (sock_nfds < 1) {
-			k_sleep(ENGINE_UPDATE_INTERVAL);
+			k_sleep(lwm2m_engine_service());
 			continue;
 		}
 
@@ -3986,7 +3978,7 @@ static void socket_receive_loop(void)
 		 * FIXME: Currently we timeout and restart poll in case fds
 		 *        were modified.
 		 */
-		if (poll(sock_fds, sock_nfds, ENGINE_UPDATE_INTERVAL) < 0) {
+		if (poll(sock_fds, sock_nfds, lwm2m_engine_service()) < 0) {
 			LOG_ERR("Error in poll:%d", errno);
 			errno = 0;
 			k_sleep(ENGINE_UPDATE_INTERVAL);
@@ -4259,7 +4251,7 @@ int lwm2m_engine_start(struct lwm2m_ctx *client_ctx)
 
 static int lwm2m_engine_init(struct device *dev)
 {
-	int ret;
+	int ret = 0;
 
 	(void)memset(block1_contexts, 0,
 		     sizeof(struct block_context) * NUM_BLOCK1_CONTEXT);
@@ -4276,14 +4268,6 @@ static int lwm2m_engine_init(struct device *dev)
 	k_thread_name_set(&engine_thread_data, "lwm2m-sock-recv");
 	LOG_DBG("LWM2M engine socket receive thread started");
 
-	k_delayed_work_init(&periodic_work, lwm2m_engine_service);
-	ret = k_delayed_work_submit(&periodic_work, K_MSEC(2000));
-	if (ret < 0) {
-		LOG_ERR("Error starting periodic work: %d", ret);
-		return ret;
-	}
-
-	LOG_DBG("LWM2M engine periodic work started");
 #if defined(CONFIG_LWM2M_PERSIST_SETTINGS)
 	ret = lwm2m_settings_init();
 	if (ret < 0) {
@@ -4291,7 +4275,7 @@ static int lwm2m_engine_init(struct device *dev)
 		return ret;
 	}
 #endif
-	return 0;
+	return ret;
 }
 
 SYS_INIT(lwm2m_engine_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
