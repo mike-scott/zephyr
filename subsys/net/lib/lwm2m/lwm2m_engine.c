@@ -4262,8 +4262,8 @@ static int lwm2m_engine_init(struct device *dev)
 			K_THREAD_STACK_SIZEOF(engine_thread_stack),
 			(k_thread_entry_t) socket_receive_loop,
 			NULL, NULL, NULL,
-			/* Lowest priority prempt thread */
-			K_PRIO_COOP(CONFIG_NUM_PREEMPT_PRIORITIES - 1),
+			/* Lowest priority cooperative thread */
+			K_PRIO_COOP(CONFIG_NUM_COOP_PRIORITIES - 1),
 			0, K_NO_WAIT);
 	k_thread_name_set(&engine_thread_data, "lwm2m-sock-recv");
 	LOG_DBG("LWM2M engine socket receive thread started");
