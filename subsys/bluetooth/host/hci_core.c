@@ -69,13 +69,13 @@ struct bt_dev bt_dev = {
 	 * initial Command Complete for NOP.
 	 */
 #if !defined(CONFIG_BT_WAIT_NOP)
-	.ncmd_sem      = _K_SEM_INITIALIZER(bt_dev.ncmd_sem, 1, 1),
+	.ncmd_sem      = Z_SEM_INITIALIZER(bt_dev.ncmd_sem, 1, 1),
 #else
-	.ncmd_sem      = _K_SEM_INITIALIZER(bt_dev.ncmd_sem, 0, 1),
+	.ncmd_sem      = Z_SEM_INITIALIZER(bt_dev.ncmd_sem, 0, 1),
 #endif
-	.cmd_tx_queue  = _K_FIFO_INITIALIZER(bt_dev.cmd_tx_queue),
+	.cmd_tx_queue  = Z_FIFO_INITIALIZER(bt_dev.cmd_tx_queue),
 #if !defined(CONFIG_BT_RECV_IS_RX_THREAD)
-	.rx_queue      = _K_FIFO_INITIALIZER(bt_dev.rx_queue),
+	.rx_queue      = Z_FIFO_INITIALIZER(bt_dev.rx_queue),
 #endif
 };
 
@@ -1448,6 +1448,7 @@ static int bt_clear_all_pairings(u8_t id)
 
 int bt_unpair(u8_t id, const bt_addr_le_t *addr)
 {
+	struct bt_keys *keys = NULL;
 	struct bt_conn *conn;
 
 	if (id >= CONFIG_BT_ID_MAX) {
@@ -1460,6 +1461,15 @@ int bt_unpair(u8_t id, const bt_addr_le_t *addr)
 
 	conn = bt_conn_lookup_addr_le(id, addr);
 	if (conn) {
+		/* Clear the conn->le.keys pointer since we'll invalidate it,
+		 * and don't want any subsequent code (like disconnected
+		 * callbacks) accessing it.
+		 */
+		if (conn->type == BT_CONN_TYPE_LE) {
+			keys = conn->le.keys;
+			conn->le.keys = NULL;
+		}
+
 		bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 		bt_conn_unref(conn);
 	}
@@ -1472,14 +1482,17 @@ int bt_unpair(u8_t id, const bt_addr_le_t *addr)
 	}
 
 	if (IS_ENABLED(CONFIG_BT_SMP)) {
-		struct bt_keys *keys = bt_keys_find_addr(id, addr);
+		if (!keys) {
+			keys = bt_keys_find_addr(id, addr);
+		}
+
 		if (keys) {
 			bt_keys_clear(keys);
 		}
 	}
 
 	if (IS_ENABLED(CONFIG_BT_SETTINGS)) {
-		bt_gatt_clear_ccc(id, addr);
+		bt_gatt_clear(id, addr);
 	}
 
 	return 0;

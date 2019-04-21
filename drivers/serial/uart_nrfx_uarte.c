@@ -974,8 +974,8 @@ static void uarte_nrfx_irq_tx_enable(struct device *dev)
 	NRF_UARTE_Type *uarte = get_uarte_instance(dev);
 	struct uarte_nrfx_data *data = get_dev_data(dev);
 
-	nrf_uarte_int_enable(uarte, NRF_UARTE_INT_ENDTX_MASK);
 	data->int_driven->disable_tx_irq = false;
+	nrf_uarte_int_enable(uarte, NRF_UARTE_INT_ENDTX_MASK);
 }
 
 /** Interrupt driven transfer disabling function */
@@ -1141,20 +1141,6 @@ static int uarte_instance_init(struct device *dev,
 	data->pm_state = DEVICE_PM_ACTIVE_STATE;
 #endif
 
-#ifdef UARTE_INTERRUPT_DRIVEN
-	if (interrupts_active) {
-		/* Set ENDTX event by requesting fake (zero-length) transfer.
-		 * Pointer to RAM variable (data->tx_buffer) is set because
-		 * otherwise such operation may result in HardFault or RAM
-		 * corruption.
-		 */
-		nrf_uarte_tx_buffer_set(uarte, data->int_driven->tx_buffer, 0);
-		nrf_uarte_task_trigger(uarte, NRF_UARTE_TASK_STARTTX);
-
-		/* switch off transmitter to save an energy */
-		nrf_uarte_task_trigger(uarte, NRF_UARTE_TASK_STOPTX);
-	}
-#endif
 
 #ifdef CONFIG_UART_ASYNC_API
 	if (data->async) {
@@ -1169,6 +1155,20 @@ static int uarte_instance_init(struct device *dev,
 	nrf_uarte_rx_buffer_set(uarte, &data->rx_data, 1);
 	nrf_uarte_task_trigger(uarte, NRF_UARTE_TASK_STARTRX);
 
+#ifdef UARTE_INTERRUPT_DRIVEN
+	if (interrupts_active) {
+		/* Set ENDTX event by requesting fake (zero-length) transfer.
+		 * Pointer to RAM variable (data->tx_buffer) is set because
+		 * otherwise such operation may result in HardFault or RAM
+		 * corruption.
+		 */
+		nrf_uarte_tx_buffer_set(uarte, data->int_driven->tx_buffer, 0);
+		nrf_uarte_task_trigger(uarte, NRF_UARTE_TASK_STARTTX);
+
+		/* switch off transmitter to save an energy */
+		nrf_uarte_task_trigger(uarte, NRF_UARTE_TASK_STOPTX);
+	}
+#endif
 	return 0;
 }
 
@@ -1231,7 +1231,7 @@ static int uarte_nrfx_pm_control(struct device *dev, u32_t ctrl_command,
 			    (.int_driven = &uarte##idx##_int_driven,),	       \
 			    ())						       \
 	};								       \
-	static const struct uarte_nrfx_config uarte_##idx##_config = {	       \
+	static const struct uarte_nrfx_config uarte_##idx##z_config = {	       \
 		.uarte_regs = (NRF_UARTE_Type *)			       \
 			DT_NORDIC_NRF_UARTE_UART_##idx##_BASE_ADDRESS,	       \
 		.rts_cts_pins_set = IS_ENABLED(UARTE_##idx##_CONFIG_RTS_CTS),  \
@@ -1273,7 +1273,7 @@ static int uarte_nrfx_pm_control(struct device *dev, u32_t ctrl_command,
 		      uarte_##idx##_init,				       \
 		      uarte_nrfx_pm_control,				       \
 		      &uarte_##idx##_data,				       \
-		      &uarte_##idx##_config,				       \
+		      &uarte_##idx##z_config,				       \
 		      PRE_KERNEL_1,					       \
 		      CONFIG_KERNEL_INIT_PRIORITY_DEVICE,		       \
 		      &uart_nrfx_uarte_driver_api)
