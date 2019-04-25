@@ -3661,14 +3661,7 @@ static void retransmit_request(struct k_work *work)
 		return;
 	}
 
-	LOG_INF("Resending message: %p", msg);
-	msg->send_attempts++;
-	if (send(msg->ctx->sock_fd, msg->cpkt.data, msg->cpkt.offset, 0) < 0) {
-		LOG_ERR("Error sending lwm2m message: %d", -errno);
-		/* don't error here, retry until timeout */
-	}
-
-	k_delayed_work_submit(&msg->retransmit_work, msg->pending.timeout);
+	msg->ready_retry = true;
 }
 
 static int notify_message_reply_cb(const struct coap_packet *response,
@@ -4017,6 +4010,30 @@ static void socket_receive_loop(void)
 
 			lwm2m_udp_receive(sock_ctx[i], in_buf, len, &from_addr,
 					  handle_request);
+		}
+
+		/* Look for resends */
+		for (i = 0; i < CONFIG_LWM2M_ENGINE_MAX_MESSAGES; i++) {
+			if (!messages[i].ctx ||
+			    !messages[i].ready_retry) {
+				continue;
+			}
+
+			messages[i].send_attempts++;
+			LOG_INF("Resending message: %p [attempt:%d]",
+				&messages[i], messages[i].send_attempts);
+
+			if (send(messages[i].ctx->sock_fd,
+				 messages[i].cpkt.data,
+				 messages[i].cpkt.offset, 0) < 0) {
+				LOG_ERR("Error sending lwm2m message: %d",
+					-errno);
+				/* don't error here, retry until timeout */
+			}
+
+			messages[i].ready_retry = false;
+			k_delayed_work_submit(&messages[i].retransmit_work,
+					      messages[i].pending.timeout);
 		}
 	}
 }

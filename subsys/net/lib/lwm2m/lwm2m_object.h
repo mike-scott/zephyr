@@ -313,6 +313,7 @@ struct lwm2m_message {
 	/** Message transmission handling for TYPE_CON */
 	struct coap_pending pending;
 	struct coap_reply reply;
+	bool ready_retry;
 
 	/** Message configuration */
 	u8_t *token;
