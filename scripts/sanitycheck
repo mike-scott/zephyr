@@ -650,6 +650,9 @@ class DeviceHandler(Handler):
 
         if options.west_flash is not None:
             command = ["west", "flash", "--skip-rebuild", "-d", self.outdir]
+            if options.west_runner is not None:
+                command.append("-r")
+                command.append(options.west_runner)
             # There are two ways this option is used.
             # 1) bare: --west-flash
             #    This results in options.west_flash == []
@@ -2940,6 +2943,17 @@ Artificially long but functional example:
                      --west-flash="--board-id=foobar"
         will translate to
          west flash -- --board-id=foobar
+        """
+    )
+    parser.add_argument(
+        "--west-runner", nargs='?', const=[],
+        help="""Uses the specified west runner instead of default"
+
+        E.g
+         sanitycheck --device-testing --device-serial /dev/ttyACM0 \
+                     --west-runner="pyocd"
+        will translate to
+         west flash -r pyocd
         """
     )
     parser.add_argument("--gcov-tool", default="gcov",
