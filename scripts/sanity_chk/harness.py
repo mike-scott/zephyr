@@ -52,7 +52,6 @@ class Console(Harness):
                 pattern = re.compile(r)
                 if pattern.search(line) and not r in self.matches:
                     self.matches[r] = line
-                    break
 
             if len(self.matches) == len(self.regex):
                 # check ordering
