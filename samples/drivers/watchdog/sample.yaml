@@ -9,8 +9,7 @@ tests:
         ordered: true
         regex:
             - "Watchdog sample application"
-            - "Feeding watchdog\\.\\.\\."
-            - "Waiting for reset\\.\\.\\."
-            # due to harness limitation, 2 matches cannot be the same regex
-            - "Watchdog sample applicati*."
+            - "Feeding watchdog..."
+            - "Waiting for reset..."
+            - "Watchdog sample application"
     depends_on: watchdog
